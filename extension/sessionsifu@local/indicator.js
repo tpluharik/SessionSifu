@@ -245,7 +245,7 @@ class AwsIndicator extends PanelMenu.Button {
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this.menu.addAction('Open SessionSifu…', () => {
             try {
-                Gio.Subprocess.new(['/usr/bin/sessionsifu'], Gio.SubprocessFlags.NONE);
+                Gio.Subprocess.new([FileUtils.getManagerExecutable()], Gio.SubprocessFlags.NONE);
             } catch (error) {
                 this._log.error(error, 'Could not open SessionSifu');
             }

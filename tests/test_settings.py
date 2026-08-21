@@ -76,6 +76,50 @@ with tempfile.TemporaryDirectory() as cache_dir:
             downloaded = module.download_update(download_manifest)
     assert downloaded.read_bytes() == payload
 
+with tempfile.TemporaryDirectory() as install_root:
+    install_root = pathlib.Path(install_root)
+    payload_root = install_root / "payload"
+    source_app = payload_root / "usr/bin/sessionsifu"
+    source_desktop = payload_root / "usr/share/applications/org.gnome.SessionSifu.desktop"
+    source_autostart = payload_root / "etc/xdg/autostart/org.gnome.SessionSifu.desktop"
+    source_icon = payload_root / "usr/share/icons/hicolor/scalable/apps/org.gnome.SessionSifu.svg"
+    source_extension = payload_root / "usr/share/gnome-shell/extensions/sessionsifu@local"
+    source_bundle = payload_root / "usr/share/sessionsifu/sessionsifu@local.shell-extension.zip"
+    for path in [source_app, source_desktop, source_autostart, source_icon, source_bundle]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    source_extension.mkdir(parents=True)
+    source_app.write_text("#!/usr/bin/python3\nprint('updated')\n")
+    source_desktop.write_text("[Desktop Entry]\nType=Application\nExec=sessionsifu\n")
+    source_autostart.write_text("[Desktop Entry]\nType=Application\nExec=sessionsifu --autostart\n")
+    source_icon.write_text("<svg/>\n")
+    source_bundle.write_bytes(b"extension bundle")
+    (source_extension / "metadata.json").write_text('{"version-name":"1.2.1"}\n')
+
+    data_dir = install_root / "data"
+    config_dir = install_root / "config"
+    bin_dir = install_root / "bin"
+    local_app = module.install_user_payload(
+        payload_root,
+        user_data_dir=data_dir,
+        user_config_dir=config_dir,
+        user_bin_dir=bin_dir,
+    )
+    assert local_app == bin_dir / "sessionsifu"
+    assert local_app.read_text() == source_app.read_text()
+    assert local_app.stat().st_mode & 0o111
+    assert f'Exec="{local_app}"' in (
+        data_dir / "applications/org.gnome.SessionSifu.desktop"
+    ).read_text()
+    assert f'Exec="{local_app}" --autostart' in (
+        config_dir / "autostart/org.gnome.SessionSifu.desktop"
+    ).read_text()
+    assert (
+        data_dir / "gnome-shell/extensions/sessionsifu@local/metadata.json"
+    ).is_file()
+    assert (
+        data_dir / "sessionsifu/sessionsifu@local.shell-extension.zip"
+    ).read_bytes() == b"extension bundle"
+
 try:
     module.parse_update_manifest(
         json.dumps(

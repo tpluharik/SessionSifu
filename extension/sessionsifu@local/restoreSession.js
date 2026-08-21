@@ -36,6 +36,7 @@ export const RestoreSession = class {
 
         // All launched apps info by Shell.App#launch()
         this._restoredApps = new Map();
+        this._launchedFilesByApp = new Map();
 
         // Tracking cmd and appId mapping
         this._cmdAppIdMap = new Map();
@@ -110,7 +111,8 @@ export const RestoreSession = class {
                 return true;
             }
 
-            if (this._appIsRunning(shellApp)) {
+            if (this._appIsRunning(shellApp) &&
+                OpenFiles.existingOpenFiles(session_config_object.open_files).length === 0) {
                 this._log.debug(`${shellApp.get_name()} is already running`)
                 return false;
             }
@@ -312,29 +314,43 @@ export const RestoreSession = class {
     }
 
     launch(shellApp, desktopNumber, openFiles = []) {
+        const appInfo = shellApp.get_app_info();
+        const launchedFiles = this._launchedFilesByApp.get(shellApp) ?? new Set();
+        this._launchedFilesByApp.set(shellApp, launchedFiles);
+        const paths = OpenFiles.existingOpenFiles(openFiles)
+            .filter(path => !launchedFiles.has(path));
+        const files = paths.map(path => Gio.File.new_for_path(path));
+        const canLaunchFiles = files.length && appInfo &&
+            (appInfo.supports_files() || appInfo.supports_uris());
+        const launchFiles = () => {
+            const context = global.create_app_launch_context(
+                DateUtils.get_current_time(),
+                desktopNumber);
+            this._log.info(`Launching ${shellApp.get_name()} with ${files.length} saved file(s)`);
+            const launched = appInfo.launch(files, context);
+            if (launched)
+                paths.forEach(path => launchedFiles.add(path));
+            return launched;
+        };
+
         if (this._restoredApps.has(shellApp)) {
+            if (canLaunchFiles)
+                return [launchFiles(), false];
             this._log.info(`${shellApp.get_name()} is restored, skipping`);
             return [true, false];
         }
 
         if (this._appIsRunning(shellApp)) {
+            if (canLaunchFiles)
+                return [launchFiles(), true];
             this._log.info(`${shellApp.get_name()} is running, skipping`);
             // Delete shellApp from restoringApps to prevent it move the same app when close and open it manually.
             restoreSessionObject.restoringApps.delete(shellApp);
             return [true, true];
         }
 
-        const appInfo = shellApp.get_app_info();
-        const files = OpenFiles.existingOpenFiles(openFiles)
-            .map(path => Gio.File.new_for_path(path));
-        if (files.length && appInfo &&
-            (appInfo.supports_files() || appInfo.supports_uris())) {
-            const context = global.create_app_launch_context(
-                DateUtils.get_current_time(),
-                desktopNumber);
-            this._log.info(`Launching ${shellApp.get_name()} with ${files.length} saved file(s)`);
-            return [appInfo.launch(files, context), false];
-        }
+        if (canLaunchFiles)
+            return [launchFiles(), false];
 
         const launched = shellApp.launch(
             // 0 for current event timestamp
@@ -377,6 +393,10 @@ export const RestoreSession = class {
         if (this._restoredApps) {
             this._restoredApps.clear();
             this._restoredApps = null;
+        }
+        if (this._launchedFilesByApp) {
+            this._launchedFilesByApp.clear();
+            this._launchedFilesByApp = null;
         }
 
         if (this._defaultAppSystem) {

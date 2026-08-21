@@ -1,7 +1,7 @@
 {
-  "version": "1.2.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_1.2.0_all.deb",
-  "sha256": "ee86ec54bfc001bce180701199931ca74a393a7631eaeec203f4dc6ee78b7cc7",
-  "size": 211774,
-  "notes": "Adds best-effort open-document restoration and a top-bar action to turn off SessionSifu."
+  "version": "1.2.1",
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_1.2.1_all.deb",
+  "sha256": "a803d9e42ae1fc8c9aec6dd904560da273e969eac6c188311f6c09b0c0b55640",
+  "size": 215464,
+  "notes": "Restores documents from process arguments and GNOME recent files, and adds user-local in-app updates."
 }

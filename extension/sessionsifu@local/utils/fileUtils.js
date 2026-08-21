@@ -12,6 +12,13 @@ export let current_extension_dir = null;
 export const default_sessionName = 'defaultSession';
 export const data_dir = GLib.get_user_data_dir();
 export const user_config = GLib.get_user_config_dir();
+export function getManagerExecutable() {
+    const userManager = GLib.build_filenamev([
+        GLib.get_home_dir(), '.local', 'bin', 'sessionsifu']);
+    return GLib.file_test(userManager, GLib.FileTest.IS_EXECUTABLE)
+        ? userManager
+        : '/usr/bin/sessionsifu';
+}
 // This extension can restore `xsm`'s session file,
 // but desktop_file_id is missing in that file, so can't move them. Will be fixed in the future.
 export const config_path_base = GLib.build_filenamev([user_config, 'sessionsifu']);

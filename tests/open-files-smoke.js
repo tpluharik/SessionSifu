@@ -1,13 +1,17 @@
+import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 import * as OpenFiles from '../extension/sessionsifu@local/openFiles.js';
 
 
 const home = GLib.get_home_dir();
+const [thisFile] = GLib.filename_from_uri(import.meta.url);
 if (!OpenFiles.isCandidatePath(`${home}/Documents/report.odt`))
     throw new Error('A normal document path was rejected');
 if (OpenFiles.isCandidatePath(`${home}/.config/application/state.db`))
     throw new Error('Hidden application state was accepted as a document');
+if (!OpenFiles.isCandidatePath(`${home}/.projects/report.odt`, true))
+    throw new Error('An explicitly identified document in a hidden directory was rejected');
 if (OpenFiles.isCandidatePath('/usr/lib/application/resource.dat'))
     throw new Error('A system resource was accepted as a document');
 if (OpenFiles.isCandidatePath(`${home}/Documents/report.odt (deleted)`))
@@ -16,3 +20,17 @@ if (OpenFiles.OPEN_FILE_LIMIT !== 32)
     throw new Error('Unexpected open-file safety limit');
 if (OpenFiles.OPEN_FD_SCAN_LIMIT !== 512)
     throw new Error('Unexpected descriptor scan safety limit');
+if (OpenFiles.RECENT_FILE_SCAN_LIMIT !== 2048)
+    throw new Error('Unexpected recent-file safety limit');
+const commandFiles = OpenFiles.commandLineFiles([
+    '/usr/bin/document-editor',
+    Gio.File.new_for_path(thisFile).get_uri(),
+]);
+if (commandFiles.length !== 1 || commandFiles[0] !== thisFile)
+    throw new Error('A file URI from the application command line was not captured');
+const recent = OpenFiles.recentFileForWindow([
+    {path: '/new/report.odt', basename: 'report.odt', modified: 2},
+    {path: '/old/report.odt', basename: 'report.odt', modified: 1},
+], 'report.odt — Document Editor');
+if (recent !== '/new/report.odt')
+    throw new Error('The most recent exact window-title match was not selected');

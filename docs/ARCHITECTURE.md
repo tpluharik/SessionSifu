@@ -8,12 +8,18 @@ SessionSifu is split into three runtime layers and one distribution layer.
 Mutter window objects, maintain current-window state, capture complete session
 files, restore layouts and provide the top-bar indicator.
 
-`openFiles.js` inspects `/proc/<pid>/fd` without requiring `lsof`. It scans at
-most 512 descriptors and accepts at most 32 readable regular user files, rejects
-hidden application state and system resources, and revalidates every path before
-restoration. When a desktop entry
-supports files or URIs, the extension passes the saved paths through
-`Gio.AppInfo.launch()` so the original application receives them.
+`openFiles.js` combines three sources: `/proc/<pid>/fd`, explicit file arguments
+in the process command line, and the per-user `recently-used.xbel` bookmark
+file parsed by `GLib.BookmarkFile`. Recent entries are matched by exact basename
+against the window title and ranked by modification time. Generic descriptor
+scanning excludes hidden state, while explicitly launched or title-matched
+documents may reside below hidden directories. At most 512 descriptors, 2,048
+recent entries and 32 resulting paths per window are processed.
+
+At restoration time every path is revalidated and deduplicated per application.
+When a desktop entry supports files or URIs, the extension calls
+`Gio.AppInfo.launch()` for each new group of files, including after the first
+window has launched or when the application is already running.
 
 `continuousSaver.js` owns the rolling history timer. It reads the GSettings
 interval, performs an initial save shortly after startup, prevents overlapping
@@ -30,9 +36,12 @@ manager.
 configures GSettings and calls the extension over D-Bus. It does not duplicate
 Mutter window-management logic.
 
-The manager also checks the repository update manifest in a background thread,
-downloads a newer package to the user's cache, verifies it and asks the desktop
-to open the package with Ubuntu's installer.
+The manager checks the repository update manifest in a background thread,
+downloads a newer package to the user's cache and verifies its origin, size and
+SHA-256 digest. It uses `dpkg-deb --extract` only as an archive reader, validates
+the expected payload, then atomically installs the manager, desktop files, icon,
+extension bundle and extension below the user's XDG directories and
+`~/.local/bin`. It never invokes `apt`, `dpkg -i`, PackageKit or Ubuntu Software.
 
 ## Local storage
 
@@ -57,4 +66,6 @@ package size and SHA-256 digest.
 
 The manifest and package live on the same `main` revision. The updater accepts
 only HTTPS package URLs under `tpluharik/SessionSifu` on
-`raw.githubusercontent.com`.
+`raw.githubusercontent.com`. The Debian package remains necessary for initial
+dependency installation; later application updates are unprivileged and local
+to the user.

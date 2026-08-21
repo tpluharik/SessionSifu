@@ -8,8 +8,10 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -25,7 +27,7 @@ from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "1.2.0"
+CURRENT_VERSION = "1.2.1"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -125,6 +127,173 @@ def download_update(manifest: dict, timeout: int = 20) -> Path:
         raise
 
 
+def _atomic_copy(source: Path, target: Path, mode: int) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as output:
+        temporary = Path(output.name)
+        with source.open("rb") as input_file:
+            shutil.copyfileobj(input_file, output)
+    try:
+        temporary.chmod(mode)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _atomic_write_text(contents: str, target: Path, mode: int = 0o644) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=target.parent, delete=False
+    ) as output:
+        output.write(contents)
+        temporary = Path(output.name)
+    try:
+        temporary.chmod(mode)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _desktop_quote(argument: str) -> str:
+    escaped = argument.replace("\\", "\\\\")
+    for character in ('"', "`", "$"):
+        escaped = escaped.replace(character, f"\\{character}")
+    return f'"{escaped}"'
+
+
+def _replace_desktop_exec(contents: str, executable: Path, arguments: str = "") -> str:
+    command = _desktop_quote(str(executable))
+    if arguments:
+        command = f"{command} {arguments}"
+    lines = contents.splitlines()
+    replaced = False
+    for index, line in enumerate(lines):
+        if line.startswith("Exec="):
+            lines[index] = f"Exec={command}"
+            replaced = True
+            break
+    if not replaced:
+        raise ValueError("SessionSifu desktop entry has no Exec field")
+    return "\n".join(lines) + "\n"
+
+
+def _replace_extension_tree(source: Path, target: Path) -> None:
+    if any(path.is_symlink() for path in source.rglob("*")):
+        raise ValueError("Update extension contains an unsupported symbolic link")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".sessionsifu-extension-", dir=target.parent) as temp:
+        temporary_root = Path(temp)
+        replacement = temporary_root / "replacement"
+        backup = temporary_root / "previous"
+        shutil.copytree(source, replacement)
+        had_previous = target.exists()
+        if had_previous:
+            os.replace(target, backup)
+        try:
+            os.replace(replacement, target)
+        except Exception:
+            if had_previous and backup.exists() and not target.exists():
+                os.replace(backup, target)
+            raise
+
+
+def install_user_payload(
+    payload_root: Path,
+    *,
+    user_data_dir: Path | None = None,
+    user_config_dir: Path | None = None,
+    user_bin_dir: Path | None = None,
+) -> Path:
+    user_data_dir = user_data_dir or Path(GLib.get_user_data_dir())
+    user_config_dir = user_config_dir or Path(GLib.get_user_config_dir())
+    user_bin_dir = user_bin_dir or Path.home() / ".local" / "bin"
+
+    source_app = payload_root / "usr/bin/sessionsifu"
+    source_desktop = payload_root / "usr/share/applications/org.gnome.SessionSifu.desktop"
+    source_autostart = payload_root / "etc/xdg/autostart/org.gnome.SessionSifu.desktop"
+    source_icon = payload_root / "usr/share/icons/hicolor/scalable/apps/org.gnome.SessionSifu.svg"
+    source_extension = payload_root / "usr/share/gnome-shell/extensions" / UUID
+    source_bundle = payload_root / "usr/share/sessionsifu/sessionsifu@local.shell-extension.zip"
+    required_files = [source_app, source_desktop, source_autostart, source_icon, source_bundle]
+    if any(not path.is_file() or path.is_symlink() for path in required_files):
+        raise ValueError("Update package is missing a required SessionSifu file")
+    if not source_extension.is_dir() or source_extension.is_symlink():
+        raise ValueError("Update package is missing the GNOME Shell extension")
+
+    local_app = user_bin_dir / "sessionsifu"
+    _atomic_copy(source_app, local_app, 0o755)
+    _atomic_write_text(
+        _replace_desktop_exec(source_desktop.read_text(), local_app),
+        user_data_dir / "applications/org.gnome.SessionSifu.desktop",
+    )
+    _atomic_write_text(
+        _replace_desktop_exec(source_autostart.read_text(), local_app, "--autostart"),
+        user_config_dir / "autostart/org.gnome.SessionSifu.desktop",
+    )
+    _atomic_copy(
+        source_icon,
+        user_data_dir / "icons/hicolor/scalable/apps/org.gnome.SessionSifu.svg",
+        0o644,
+    )
+    _atomic_copy(
+        source_bundle,
+        user_data_dir / "sessionsifu/sessionsifu@local.shell-extension.zip",
+        0o644,
+    )
+    _replace_extension_tree(
+        source_extension,
+        user_data_dir / "gnome-shell/extensions" / UUID,
+    )
+    return local_app
+
+
+def install_user_update(package: Path, expected_version: str) -> Path:
+    version_result = subprocess.run(
+        ["dpkg-deb", "--field", str(package), "Version"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    package_version = version_result.stdout.strip()
+    if version_result.returncode != 0 or package_version != expected_version:
+        raise ValueError("Downloaded package version does not match the update manifest")
+
+    cache_dir = Path(GLib.get_user_cache_dir()) / "sessionsifu" / "updates"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="payload-", dir=cache_dir) as directory:
+        payload_root = Path(directory)
+        result = subprocess.run(
+            ["dpkg-deb", "--extract", str(package), str(payload_root)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            raise ValueError(result.stderr.strip() or "Could not extract the verified update")
+        payload_app = payload_root / "usr/bin/sessionsifu"
+        payload_metadata = (
+            payload_root
+            / "usr/share/gnome-shell/extensions"
+            / UUID
+            / "metadata.json"
+        )
+        try:
+            metadata_version = str(json.loads(payload_metadata.read_text())["version-name"])
+            app_version_matches = (
+                f'CURRENT_VERSION = "{expected_version}"' in payload_app.read_text()
+            )
+        except (OSError, KeyError, TypeError, json.JSONDecodeError):
+            metadata_version = ""
+            app_version_matches = False
+        if metadata_version != expected_version or not app_version_matches:
+            raise ValueError("Update payload versions do not match the update manifest")
+        local_app = install_user_payload(payload_root)
+    schedule_extension_enable()
+    return local_app
+
+
 def _schema() -> Gio.SettingsSchema:
     """Find the schema without letting GLib abort on a missing global entry."""
     default_source = Gio.SettingsSchemaSource.get_default()
@@ -132,6 +301,7 @@ def _schema() -> Gio.SettingsSchema:
     source_path = Path(__file__).resolve()
     candidates = [
         Path(override) if override else None,
+        Path(GLib.get_user_data_dir()) / "gnome-shell" / "extensions" / UUID / "schemas",
         Path("/usr/share/gnome-shell/extensions") / UUID / "schemas",
         source_path.parent.parent / "extension" / UUID / "schemas",
     ]
@@ -230,6 +400,7 @@ def extension_bundle() -> Path | None:
     override = os.environ.get("SESSIONSIFU_EXTENSION_BUNDLE")
     candidates = [
         Path(override) if override else None,
+        Path(GLib.get_user_data_dir()) / "sessionsifu" / "sessionsifu@local.shell-extension.zip",
         Path("/usr/share/sessionsifu/sessionsifu@local.shell-extension.zip"),
     ]
     return next((path for path in candidates if path is not None and path.is_file()), None)
@@ -436,7 +607,7 @@ class ManagerWindow(Adw.ApplicationWindow):
 
         self.sessions_group = Adw.PreferencesGroup(
             title="Saved sessions",
-            description="Restoring skips applications that are already running.",
+            description="Running applications are reused when a saved document needs to be opened.",
         )
         self._session_rows_widgets: list[Adw.ActionRow] = []
         content.append(self.sessions_group)
@@ -444,7 +615,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         limits_group = Adw.PreferencesGroup(title="Restoration boundary")
         limits_row = Adw.ActionRow(
             title="Application content is restored by the application",
-            subtitle="Open files are restored when Linux exposes them and the app accepts file arguments. Tabs and unsaved in-memory data still require app recovery.",
+            subtitle="Documents are resolved from process data and GNOME recent files. Tabs and unsaved in-memory data still require app recovery.",
         )
         limits_row.add_prefix(Gtk.Image.new_from_icon_name("dialog-information-symbolic"))
         limits_group.add(limits_row)
@@ -452,7 +623,7 @@ class ManagerWindow(Adw.ApplicationWindow):
 
         update_group = Adw.PreferencesGroup(
             title="Updates",
-            description="Checks a hash-verified package manifest stored in the SessionSifu GitHub repository.",
+            description="Installs hash-verified updates for this user without the system package manager.",
         )
         self.update_row = Adw.ActionRow(
             title="SessionSifu software",
@@ -464,7 +635,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         update_group.add(self.update_row)
         content.append(update_group)
         self._available_update: dict | None = None
-        self._downloaded_update: Path | None = None
+        self._installed_update: Path | None = None
 
         self.refresh()
 
@@ -567,11 +738,21 @@ class ManagerWindow(Adw.ApplicationWindow):
             return []
 
     def _update_clicked(self, _button) -> None:
-        if self._downloaded_update is not None and self._downloaded_update.is_file():
+        if self._installed_update is not None and self._installed_update.is_file():
             try:
-                Gio.AppInfo.launch_default_for_uri(self._downloaded_update.as_uri(), None)
-            except GLib.Error as error:
-                self._message(f"Downloaded to {self._downloaded_update}: {error.message}")
+                subprocess.Popen(
+                    [
+                        "/bin/sh",
+                        "-c",
+                        'sleep 1; exec "$1"',
+                        "sessionsifu-restart",
+                        str(self._installed_update),
+                    ],
+                    start_new_session=True,
+                )
+                self.get_application().quit()
+            except OSError as error:
+                self._message(f"Could not restart SessionSifu: {error}")
             return
         if self._available_update is not None:
             self._download_available_update()
@@ -616,28 +797,29 @@ class ManagerWindow(Adw.ApplicationWindow):
         def worker() -> None:
             try:
                 package = download_update(manifest)
-                GLib.idle_add(self._finish_update_download, package, None)
+                local_app = install_user_update(package, manifest["version"])
+                GLib.idle_add(self._finish_update_download, local_app, None)
             except Exception as error:
                 GLib.idle_add(self._finish_update_download, None, str(error))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _finish_update_download(self, package: Path | None, error: str | None) -> bool:
+    def _finish_update_download(self, local_app: Path | None, error: str | None) -> bool:
         self.update_button.set_sensitive(True)
         if error:
-            self.update_row.set_subtitle(f"Update download failed: {error}")
+            self.update_row.set_subtitle(f"Update failed: {error}")
             self.update_button.set_label("Try Again")
             self._available_update = None
             self.update_button.remove_css_class("suggested-action")
             return GLib.SOURCE_REMOVE
 
-        self._downloaded_update = package
-        self.update_row.set_subtitle("Verified package downloaded; approve it in the system installer")
-        self.update_button.set_label("Open Installer")
-        try:
-            Gio.AppInfo.launch_default_for_uri(package.as_uri(), None)
-        except GLib.Error as launch_error:
-            self._message(f"Downloaded to {package}: {launch_error.message}")
+        self._installed_update = local_app
+        self._available_update = None
+        self.update_row.set_subtitle(
+            "Installed for this user; restart the app, then log out and back in once"
+        )
+        self.update_button.set_label("Restart SessionSifu")
+        self._message("SessionSifu was updated without using the system package manager.")
         return GLib.SOURCE_REMOVE
 
     def refresh(self) -> None:

@@ -36,15 +36,13 @@ start a new login session before testing snapshots.
 
 ## A restored application does not reopen its document
 
-Open-file capture works only while the application exposes the file through
-`/proc/<pid>/fd`. Some applications close the descriptor after reading and keep
-the document only in private memory; SessionSifu cannot observe that state.
-Check whether the application provides its own reopen, recent-file or crash
-recovery option.
+SessionSifu checks process descriptors, explicit process arguments and GNOME's
+recent-file database. The filename must appear in the window title for the
+recent-file fallback. Files absent from all three sources cannot be observed;
+check whether the application provides its own reopen or crash-recovery option.
 
-SessionSifu also intentionally ignores hidden state, system resources, deleted
-files and applications whose desktop entry does not accept file or URI
-arguments.
+Untitled and unsaved in-memory documents, deleted files and applications whose
+desktop entry does not accept files or URIs cannot be restored generically.
 
 ## SessionSifu was turned off from the top bar
 
@@ -63,6 +61,11 @@ application's responsibility.
 Confirm that GitHub and `raw.githubusercontent.com` are reachable. SessionSifu
 rejects redirects outside the official repository, oversized packages and any
 package whose size or SHA-256 digest differs from `updates/latest.json`.
+
+In-app updates require `dpkg-deb` to extract the verified archive, but do not
+use the package manager to install it. Updated files are placed below
+`~/.local/bin`, `~/.local/share` and `~/.config/autostart`. Install the Debian
+package manually once if the initial runtime dependencies are not present.
 
 ## Diagnostic logs
 

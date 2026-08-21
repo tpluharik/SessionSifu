@@ -2,6 +2,17 @@
 
 All notable SessionSifu changes are documented here.
 
+## 1.2.1
+
+- Added document discovery from process arguments and GNOME's recent-file
+  database, including explicit documents stored below hidden project folders.
+- Added exact window-title matching and most-recent selection for duplicate
+  filenames.
+- Restores every unique document belonging to an application, including when
+  the application is already running.
+- Replaced the system-installer update handoff with verified, atomic user-local
+  installation of the manager and GNOME integration.
+
 ## 1.2.0
 
 - Added best-effort capture of readable regular files exposed by each window
