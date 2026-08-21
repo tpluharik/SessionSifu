@@ -14,7 +14,7 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "1.1.1"
+assert metadata["version-name"] == "1.2.0"
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -33,9 +33,10 @@ assert 'mkdir -p "$stage/usr/share/glib-2.0/schemas"' in build_script
 assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="1.1.1"' in build_script
+assert 'version="1.2.0"' in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
+assert "tests/open-files-smoke.js" in build_script
 
 dbus = ET.parse(
     extension
@@ -67,9 +68,15 @@ assert "history_limit = 5" in source_text
 assert "continuous-save-interval" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "1.1.1"' in app_source
+assert 'CURRENT_VERSION = "1.2.0"' in app_source
 assert "self.snapshot_intervals = [30, 60, 300, 600, 900, 1800]" in app_source
 assert "raw.githubusercontent.com/tpluharik/SessionSifu" in app_source
 assert "Downloaded update failed SHA-256 verification" in app_source
+
+assert "open_files" in source_text
+assert "`/proc/${pid}/fd`" in source_text
+assert "appInfo.launch(files, context)" in source_text
+assert "Turn Off SessionSifu" in source_text
+assert "['gnome-extensions', 'disable', 'sessionsifu@local']" in source_text
 
 print("static checks passed")

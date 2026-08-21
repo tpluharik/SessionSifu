@@ -8,6 +8,13 @@ SessionSifu is split into three runtime layers and one distribution layer.
 Mutter window objects, maintain current-window state, capture complete session
 files, restore layouts and provide the top-bar indicator.
 
+`openFiles.js` inspects `/proc/<pid>/fd` without requiring `lsof`. It scans at
+most 512 descriptors and accepts at most 32 readable regular user files, rejects
+hidden application state and system resources, and revalidates every path before
+restoration. When a desktop entry
+supports files or URIs, the extension passes the saved paths through
+`Gio.AppInfo.launch()` so the original application receives them.
+
 `continuousSaver.js` owns the rolling history timer. It reads the GSettings
 interval, performs an initial save shortly after startup, prevents overlapping
 saves and removes files older than the five newest successful snapshots.
@@ -36,6 +43,10 @@ the XDG cache directory, normally `~/.cache/sessionsifu/updates/`.
 Automatic snapshot filenames use UTC timestamps in the form
 `auto-YYYYMMDD-HHMMSS.json`. Only filenames matching that pattern can be listed
 or restored through the automatic-history D-Bus methods.
+
+Session JSON can contain an `open_files` array on each saved window object. This
+is best-effort metadata rather than a promise that every application's internal
+document state can be observed.
 
 ## Debian package and update channel
 

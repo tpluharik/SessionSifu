@@ -10,6 +10,7 @@ import {PrefsUtils} from './utils/prefsUtils.js';
 import * as SubprocessUtils from './utils/subprocessUtils.js';
 import * as DateUtils from './utils/dateUtils.js';
 import * as StringUtils from './utils/stringUtils.js';
+import * as OpenFiles from './openFiles.js';
 
 
 export const restoreSessionObject = {
@@ -199,7 +200,10 @@ export const RestoreSession = class {
                     }
 
                     const desktopNumber = session_config_object.desktop_number;
-                    [launched, running] = this.launch(shell_app, desktopNumber);
+                    [launched, running] = this.launch(
+                        shell_app,
+                        desktopNumber,
+                        session_config_object.open_files);
                     if (launched) {
                         if (!running) {
                             this._log.info(`${app_name} has been launched! Preparing to restore window ${session_config_object.window_title}(${app_name})!`);
@@ -307,7 +311,7 @@ export const RestoreSession = class {
         }
     }
 
-    launch(shellApp, desktopNumber) {
+    launch(shellApp, desktopNumber, openFiles = []) {
         if (this._restoredApps.has(shellApp)) {
             this._log.info(`${shellApp.get_name()} is restored, skipping`);
             return [true, false];
@@ -318,6 +322,18 @@ export const RestoreSession = class {
             // Delete shellApp from restoringApps to prevent it move the same app when close and open it manually.
             restoreSessionObject.restoringApps.delete(shellApp);
             return [true, true];
+        }
+
+        const appInfo = shellApp.get_app_info();
+        const files = OpenFiles.existingOpenFiles(openFiles)
+            .map(path => Gio.File.new_for_path(path));
+        if (files.length && appInfo &&
+            (appInfo.supports_files() || appInfo.supports_uris())) {
+            const context = global.create_app_launch_context(
+                DateUtils.get_current_time(),
+                desktopNumber);
+            this._log.info(`Launching ${shellApp.get_name()} with ${files.length} saved file(s)`);
+            return [appInfo.launch(files, context), false];
         }
 
         const launched = shellApp.launch(

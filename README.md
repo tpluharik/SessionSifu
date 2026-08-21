@@ -4,7 +4,7 @@ SessionSifu saves and reconstructs a GNOME desktop layout. It records running
 applications and their windows, then can relaunch those applications and place
 their windows back on the saved workspaces and monitors.
 
-Version 1.1.1 targets Ubuntu 26.04 with GNOME Shell 50. The project is open
+Version 1.2.0 targets Ubuntu 26.04 with GNOME Shell 50. The project is open
 source under GPL-3.0.
 
 ## Features
@@ -14,8 +14,10 @@ source under GPL-3.0.
 - Snapshot intervals of 30 seconds, 1, 5, 10, 15 or 30 minutes.
 - Five minutes as the default interval.
 - One-click restoration of an automatic or named session.
+- Best-effort reopening of user files exposed by application processes.
 - Optional restoration of the previous desktop after login.
 - GNOME top-bar indicator for common actions.
+- A top-bar **Turn Off SessionSifu** action that disables the integration.
 - GTK 4/libadwaita manager and command-line client.
 - In-app update checks backed by this GitHub repository.
 - Debian package containing the manager, extension, schema and integration
@@ -40,25 +42,39 @@ SessionSifu records application identifiers, launch commands, process metadata,
 window titles, workspace and monitor assignments, geometry, stacking/focus and
 supported minimized, maximized, fullscreen, sticky and tiling state.
 
+For each window process, SessionSifu also inspects `/proc/<pid>/fd` and records
+up to 32 readable regular files from the user's home, removable-media or GVfs
+locations. Hidden application state, system resources, deleted files and special
+file descriptors are excluded. During restoration, those paths are passed to
+the saved application's desktop launcher when it declares file or URI support.
+Descriptor inspection is capped at 512 entries per process and reused across
+windows from that process to keep automatic saves responsive.
+
 Linux does not provide a universal way to serialize another application's
 private memory. SessionSifu can reopen an application and reconstruct its window
 layout, but tabs, unsaved documents, terminal processes and other internal
 content are restored only when that application provides its own recovery
 support.
 
+Open-file restoration is necessarily best effort. Some applications keep
+documents open for their entire lifetime and expose them through `/proc`; others
+read a document and immediately close its file descriptor. The latter files are
+not visible to SessionSifu and still depend on the application's own recent-file
+or crash-recovery behavior.
+
 ## Install or upgrade
 
-Download `sessionsifu_1.1.1_all.deb` from the `updates/` directory, or build it
+Download `sessionsifu_1.2.0_all.deb` from the `updates/` directory, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_1.1.1_all.deb
+sudo apt install ./sessionsifu_1.2.0_all.deb
 ```
 
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_1.1.1_all.deb
+sudo apt install ./dist/sessionsifu_1.2.0_all.deb
 ```
 
 After installation:
@@ -94,6 +110,14 @@ Automatic history is stored in:
 ```
 
 Use the **Automatic history** section in the manager to restore a snapshot.
+
+## Top-bar controls
+
+The SessionSifu top-bar menu provides save, restore and manager shortcuts. Its
+**Turn Off SessionSifu** action disables the GNOME Shell integration, stopping
+automatic snapshots and removing the top-bar icon. This is reversible: open the
+SessionSifu manager from the application grid and select **Enable** to turn the
+integration back on.
 
 ## Named sessions and login restoration
 
@@ -147,9 +171,9 @@ Downloaded update packages are cached under
 `~/.cache/sessionsifu/updates/`. Checking for updates contacts GitHub; session
 files are never uploaded by SessionSifu.
 
-Because saved launch commands, paths and window titles may contain sensitive
-information, protect backups of the SessionSifu configuration directory as you
-would other personal application data.
+Because saved launch commands, open-file paths and window titles may contain
+sensitive information, protect backups of the SessionSifu configuration
+directory as you would other personal application data.
 
 ## Troubleshooting
 
@@ -174,8 +198,8 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_1.1.1_all.deb
-updates/sessionsifu_1.1.1_all.deb
+dist/sessionsifu_1.2.0_all.deb
+updates/sessionsifu_1.2.0_all.deb
 updates/latest.json
 ```
 

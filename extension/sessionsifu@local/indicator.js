@@ -250,6 +250,18 @@ class AwsIndicator extends PanelMenu.Button {
                 this._log.error(error, 'Could not open SessionSifu');
             }
         });
+        this.menu.addAction('Turn Off SessionSifu', () => {
+            GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                try {
+                    Gio.Subprocess.new(
+                        ['gnome-extensions', 'disable', 'sessionsifu@local'],
+                        Gio.SubprocessFlags.NONE);
+                } catch (error) {
+                    this._log.error(error, 'Could not turn off SessionSifu');
+                }
+                return GLib.SOURCE_REMOVE;
+            });
+        });
     }
 
     _addScrollableSessionsMenuSection() {

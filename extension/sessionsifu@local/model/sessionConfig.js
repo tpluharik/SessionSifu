@@ -58,6 +58,7 @@ export const SessionConfigObject = class {
     wm_class_instance; // str
 
     cmd; // list
+    open_files; // list of user file paths exposed by the application process
     process_create_time; // str
 
     window_state = new WindowState(); // WindowState

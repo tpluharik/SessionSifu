@@ -34,6 +34,23 @@ ls -l ~/.config/sessionsifu/history/
 If the manager shows an integration-version warning, update the integration and
 start a new login session before testing snapshots.
 
+## A restored application does not reopen its document
+
+Open-file capture works only while the application exposes the file through
+`/proc/<pid>/fd`. Some applications close the descriptor after reading and keep
+the document only in private memory; SessionSifu cannot observe that state.
+Check whether the application provides its own reopen, recent-file or crash
+recovery option.
+
+SessionSifu also intentionally ignores hidden state, system resources, deleted
+files and applications whose desktop entry does not accept file or URI
+arguments.
+
+## SessionSifu was turned off from the top bar
+
+Open SessionSifu from the application grid and select **Enable**. If GNOME says
+a new login is required, log out and back in once.
+
 ## Restoration reopens windows but not their content
 
 This is expected for applications that do not expose recovery support.

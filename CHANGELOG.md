@@ -2,6 +2,15 @@
 
 All notable SessionSifu changes are documented here.
 
+## 1.2.0
+
+- Added best-effort capture of readable regular files exposed by each window
+  process and restoration through the application's desktop launcher.
+- Added safety filtering for hidden state, system resources, deleted files and
+  special descriptors, with a limit of 32 paths per process.
+- Added **Turn Off SessionSifu** to the GNOME top-bar menu.
+- Updated privacy, architecture and troubleshooting documentation.
+
 ## 1.1.1
 
 - Added 30-second and 1-minute automatic snapshot intervals.

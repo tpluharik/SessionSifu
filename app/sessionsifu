@@ -25,7 +25,7 @@ from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "1.1.1"
+CURRENT_VERSION = "1.2.0"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -348,7 +348,7 @@ class ManagerWindow(Adw.ApplicationWindow):
 
         save_group = Adw.PreferencesGroup(
             title="Save current desktop",
-            description="Captures running applications, windows, workspaces, monitors and window geometry.",
+            description="Captures running applications, open user files, windows, workspaces, monitors and window geometry.",
         )
         save_row = Adw.ActionRow(title="Session name")
         self.name_entry = Gtk.Entry(placeholder_text="Work", hexpand=True, valign=Gtk.Align.CENTER)
@@ -444,7 +444,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         limits_group = Adw.PreferencesGroup(title="Restoration boundary")
         limits_row = Adw.ActionRow(
             title="Application content is restored by the application",
-            subtitle="SessionSifu restores processes and windows. Tabs, documents and unsaved data require each app's own recovery support.",
+            subtitle="Open files are restored when Linux exposes them and the app accepts file arguments. Tabs and unsaved in-memory data still require app recovery.",
         )
         limits_row.add_prefix(Gtk.Image.new_from_icon_name("dialog-information-symbolic"))
         limits_group.add(limits_row)

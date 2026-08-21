@@ -19,6 +19,7 @@ import * as SubprocessUtils from './utils/subprocessUtils.js';
 import {PrefsUtils} from './utils/prefsUtils.js';
 import * as StringUtils from './utils/stringUtils.js';
 import { shellVersion } from './constants.js';
+import * as OpenFiles from './openFiles.js';
 
 
 export const SaveSession = class {
@@ -34,6 +35,7 @@ export const SaveSession = class {
             flags: (Gio.SubprocessFlags.STDOUT_PIPE |
                     Gio.SubprocessFlags.STDERR_PIPE)});
         this._defaultAppSystem = Shell.AppSystem.get_default();
+        this._openFilesByPid = new Map();
 
         this._settings = PrefsUtils.getSettings();
 
@@ -67,6 +69,7 @@ export const SaveSession = class {
 
     async saveSessionAsync(sessionName, baseDir = null, backup = true) {
         try {
+            this._openFilesByPid.clear();
             this._log.debug(`Generating session ${sessionName}`);
 
             const sessionConfig = await this._buildSession(sessionName);
@@ -88,6 +91,7 @@ export const SaveSession = class {
 
     async saveWindowsSessionAsync(metaWindows, cancellableMap) {
         try {
+            this._openFilesByPid.clear();
             const apps = new Set();
             for (const metaWindow of metaWindows) {
                 const cancellable = cancellableMap ? cancellableMap.get(metaWindow) : null;
@@ -147,6 +151,7 @@ export const SaveSession = class {
 
     async saveWindowSessionAsync(metaWindow, sessionName, baseDir, cancellable = null) {
         try {
+            this._openFilesByPid.clear();
             if (cancellable && cancellable.is_cancelled()) {
                 return;
             }
@@ -482,6 +487,10 @@ export const SaveSession = class {
     }
 
     _setFieldsFromProcess(processInfoArray, sessionConfigObject) {
+        const pid = sessionConfigObject.pid;
+        if (!this._openFilesByPid.has(pid))
+            this._openFilesByPid.set(pid, OpenFiles.listOpenFiles(pid));
+        sessionConfigObject.open_files = this._openFilesByPid.get(pid);
         if (processInfoArray) {
             sessionConfigObject.process_create_time = processInfoArray.slice(0, 5).join(' ');
             sessionConfigObject.cpu_percent = processInfoArray.slice(5, 6).join();
@@ -504,6 +513,10 @@ export const SaveSession = class {
         }
         if (this._subprocessLauncher) {
             this._subprocessLauncher = null;
+        }
+        if (this._openFilesByPid) {
+            this._openFilesByPid.clear();
+            this._openFilesByPid = null;
         }
         if (this._sourceIds) {
             this._sourceIds.forEach(sourceId => {

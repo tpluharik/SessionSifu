@@ -1,7 +1,7 @@
 {
-  "version": "1.1.1",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_1.1.1_all.deb",
-  "sha256": "10c34074972c7066e7e30408583808469cea32b6a49d02960a9dc1cb5819928b",
-  "size": 207988,
-  "notes": "Adds 30-second and 1-minute automatic snapshot intervals and refreshed documentation."
+  "version": "1.2.0",
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_1.2.0_all.deb",
+  "sha256": "ee86ec54bfc001bce180701199931ca74a393a7631eaeec203f4dc6ee78b7cc7",
+  "size": 211774,
+  "notes": "Adds best-effort open-document restoration and a top-bar action to turn off SessionSifu."
 }

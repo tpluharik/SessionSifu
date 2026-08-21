@@ -5,7 +5,7 @@ project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 extension_dir="$project_dir/extension/sessionsifu@local"
 dist_dir="$project_dir/dist"
 updates_dir="$project_dir/updates"
-version="1.1.1"
+version="1.2.0"
 package="$dist_dir/sessionsifu_${version}_all.deb"
 update_package="$updates_dir/sessionsifu_${version}_all.deb"
 stage=$(mktemp -d /tmp/sessionsifu-package.XXXXXX)
@@ -21,6 +21,7 @@ GSETTINGS_BACKEND=memory SESSIONSIFU_SCHEMA_DIR="$extension_dir/schemas" \
     python3 "$project_dir/tests/test_settings.py" "$project_dir"
 
 find "$extension_dir" -type f -name '*.js' -exec node --check {} \;
+gjs -m "$project_dir/tests/open-files-smoke.js"
 python3 "$project_dir/tests/test_static.py" "$project_dir"
 
 mkdir -p "$stage/DEBIAN"
