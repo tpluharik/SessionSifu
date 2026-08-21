@@ -10,6 +10,20 @@ export const OPEN_FILE_LIMIT = 32;
 export const OPEN_FD_SCAN_LIMIT = 512;
 export const RECENT_FILE_SCAN_LIMIT = 2048;
 
+export function appInfoSupportsDocumentFiles(appInfo) {
+    try {
+        if (!appInfo || (!appInfo.supports_files() && !appInfo.supports_uris()))
+            return false;
+
+        const supportedTypes = appInfo.get_supported_types() ?? [];
+        return supportedTypes.some(contentType =>
+            typeof contentType === 'string' && contentType.length > 0 &&
+            !contentType.startsWith('x-scheme-handler/'));
+    } catch (_error) {
+        return false;
+    }
+}
+
 function allowedRoots() {
     const username = GLib.get_user_name();
     const runtime = GLib.get_user_runtime_dir();

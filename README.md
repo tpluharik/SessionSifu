@@ -4,7 +4,7 @@ SessionSifu saves and reconstructs a GNOME desktop layout. It records running
 applications and their windows, then can relaunch those applications and place
 their windows back on the saved workspaces and monitors.
 
-Version 1.2.2 targets Ubuntu 26.04 with GNOME Shell 50. The project is open
+Version 1.2.3 targets Ubuntu 26.04 with GNOME Shell 50. The project is open
 source under GPL-3.0.
 
 ## Features
@@ -54,8 +54,10 @@ hidden application state, system resources, deleted files and special files.
 
 At most 512 descriptors and 2,048 recent-file entries are examined, with at
 most 32 paths saved per window. During restoration, each unique path is passed
-to the saved application's desktop launcher. Additional documents are sent even
-after the first application window has started.
+only to a desktop launcher that declares a real document MIME type. Launchers
+that register only URL schemes, such as Signal, never receive saved file paths.
+Additional documents are sent even after the first application window has
+started.
 
 Linux does not provide a universal way to serialize another application's
 private memory. SessionSifu can reopen an application and reconstruct its window
@@ -69,17 +71,17 @@ depend on the application's own crash-recovery behavior.
 
 ## Install or upgrade
 
-Download `sessionsifu_1.2.2_all.deb` from the `updates/` directory, or build it
+Download `sessionsifu_1.2.3_all.deb` from the `updates/` directory, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_1.2.2_all.deb
+sudo apt install ./sessionsifu_1.2.3_all.deb
 ```
 
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_1.2.2_all.deb
+sudo apt install ./dist/sessionsifu_1.2.3_all.deb
 ```
 
 After installation:
@@ -131,8 +133,10 @@ appear separately from rolling history and remain until explicitly deleted.
 
 The **Restore previous desktop after login** switch is opt-in. When enabled,
 SessionSifu waits for the configured startup delay, relaunches missing
-applications and reconstructs the recorded layout. Applications already running
-are skipped to avoid unnecessary duplicate instances.
+applications one at a time and reconstructs the recorded layout after each new
+window has had time to initialize. Applications already running are skipped to
+avoid unnecessary duplicate instances. Confirming logout, reboot or shutdown
+cancels any restore work still in progress.
 
 ## Updates
 
@@ -208,8 +212,8 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_1.2.2_all.deb
-updates/sessionsifu_1.2.2_all.deb
+dist/sessionsifu_1.2.3_all.deb
+updates/sessionsifu_1.2.3_all.deb
 updates/latest.json
 ```
 

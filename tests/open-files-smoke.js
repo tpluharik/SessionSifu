@@ -22,6 +22,22 @@ if (OpenFiles.OPEN_FD_SCAN_LIMIT !== 512)
     throw new Error('Unexpected descriptor scan safety limit');
 if (OpenFiles.RECENT_FILE_SCAN_LIMIT !== 2048)
     throw new Error('Unexpected recent-file safety limit');
+const appInfo = (contentTypes, supportsFiles = false, supportsUris = true) => ({
+    supports_files: () => supportsFiles,
+    supports_uris: () => supportsUris,
+    get_supported_types: () => contentTypes,
+});
+if (OpenFiles.appInfoSupportsDocumentFiles(appInfo(['x-scheme-handler/sgnl'])))
+    throw new Error('A protocol-only launcher was accepted for document restoration');
+if (!OpenFiles.appInfoSupportsDocumentFiles(appInfo(['text/plain'], true, false)))
+    throw new Error('A document launcher was rejected');
+if (!OpenFiles.appInfoSupportsDocumentFiles(appInfo([
+    'x-scheme-handler/https',
+    'application/pdf',
+])))
+    throw new Error('A launcher with a document MIME type was rejected');
+if (OpenFiles.appInfoSupportsDocumentFiles(null))
+    throw new Error('A missing launcher was accepted for document restoration');
 const commandFiles = OpenFiles.commandLineFiles([
     '/usr/bin/document-editor',
     Gio.File.new_for_path(thisFile).get_uri(),

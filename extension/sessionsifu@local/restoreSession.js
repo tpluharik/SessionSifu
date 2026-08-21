@@ -11,6 +11,7 @@ import * as SubprocessUtils from './utils/subprocessUtils.js';
 import * as DateUtils from './utils/dateUtils.js';
 import * as StringUtils from './utils/stringUtils.js';
 import * as OpenFiles from './openFiles.js';
+import {mayRestoreApplications} from './runtimeSafety.js';
 import {MAX_WORKSPACE_INDEX} from './windowSafety.js';
 
 
@@ -46,6 +47,8 @@ export const RestoreSession = class {
         this._display = global.display;
 
         this._connectIds = [];
+        this._pendingRestoreDelays = new Map();
+        this._destroyed = false;
     }
 
     /**
@@ -70,6 +73,10 @@ export const RestoreSession = class {
     }
 
     restoreSession(sessionName) {
+        if (!mayRestoreApplications()) {
+            this._log.info('Skipping session restore while the desktop session is ending');
+            return;
+        }
         if (!sessionName) {
             sessionName = this.sessionName;
         }
@@ -90,6 +97,9 @@ export const RestoreSession = class {
     }
 
     restoreSessionFromFile(session_file_path) {
+        if (!mayRestoreApplications() || this._destroyed)
+            return;
+
         const session_file = Gio.File.new_for_path(session_file_path);
         let [success, contents] = session_file.load_contents(null);
         if (!success) {
@@ -114,8 +124,12 @@ export const RestoreSession = class {
                 return true;
             }
 
-            if (this._appIsRunning(shellApp) &&
-                OpenFiles.existingOpenFiles(session_config_object.open_files).length === 0) {
+            const canRestoreDocuments = OpenFiles.appInfoSupportsDocumentFiles(
+                shellApp.get_app_info());
+            const savedDocuments = canRestoreDocuments
+                ? OpenFiles.existingOpenFiles(session_config_object.open_files)
+                : [];
+            if (this._appIsRunning(shellApp) && savedDocuments.length === 0) {
                 this._log.debug(`${shellApp.get_name()} is already running`)
                 return false;
             }
@@ -132,7 +146,8 @@ export const RestoreSession = class {
             // Note that this timing might not be precise, see https://gjs-docs.gnome.org/glib20~2.66.1/glib.timeout_add
             this._restore_session_interval,
             () => {
-                if (!session_config_objects.length) {
+                if (!session_config_objects.length || !mayRestoreApplications() ||
+                    this._destroyed) {
                     return GLib.SOURCE_REMOVE;
                 }
                 this._restoreOneSession(session_config_objects.shift());
@@ -143,6 +158,9 @@ export const RestoreSession = class {
 
     async restorePreviousSession(removeAfterRestore) {
         try {
+            if (!mayRestoreApplications() || this._destroyed)
+                return;
+
             this._log.info(`Restoring the previous session from ${FileUtils.current_session_path}`);
 
             const ignoringParentFolders = [
@@ -151,7 +169,8 @@ export const RestoreSession = class {
             const ignoringFilePaths = [
                 GLib.build_filenamev([FileUtils.current_session_path, 'summary.json'])
             ];
-            FileUtils.listAllSessions(FileUtils.current_session_path, true, (file, info) => {
+            const sessionFiles = [];
+            await FileUtils.listAllSessions(FileUtils.current_session_path, true, (file, info) => {
                 const contentType = info.get_content_type();
                 if (contentType !== 'application/json') {
                     return;
@@ -162,28 +181,93 @@ export const RestoreSession = class {
                 if (ignoringFilePaths.includes(file.get_path())) {
                     return;
                 }
-                file.load_contents_async(
-                    null,
-                    (file, asyncResult) => {
-                        const [success, contents, _] = file.load_contents_finish(asyncResult);
-                        if (!success) {
-                            return;
-                        }
-                        const sessionConfig = FileUtils.getJsonObj(contents);
-                        sessionConfig._file_path = file.get_path();
-                        this._restoreOneSession(sessionConfig).then(([launched, running]) => {
-                            if (removeAfterRestore && launched && !running) {
-                                const path = file.get_path();
-                                this._log.debug(`Restored ${sessionConfig.window_title}(${sessionConfig.app_name}), cleaning ${path}`);
-                                FileUtils.removeFile(path);
-                            }
-                        }).catch(e => this._log.error(e));
-                    });
-
+                sessionFiles.push(file);
             });
+
+            const sessionEntries = [];
+            for (const file of sessionFiles) {
+                if (!mayRestoreApplications() || this._destroyed)
+                    break;
+
+                try {
+                    const contents = await this._loadSessionContents(file);
+                    if (!contents)
+                        continue;
+
+                    const sessionConfig = FileUtils.getJsonObj(contents);
+                    sessionConfig._file_path = file.get_path();
+                    sessionEntries.push({file, sessionConfig});
+                } catch (error) {
+                    this._log.error(error, `Could not load previous-session state from ${file.get_path()}`);
+                }
+            }
+            sessionEntries.sort((left, right) => {
+                const keyComparison = this._sessionApplicationKey(left.sessionConfig)
+                    .localeCompare(this._sessionApplicationKey(right.sessionConfig));
+                return keyComparison || left.file.get_path().localeCompare(right.file.get_path());
+            });
+
+            for (let index = 0; index < sessionEntries.length; index++) {
+                if (!mayRestoreApplications() || this._destroyed)
+                    break;
+
+                const {file, sessionConfig} = sessionEntries[index];
+                const [launched, running] = await this._restoreOneSession(sessionConfig);
+                if (removeAfterRestore && launched && !running) {
+                    const path = file.get_path();
+                    this._log.debug(`Restored ${sessionConfig.window_title}(${sessionConfig.app_name}), cleaning ${path}`);
+                    FileUtils.removeFile(path);
+                }
+
+                const nextEntry = sessionEntries[index + 1];
+                if (nextEntry &&
+                    this._sessionApplicationKey(sessionConfig) !==
+                        this._sessionApplicationKey(nextEntry.sessionConfig) &&
+                    !await this._waitBeforeNextRestore()) {
+                        break;
+                }
+            }
         } catch (error) {
             this._log.error(error);
         }
+    }
+
+    _loadSessionContents(file) {
+        return new Promise((resolve, reject) => {
+            file.load_contents_async(null, (source, asyncResult) => {
+                try {
+                    const [success, contents] = source.load_contents_finish(asyncResult);
+                    resolve(success ? contents : null);
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        });
+    }
+
+    _sessionApplicationKey(sessionConfig) {
+        if (sessionConfig.desktop_file_id)
+            return `desktop:${sessionConfig.desktop_file_id}`;
+        if (Array.isArray(sessionConfig.cmd) && sessionConfig.cmd.length)
+            return `command:${sessionConfig.cmd.join('\u0000')}`;
+        return `application:${sessionConfig.app_name ?? ''}`;
+    }
+
+    _waitBeforeNextRestore() {
+        if (!mayRestoreApplications() || this._destroyed)
+            return Promise.resolve(false);
+
+        return new Promise(resolve => {
+            const sourceId = GLib.timeout_add(
+                GLib.PRIORITY_LOW,
+                Math.max(100, this._restore_session_interval),
+                () => {
+                    this._pendingRestoreDelays.delete(sourceId);
+                    resolve(mayRestoreApplications() && !this._destroyed);
+                    return GLib.SOURCE_REMOVE;
+                });
+            this._pendingRestoreDelays.set(sourceId, resolve);
+        });
     }
 
     async _restoreOneSession(session_config_object) {
@@ -191,6 +275,9 @@ export const RestoreSession = class {
         let launched = false;
         let running = false;
         try {
+            if (!mayRestoreApplications() || this._destroyed)
+                return [launched, running];
+
             return await new Promise((resolve, reject) => {
                 let desktop_file_id = session_config_object.desktop_file_id;
                 const shell_app = desktop_file_id ? this._defaultAppSystem.lookup_app(desktop_file_id) : null;
@@ -246,6 +333,10 @@ export const RestoreSession = class {
                                     saved_window_sessions: [session_config_object]
                                 });
                             }
+                            launched = true;
+                            running = true;
+                            resolve([launched, running]);
+                            return;
                         }
 
                         const launchAppTemplate = FileUtils.desktop_template_launch_app_shell_script;
@@ -320,11 +411,12 @@ export const RestoreSession = class {
         const appInfo = shellApp.get_app_info();
         const launchedFiles = this._launchedFilesByApp.get(shellApp) ?? new Set();
         this._launchedFilesByApp.set(shellApp, launchedFiles);
-        const paths = OpenFiles.existingOpenFiles(openFiles)
+        const paths = (OpenFiles.appInfoSupportsDocumentFiles(appInfo)
+            ? OpenFiles.existingOpenFiles(openFiles)
+            : [])
             .filter(path => !launchedFiles.has(path));
         const files = paths.map(path => Gio.File.new_for_path(path));
-        const canLaunchFiles = files.length && appInfo &&
-            (appInfo.supports_files() || appInfo.supports_uris());
+        const canLaunchFiles = files.length > 0;
         const launchFiles = () => {
             const context = global.create_app_launch_context(
                 DateUtils.get_current_time(),
@@ -388,6 +480,16 @@ export const RestoreSession = class {
     }
 
     destroy() {
+        this._destroyed = true;
+
+        if (this._pendingRestoreDelays) {
+            for (const [sourceId, resolve] of this._pendingRestoreDelays) {
+                GLib.Source.remove(sourceId);
+                resolve(false);
+            }
+            this._pendingRestoreDelays.clear();
+            this._pendingRestoreDelays = null;
+        }
         if (restoreSessionObject.restoringApps) {
             restoreSessionObject.restoringApps.clear();
             restoreSessionObject.restoringApps = null;

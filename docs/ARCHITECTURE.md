@@ -17,9 +17,10 @@ documents may reside below hidden directories. At most 512 descriptors, 2,048
 recent entries and 32 resulting paths per window are processed.
 
 At restoration time every path is revalidated and deduplicated per application.
-When a desktop entry supports files or URIs, the extension calls
-`Gio.AppInfo.launch()` for each new group of files, including after the first
-window has launched or when the application is already running.
+The extension calls `Gio.AppInfo.launch()` only when the desktop entry accepts
+files or URIs and declares at least one non-scheme document MIME type. This
+keeps saved paths away from protocol-only launchers while still reopening new
+document groups after the first application window has launched.
 
 Window restoration treats Mutter objects as short-lived. `windowSafety.js`
 rejects windows without a compositor actor, workspace or valid monitor before
@@ -27,7 +28,14 @@ native state or geometry calls. The indicator serializes restore callbacks for
 each window, while `moveSession.js` cancels monitor waits and delayed geometry
 work as soon as `unmanaging` is emitted. Saved monitor, geometry and workspace
 values are bounded before they reach Mutter. Maximized windows are not passed to
-`move_resize_frame()` while their maximized state is being applied.
+`move_resize_frame()` while their maximized state is being applied. Newly
+created windows receive a 750-millisecond settle period before any saved state
+is applied.
+
+Previous-session files are restored through a paced queue rather than parallel
+callbacks. A shared runtime safety gate stops launches and window operations as
+soon as GNOME confirms logout, reboot or shutdown; canceling the end-session
+dialog reopens the gate.
 
 `continuousSaver.js` owns the rolling history timer. It reads the GSettings
 interval, performs an initial save shortly after startup, prevents overlapping

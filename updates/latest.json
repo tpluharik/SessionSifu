@@ -1,7 +1,7 @@
 {
-  "version": "1.2.2",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_1.2.2_all.deb",
-  "sha256": "604aa02cf1a85b558a5efba0f72195e320ae8bb5e252b403d17cd0f122ca0f78",
-  "size": 218980,
-  "notes": "Prevents Wayland compositor restarts by cancelling stale window restores and validating monitor and geometry state."
+  "version": "1.2.3",
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_1.2.3_all.deb",
+  "sha256": "761e908e1fee3cf5c4fbd2ed1b444ef1c1dafed0442f56d55c0a288c4d8fea5f",
+  "size": 222076,
+  "notes": "Paces application restores, lets new windows settle, blocks protocol-only file launches and cancels restore work during shutdown."
 }

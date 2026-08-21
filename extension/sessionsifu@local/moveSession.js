@@ -19,6 +19,7 @@ import {
     isValidWorkspaceIndex,
     isWindowUsable,
 } from './windowSafety.js';
+import {mayRestoreApplications} from './runtimeSafety.js';
 
 
 export const MoveSession = class {
@@ -37,7 +38,8 @@ export const MoveSession = class {
     }
 
     _isWindowUsable(metaWindow) {
-        return !this._cancelledWindows.has(metaWindow) && isWindowUsable(metaWindow);
+        return mayRestoreApplications() &&
+            !this._cancelledWindows.has(metaWindow) && isWindowUsable(metaWindow);
     }
 
     cancelWindow(metaWindow) {

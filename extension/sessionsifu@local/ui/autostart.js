@@ -114,7 +114,7 @@ const AutostartService = GObject.registerClass(
         }
 
         Ping() {
-            return 'SessionSifu 1.2.2 is ready';
+            return 'SessionSifu 1.2.3 is ready';
         }
 
         _validSessionName(sessionName) {
@@ -308,9 +308,10 @@ const AutostartService = GObject.registerClass(
         }
 
         _restorePreviousWithDelay(removeAfterRestore) {
-            const restorePreviousDelay = this._settings.get_int('restore-previous-delay');
+            const restorePreviousDelay = this._settings.get_int('restore-previous-delay') * 1000;
             this._restorePreviousSourceId = GLib.timeout_add(GLib.PRIORITY_LOW, restorePreviousDelay,
                 () => {
+                    this._restorePreviousSourceId = 0;
                     const restoreSession = new RestoreSession.RestoreSession();
                     restoreSession.restorePreviousSession(removeAfterRestore);
                     return GLib.SOURCE_REMOVE;

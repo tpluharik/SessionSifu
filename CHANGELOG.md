@@ -2,6 +2,20 @@
 
 All notable SessionSifu changes are documented here.
 
+## 1.2.3
+
+- Paces previous-session launches instead of starting every saved application
+  concurrently, reducing startup pressure on Wayland, portals and Electron's
+  shared GPU process.
+- Waits 750 milliseconds after a new window appears before restoring its
+  monitor, workspace and geometry.
+- Stops all pending application and window restoration after logout, reboot or
+  shutdown is confirmed.
+- Sends saved file paths only to desktop launchers that declare at least one
+  real document MIME type; protocol-only launchers such as Signal are excluded.
+- Corrects the previous-session startup delay to use seconds as shown in the
+  preferences instead of interpreting the value as milliseconds.
+
 ## 1.2.2
 
 - Fixed a GNOME Shell crash when a window closed while its saved maximization

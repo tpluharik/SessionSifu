@@ -10,6 +10,7 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import * as SaveSession from './saveSession.js';
 import * as RestoreSession from './restoreSession.js';
+import * as RuntimeSafety from './runtimeSafety.js';
 import * as MoveSession from './moveSession.js';
 
 import * as Autoclose from './ui/autoclose.js';
@@ -485,9 +486,11 @@ export const OpenWindowsTracker = class {
 
     _onCancel() {
         this._log.debug(`User cancel endSessionDialog`);
+        RuntimeSafety.cancelShutdown();
     }
 
     _onConfirmedLogout(proxy, sender) {
+        RuntimeSafety.beginShutdown();
         try {
             this._log.debug(`Resetting windows-mapping before logout.`);
             this._settings.set_string('windows-mapping', '{}');
@@ -497,11 +500,13 @@ export const OpenWindowsTracker = class {
     }
 
     _onConfirmedReboot(proxy, sender) {
+        RuntimeSafety.beginShutdown();
         this._log.debug(`Resetting windows-mapping before reboot.`);
         this._settings.set_string('windows-mapping', '{}');
     }
 
     _onConfirmedShutdown(proxy, sender) {
+        RuntimeSafety.beginShutdown();
         this._log.debug(`Resetting windows-mapping before shutdown.`);
         this._settings.set_string('windows-mapping', '{}');
 

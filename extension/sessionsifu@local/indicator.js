@@ -24,6 +24,10 @@ import * as IconFinder from './utils/iconFinder.js';
 import {PrefsUtils} from './utils/prefsUtils.js';
 import * as Log from './utils/log.js';
 import * as Signal from './utils/signal.js';
+import {mayRestoreApplications} from './runtimeSafety.js';
+
+
+export const NEW_WINDOW_SETTLE_DELAY_MS = 750;
 
 
 export const AwsIndicator = GObject.registerClass(
@@ -78,7 +82,43 @@ class AwsIndicator extends PanelMenu.Button {
         this._closingWindows = new WeakSet();
         this._restoringWindows = new WeakMap();
         this._restoredWindows = new WeakSet();
+        this._windowSettleWaits = new Map();
 
+    }
+
+    _waitForWindowSettle(metaWindow) {
+        if (this._isDestroyed || this._closingWindows.has(metaWindow) ||
+            !mayRestoreApplications())
+            return Promise.resolve(false);
+
+        const pending = this._windowSettleWaits.get(metaWindow);
+        if (pending)
+            return pending.promise;
+
+        let finish;
+        const promise = new Promise(resolve => {
+            finish = resolve;
+        });
+        const sourceId = GLib.timeout_add(
+            GLib.PRIORITY_LOW,
+            NEW_WINDOW_SETTLE_DELAY_MS,
+            () => {
+                this._windowSettleWaits.delete(metaWindow);
+                finish(!this._isDestroyed && !this._closingWindows.has(metaWindow) &&
+                    mayRestoreApplications());
+                return GLib.SOURCE_REMOVE;
+            });
+        this._windowSettleWaits.set(metaWindow, {sourceId, finish, promise});
+        return promise;
+    }
+
+    _cancelWindowSettle(metaWindow) {
+        const pending = this._windowSettleWaits.get(metaWindow);
+        if (!pending)
+            return;
+        GLib.Source.remove(pending.sourceId);
+        this._windowSettleWaits.delete(metaWindow);
+        pending.finish(false);
     }
 
     async _restoreWindowOnce(metaWindow, savedWindowSessions) {
@@ -92,6 +132,8 @@ class AwsIndicator extends PanelMenu.Button {
 
         const operation = (async () => {
             try {
+                if (!await this._waitForWindowSettle(metaWindow))
+                    return false;
                 const restored = await this._moveSession.moveWindowByMetaWindow(
                     metaWindow, savedWindowSessions);
                 if (restored)
@@ -201,6 +243,7 @@ class AwsIndicator extends PanelMenu.Button {
         */
         let unmanagingId = metaWindow.connect('unmanaging', () => {
             this._closingWindows.add(metaWindow);
+            this._cancelWindowSettle(metaWindow);
             this._moveSession.cancelWindow(metaWindow);
             // Fix ../gobject/gsignal.c:2732: instance '0x55629xxxxxx' has no handler with id '11000' when disable this extension right after restore apps
             this._signal.disconnectSafely(metaWindowActor, firstFrameId);
@@ -563,6 +606,15 @@ class AwsIndicator extends PanelMenu.Button {
 
     destroy() {
         this._isDestroyed = true;
+
+        if (this._windowSettleWaits) {
+            for (const [metaWindow, pending] of this._windowSettleWaits) {
+                GLib.Source.remove(pending.sourceId);
+                pending.finish(false);
+                this._windowSettleWaits.delete(metaWindow);
+            }
+            this._windowSettleWaits = null;
+        }
 
         if (this.monitors) {
             this.monitors.forEach ((monitor) => {
