@@ -4,7 +4,7 @@ set -eu
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 extension_dir="$project_dir/extension/sessionsifu@local"
 dist_dir="$project_dir/dist"
-package="$dist_dir/sessionsifu_1.0.1_all.deb"
+package="$dist_dir/sessionsifu_1.0.2_all.deb"
 stage=$(mktemp -d /tmp/sessionsifu-package.XXXXXX)
 trap 'rm -rf -- "$stage"' EXIT HUP INT TERM
 chmod 0755 "$stage"
@@ -27,6 +27,7 @@ mkdir -p "$stage/etc/xdg/autostart"
 mkdir -p "$stage/usr/share/icons/hicolor/scalable/apps"
 mkdir -p "$stage/usr/share/gnome-shell/extensions/sessionsifu@local"
 mkdir -p "$stage/usr/share/glib-2.0/schemas"
+mkdir -p "$stage/usr/share/sessionsifu"
 mkdir -p "$stage/usr/share/doc/sessionsifu"
 
 install -m 0644 "$project_dir/packaging/control" "$stage/DEBIAN/control"
@@ -38,6 +39,8 @@ install -m 0644 "$project_dir/app/org.gnome.SessionSifu.Autostart.desktop" "$sta
 install -m 0644 "$project_dir/app/org.gnome.SessionSifu.svg" "$stage/usr/share/icons/hicolor/scalable/apps/org.gnome.SessionSifu.svg"
 install -m 0644 "$extension_dir/schemas/org.gnome.shell.extensions.sessionsifu.gschema.xml" "$stage/usr/share/glib-2.0/schemas/org.gnome.shell.extensions.sessionsifu.gschema.xml"
 cp -a "$extension_dir/." "$stage/usr/share/gnome-shell/extensions/sessionsifu@local/"
+(cd "$extension_dir" && zip -qr "$stage/usr/share/sessionsifu/sessionsifu@local.shell-extension.zip" .)
+chmod 0644 "$stage/usr/share/sessionsifu/sessionsifu@local.shell-extension.zip"
 find "$stage/usr/share/gnome-shell/extensions/sessionsifu@local" -type d -exec chmod 0755 {} \;
 find "$stage/usr/share/gnome-shell/extensions/sessionsifu@local" -type f -exec chmod 0644 {} \;
 chmod 0755 "$stage/usr/share/gnome-shell/extensions/sessionsifu@local/template/launch-app.sh"

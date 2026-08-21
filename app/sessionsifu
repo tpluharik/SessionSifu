@@ -67,6 +67,26 @@ def settings() -> Gio.Settings:
     return Gio.Settings.new_full(_schema(), None, None)
 
 
+def shell_settings() -> Gio.Settings:
+    return Gio.Settings.new("org.gnome.shell")
+
+
+def schedule_extension_enable() -> None:
+    config = shell_settings()
+    enabled = list(config.get_strv("enabled-extensions"))
+    disabled = list(config.get_strv("disabled-extensions"))
+    if UUID not in enabled:
+        enabled.append(UUID)
+        config.set_strv("enabled-extensions", enabled)
+    if UUID in disabled:
+        config.set_strv("disabled-extensions", [item for item in disabled if item != UUID])
+    Gio.Settings.sync()
+
+
+def extension_scheduled() -> bool:
+    return UUID in shell_settings().get_strv("enabled-extensions")
+
+
 def proxy(timeout: int = 2000) -> Gio.DBusProxy:
     result = Gio.DBusProxy.new_for_bus_sync(
         Gio.BusType.SESSION,
@@ -91,17 +111,56 @@ def call(method: str, parameters: GLib.Variant | None = None, timeout: int = 500
     ).unpack()[0]
 
 
-def extension_enabled() -> bool:
-    completed = subprocess.run(
-        ["gnome-extensions", "info", UUID],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    return completed.returncode == 0 and "STATE: ENABLED" in completed.stdout.upper()
+def extension_state() -> tuple[str, str]:
+    try:
+        completed = subprocess.run(
+            ["gnome-extensions", "info", UUID],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        return "unavailable", str(error)
+
+    message = (completed.stderr or completed.stdout).strip()
+    if completed.returncode != 0:
+        return ("pending" if extension_scheduled() else "missing"), message
+    if "STATE: ENABLED" in completed.stdout.upper():
+        return "enabled", message
+    return "disabled", message
+
+
+def extension_bundle() -> Path | None:
+    override = os.environ.get("SESSIONSIFU_EXTENSION_BUNDLE")
+    candidates = [
+        Path(override) if override else None,
+        Path("/usr/share/sessionsifu/sessionsifu@local.shell-extension.zip"),
+    ]
+    return next((path for path in candidates if path is not None and path.is_file()), None)
 
 
 def enable_extension() -> tuple[bool, str]:
+    state, state_message = extension_state()
+    installed = False
+    if state == "unavailable":
+        return False, state_message
+    if state == "pending":
+        return True, "Extension is ready. Log out and back in once to start it."
+    if state == "missing":
+        bundle = extension_bundle()
+        if bundle is None:
+            return False, "The bundled GNOME Shell extension is missing; reinstall SessionSifu."
+        completed = subprocess.run(
+            ["gnome-extensions", "install", "--force", str(bundle)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            message = (completed.stderr or completed.stdout).strip()
+            return False, message or "Could not install the GNOME Shell extension."
+        installed = True
+
     completed = subprocess.run(
         ["gnome-extensions", "enable", UUID],
         check=False,
@@ -109,7 +168,12 @@ def enable_extension() -> tuple[bool, str]:
         text=True,
     )
     message = (completed.stderr or completed.stdout).strip()
-    return completed.returncode == 0, message
+    if completed.returncode != 0:
+        if installed:
+            schedule_extension_enable()
+            return True, "Extension installed. Log out and back in once to start it."
+        return False, message
+    return True, "Extension installed and enabled." if installed else "Extension enabled."
 
 
 class ManagerWindow(Adw.ApplicationWindow):
@@ -229,10 +293,10 @@ class ManagerWindow(Adw.ApplicationWindow):
     def _enable_extension(self, _button) -> None:
         ok, message = enable_extension()
         if ok:
-            self._message("Extension enabled. If the icon does not appear, log out and back in once.")
+            self._message(message or "Extension enabled.")
         else:
             self._message(message or "Could not enable the extension. Log out and back in, then try again.")
-        GLib.timeout_add(600, self._refresh_once)
+        GLib.timeout_add(1200, self._refresh_once)
 
     def _refresh_once(self) -> bool:
         self.refresh()
@@ -299,14 +363,19 @@ class ManagerWindow(Adw.ApplicationWindow):
         except GLib.Error:
             pass
 
-        enabled = extension_enabled()
+        state, _state_message = extension_state()
         self.status_row.set_subtitle(
             "Enabled and connected" if live else
-            "Enabled; waiting for GNOME Shell" if enabled else
-            "Installed but not enabled"
+            "Enabled; starting GNOME integration" if state == "enabled" else
+            "Installed but not enabled" if state == "disabled" else
+            "Installed; log out and back in once" if state == "pending" else
+            "Ready to install for this login" if state == "missing" else
+            "GNOME extension manager is unavailable"
         )
         self.status_icon.set_from_icon_name("emblem-ok-symbolic" if live else "dialog-warning-symbolic")
-        self.enable_button.set_visible(not live)
+        self.enable_button.set_visible(not live and state != "pending")
+        self.enable_button.set_label("Install & Enable" if state == "missing" else "Enable")
+        self.enable_button.set_sensitive(state != "unavailable")
 
         sessions = self._session_rows() if live else []
         if not sessions:
