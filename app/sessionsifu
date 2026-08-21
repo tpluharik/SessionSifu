@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 
 import gi
 
@@ -27,8 +29,42 @@ DBUS_IFACE = "org.gnome.Shell.Extensions.SessionSifu.Control"
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$")
 
 
+def _schema() -> Gio.SettingsSchema:
+    """Find the schema without letting GLib abort on a missing global entry."""
+    default_source = Gio.SettingsSchemaSource.get_default()
+    override = os.environ.get("SESSIONSIFU_SCHEMA_DIR")
+    source_path = Path(__file__).resolve()
+    candidates = [
+        Path(override) if override else None,
+        Path("/usr/share/gnome-shell/extensions") / UUID / "schemas",
+        source_path.parent.parent / "extension" / UUID / "schemas",
+    ]
+
+    for directory in candidates:
+        if directory is None or not (directory / "gschemas.compiled").is_file():
+            continue
+        try:
+            source = Gio.SettingsSchemaSource.new_from_directory(
+                str(directory), default_source, False
+            )
+        except GLib.Error:
+            continue
+        schema = source.lookup(SCHEMA_ID, False)
+        if schema is not None:
+            return schema
+
+    if default_source is not None:
+        schema = default_source.lookup(SCHEMA_ID, True)
+        if schema is not None:
+            return schema
+
+    raise RuntimeError(
+        f"Settings schema {SCHEMA_ID} is unavailable; reinstall the SessionSifu package."
+    )
+
+
 def settings() -> Gio.Settings:
-    return Gio.Settings.new(SCHEMA_ID)
+    return Gio.Settings.new_full(_schema(), None, None)
 
 
 def proxy(timeout: int = 2000) -> Gio.DBusProxy:

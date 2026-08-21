@@ -24,7 +24,7 @@ editors and many GNOME applications already do.
 ## Install
 
 ```sh
-sudo apt install ./dist/sessionsifu_1.0.0_all.deb
+sudo apt install ./dist/sessionsifu_1.0.1_all.deb
 ```
 
 Open **SessionSifu** from the application grid and select **Enable**. A
