@@ -8,16 +8,18 @@ import * as Log from './utils/log.js';
 import * as SaveSession from './saveSession.js';
 
 
-export const SNAPSHOT_PATTERN = /^auto-\d{8}-\d{6}\.json$/;
+// Keep accepting legacy second-resolution names while ensuring that rapid
+// manual saves do not overwrite one another in the same second.
+export const SNAPSHOT_PATTERN = /^auto-\d{8}-\d{6}(?:-\d{3})?\.json$/;
 
-function snapshotName() {
-    const now = new Date();
-    const compact = now.toISOString()
+export function snapshotName(now = new Date()) {
+    const iso = now.toISOString();
+    const compact = iso
         .replaceAll('-', '')
         .replaceAll(':', '')
         .replace('T', '-')
         .slice(0, 15);
-    return `auto-${compact}.json`;
+    return `auto-${compact}-${iso.slice(20, 23)}.json`;
 }
 
 export function snapshotPath(name) {

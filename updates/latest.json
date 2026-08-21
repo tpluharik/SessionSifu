@@ -1,7 +1,7 @@
 {
-  "version": "1.2.3",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_1.2.3_all.deb",
-  "sha256": "761e908e1fee3cf5c4fbd2ed1b444ef1c1dafed0442f56d55c0a288c4d8fea5f",
-  "size": 222076,
-  "notes": "Paces application restores, lets new windows settle, blocks protocol-only file launches and cancels restore work during shutdown."
+  "version": "1.3.0",
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_1.3.0_all.deb",
+  "sha256": "2a86eaf1612030c70d9666e41f14d0f52fce4942588275636ae8d80ca8b0c1e1",
+  "size": 223390,
+  "notes": "Adds the new yin-yang SessionSifu identity and prevents same-second snapshot filename collisions."
 }

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="190" viewBox="0 0 720 190" role="img" aria-labelledby="title desc">
+  <title id="title">SessionSifu</title>
+  <desc id="desc">SessionSifu wordmark beside a yin-yang session restoration symbol.</desc>
+  <defs>
+    <linearGradient id="markTile" x1="20" y1="18" x2="154" y2="164" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#29146f"/>
+      <stop offset="1" stop-color="#12265f"/>
+    </linearGradient>
+    <linearGradient id="markFlow" x1="31" y1="42" x2="144" y2="139" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5267ff"/>
+      <stop offset="1" stop-color="#16d9df"/>
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(10 10)">
+    <rect width="170" height="170" rx="42" fill="url(#markTile)"/>
+    <rect x="2" y="2" width="166" height="166" rx="40" fill="none" stroke="#6678ff" stroke-opacity=".38" stroke-width="3"/>
+    <path d="M34 65A58 58 0 0 1 137 55" fill="none" stroke="url(#markFlow)" stroke-width="11" stroke-linecap="round"/>
+    <path d="m134 42 14 16-20 6z" fill="#19d8df"/>
+    <path d="M137 107A58 58 0 0 1 34 117" fill="none" stroke="url(#markFlow)" stroke-width="11" stroke-linecap="round"/>
+    <path d="m37 130-14-16 20-6z" fill="#5267ff"/>
+    <circle cx="85" cy="85" r="43" fill="#f8f3df"/>
+    <path d="M85 42a43 43 0 0 1 0 86 21.5 21.5 0 0 0 0-43 21.5 21.5 0 0 1 0-43Z" fill="#17245d"/>
+    <circle cx="85" cy="63.5" r="7" fill="#f8f3df"/>
+    <circle cx="85" cy="106.5" r="7" fill="#17245d"/>
+  </g>
+
+  <text x="213" y="112" fill="#20135f" font-family="Cantarell, Inter, sans-serif" font-size="76" font-weight="700" letter-spacing="-2">Session<tspan fill="#0aaebc">Sifu</tspan></text>
+  <text x="218" y="145" fill="#586174" font-family="Cantarell, Inter, sans-serif" font-size="20" font-weight="500" letter-spacing="2.8">GNOME SESSION RESTORATION</text>
+</svg>

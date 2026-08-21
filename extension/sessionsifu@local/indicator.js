@@ -52,9 +52,9 @@ class AwsIndicator extends PanelMenu.Button {
 
         // TODO backup path
 
-        // Add an icon
+        // Use the SessionSifu yin-yang mark so the panel identity matches the app.
         let icon = new St.Icon({
-            gicon: IconFinder.find('restore-symbolic.svg'),
+            gicon: IconFinder.find('sessionsifu-symbolic.svg'),
             style_class: 'popup-menu-icon'
         });
         this.add_child(icon);

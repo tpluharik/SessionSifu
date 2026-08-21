@@ -2,6 +2,18 @@
 
 All notable SessionSifu changes are documented here.
 
+## 1.3.0
+
+- Introduced a dedicated SessionSifu identity based on interlocking yin-yang
+  session and restoration shapes.
+- Replaced the generic application and top-bar restore icons with matching
+  SessionSifu artwork and added a reusable horizontal project logo.
+- Added the generated visual concept to the branding sources for future design
+  work.
+- Prevented rapid automatic or manual snapshots created within the same second
+  from overwriting each other by adding millisecond precision while retaining
+  compatibility with existing history filenames.
+
 ## 1.2.3
 
 - Paces previous-session launches instead of starting every saved application

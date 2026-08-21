@@ -33,15 +33,15 @@ settings.set_int("continuous-save-interval", 300)
 manifest = module.parse_update_manifest(
     json.dumps(
         {
-            "version": "1.2.3",
-            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_1.2.3_all.deb",
+            "version": "1.3.0",
+            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_1.3.0_all.deb",
             "sha256": "a" * 64,
             "size": 12345,
             "notes": "Test update",
         }
     )
 )
-assert manifest["version"] == "1.2.3"
+assert manifest["version"] == "1.3.0"
 assert manifest["size"] == 12345
 
 
@@ -124,7 +124,7 @@ try:
     module.parse_update_manifest(
         json.dumps(
             {
-                "version": "1.2.3",
+                "version": "1.3.0",
                 "package_url": "https://example.com/sessionsifu.deb",
                 "sha256": "a" * 64,
                 "size": 12345,
