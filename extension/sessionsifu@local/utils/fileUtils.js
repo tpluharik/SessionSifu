@@ -17,6 +17,8 @@ export const user_config = GLib.get_user_config_dir();
 export const config_path_base = GLib.build_filenamev([user_config, 'sessionsifu']);
 // The session list
 export const sessions_path = GLib.build_filenamev([config_path_base, 'sessions']);
+export const history_path = GLib.build_filenamev([config_path_base, 'history']);
+export const history_limit = 5;
 export const sessions_backup_folder_name = 'backups';
 const sessions_backup_path = GLib.build_filenamev([sessions_path, sessions_backup_folder_name]);
 

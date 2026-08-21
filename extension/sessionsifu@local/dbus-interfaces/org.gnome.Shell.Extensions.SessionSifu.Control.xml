@@ -21,6 +21,16 @@
         <method name="ListSessions">
             <arg type="s" name="sessions_json" direction="out"/>
         </method>
+        <method name="ListHistory">
+            <arg type="s" name="history_json" direction="out"/>
+        </method>
+        <method name="SaveHistoryNow">
+            <arg type="s" name="message" direction="out"/>
+        </method>
+        <method name="RestoreHistory">
+            <arg type="s" name="snapshot_name" direction="in"/>
+            <arg type="s" name="message" direction="out"/>
+        </method>
         <method name="OpenManager">
             <arg type="s" name="message" direction="out"/>
         </method>

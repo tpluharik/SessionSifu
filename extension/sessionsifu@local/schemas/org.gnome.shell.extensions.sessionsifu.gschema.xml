@@ -141,6 +141,22 @@
       </description>
     </key>
 
+    <key name="continuous-save-enabled" type="b">
+      <default>true</default>
+      <summary>Continuously save rolling desktop snapshots</summary>
+      <description>
+        Save complete restorable desktop snapshots on a timer. SessionSifu keeps
+        only the five newest snapshots in its private history directory.
+      </description>
+    </key>
+
+    <key name="continuous-save-interval" type="i">
+      <default>300</default>
+      <range min="60" max="3600"/>
+      <summary>Automatic snapshot interval in seconds</summary>
+      <description>Time between complete rolling desktop snapshots.</description>
+    </key>
+
     <key name="debugging-mode" type="b">
       <default>false</default>
       <summary>Enable or disable the debugging mode</summary>

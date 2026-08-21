@@ -4,12 +4,16 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
+import threading
 import time
+import urllib.parse
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -21,12 +25,104 @@ from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
+CURRENT_VERSION = "1.1.0"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
 DBUS_PATH = "/org/gnome/Shell/Extensions/SessionSifu"
 DBUS_IFACE = "org.gnome.Shell.Extensions.SessionSifu.Control"
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$")
+UPDATE_MANIFEST_URL = (
+    "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/latest.json"
+)
+UPDATE_REPOSITORY_PREFIX = "/tpluharik/SessionSifu/"
+MAX_MANIFEST_BYTES = 64 * 1024
+MAX_UPDATE_BYTES = 50 * 1024 * 1024
+
+
+def version_tuple(version: str) -> tuple[int, int, int]:
+    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", version.strip())
+    if not match:
+        raise ValueError(f"Invalid SessionSifu version: {version}")
+    return tuple(int(part) for part in match.groups())
+
+
+def parse_update_manifest(contents: bytes | str) -> dict:
+    if isinstance(contents, bytes):
+        contents = contents.decode("utf-8")
+    manifest = json.loads(contents)
+    version_tuple(manifest["version"])
+    package_url = urllib.parse.urlparse(manifest["package_url"])
+    if (
+        package_url.scheme != "https"
+        or package_url.hostname != "raw.githubusercontent.com"
+        or not package_url.path.startswith(UPDATE_REPOSITORY_PREFIX)
+        or not package_url.path.endswith(".deb")
+    ):
+        raise ValueError("Update package must be stored in the SessionSifu GitHub repository")
+    if not re.fullmatch(r"[0-9a-f]{64}", manifest["sha256"]):
+        raise ValueError("Update manifest has an invalid SHA-256 digest")
+    size = int(manifest["size"])
+    if size <= 0 or size > MAX_UPDATE_BYTES:
+        raise ValueError("Update package size is outside the allowed range")
+    return {
+        "version": manifest["version"],
+        "package_url": manifest["package_url"],
+        "sha256": manifest["sha256"],
+        "size": size,
+        "notes": str(manifest.get("notes", "")),
+    }
+
+
+def fetch_update_manifest(timeout: int = 8) -> dict:
+    request = urllib.request.Request(
+        UPDATE_MANIFEST_URL,
+        headers={"User-Agent": f"SessionSifu/{CURRENT_VERSION}"},
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        contents = response.read(MAX_MANIFEST_BYTES + 1)
+    if len(contents) > MAX_MANIFEST_BYTES:
+        raise ValueError("Update manifest is too large")
+    return parse_update_manifest(contents)
+
+
+def download_update(manifest: dict, timeout: int = 20) -> Path:
+    cache_dir = Path(GLib.get_user_cache_dir()) / "sessionsifu" / "updates"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    target = cache_dir / f"sessionsifu_{manifest['version']}_all.deb"
+    temporary = target.with_suffix(".deb.part")
+    request = urllib.request.Request(
+        manifest["package_url"],
+        headers={"User-Agent": f"SessionSifu/{CURRENT_VERSION}"},
+    )
+    digest = hashlib.sha256()
+    received = 0
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            final_url = urllib.parse.urlparse(response.geturl())
+            if (
+                final_url.scheme != "https"
+                or final_url.hostname != "raw.githubusercontent.com"
+                or not final_url.path.startswith(UPDATE_REPOSITORY_PREFIX)
+            ):
+                raise ValueError("GitHub redirected the update to an untrusted location")
+            with temporary.open("wb") as output:
+                while chunk := response.read(64 * 1024):
+                    received += len(chunk)
+                    if received > MAX_UPDATE_BYTES:
+                        raise ValueError("Update package exceeds the allowed size")
+                    digest.update(chunk)
+                    output.write(chunk)
+        if received != manifest["size"]:
+            raise ValueError("Downloaded update size does not match the manifest")
+        if digest.hexdigest() != manifest["sha256"]:
+            raise ValueError("Downloaded update failed SHA-256 verification")
+        temporary.chmod(0o644)
+        temporary.replace(target)
+        return target
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def _schema() -> Gio.SettingsSchema:
@@ -139,14 +235,39 @@ def extension_bundle() -> Path | None:
     return next((path for path in candidates if path is not None and path.is_file()), None)
 
 
+def user_extension_version() -> str | None:
+    metadata_path = (
+        Path(GLib.get_user_data_dir())
+        / "gnome-shell"
+        / "extensions"
+        / UUID
+        / "metadata.json"
+    )
+    try:
+        return str(json.loads(metadata_path.read_text())["version-name"])
+    except (OSError, KeyError, TypeError, json.JSONDecodeError):
+        return None
+
+
+def extension_needs_update() -> bool:
+    installed = user_extension_version()
+    if installed is None:
+        return False
+    try:
+        return version_tuple(installed) < version_tuple(CURRENT_VERSION)
+    except ValueError:
+        return True
+
+
 def enable_extension() -> tuple[bool, str]:
     state, state_message = extension_state()
     installed = False
+    updating = extension_needs_update()
     if state == "unavailable":
         return False, state_message
-    if state == "pending":
+    if state == "pending" and not updating:
         return True, "Extension is ready. Log out and back in once to start it."
-    if state == "missing":
+    if state == "missing" or updating:
         bundle = extension_bundle()
         if bundle is None:
             return False, "The bundled GNOME Shell extension is missing; reinstall SessionSifu."
@@ -160,6 +281,9 @@ def enable_extension() -> tuple[bool, str]:
             message = (completed.stderr or completed.stdout).strip()
             return False, message or "Could not install the GNOME Shell extension."
         installed = True
+        if updating:
+            schedule_extension_enable()
+            return True, "GNOME integration updated. Log out and back in once to load it."
 
     completed = subprocess.run(
         ["gnome-extensions", "enable", UUID],
@@ -259,6 +383,50 @@ class ManagerWindow(Adw.ApplicationWindow):
         behavior_group.add(self.indicator_switch)
         content.append(behavior_group)
 
+        snapshot_group = Adw.PreferencesGroup(
+            title="Automatic snapshots",
+            description="Keeps the five newest complete desktop snapshots in SessionSifu's dedicated history.",
+        )
+        self.snapshot_switch = Adw.SwitchRow(
+            title="Continuously save this desktop",
+            subtitle="Creates the first snapshot shortly after login",
+        )
+        self.snapshot_switch.set_active(self._settings.get_boolean("continuous-save-enabled"))
+        self.snapshot_switch.connect("notify::active", self._toggle_continuous_save)
+        snapshot_group.add(self.snapshot_switch)
+
+        self.snapshot_intervals = [300, 600, 900, 1800]
+        self.snapshot_interval_row = Adw.ComboRow(title="Snapshot frequency")
+        self.snapshot_interval_row.set_model(
+            Gtk.StringList.new(["Every 5 minutes", "Every 10 minutes", "Every 15 minutes", "Every 30 minutes"])
+        )
+        configured_interval = self._settings.get_int("continuous-save-interval")
+        selected = min(
+            range(len(self.snapshot_intervals)),
+            key=lambda index: abs(self.snapshot_intervals[index] - configured_interval),
+        )
+        self.snapshot_interval_row.set_selected(selected)
+        self.snapshot_interval_row.set_sensitive(self.snapshot_switch.get_active())
+        self.snapshot_interval_row.connect("notify::selected", self._snapshot_interval_changed)
+        snapshot_group.add(self.snapshot_interval_row)
+
+        save_now_row = Adw.ActionRow(
+            title="Create a snapshot now",
+            subtitle="Captures applications, windows, workspaces, monitors and geometry",
+        )
+        save_now_button = Gtk.Button(label="Save Now", valign=Gtk.Align.CENTER)
+        save_now_button.connect("clicked", self._save_snapshot)
+        save_now_row.add_suffix(save_now_button)
+        snapshot_group.add(save_now_row)
+        content.append(snapshot_group)
+
+        self.history_group = Adw.PreferencesGroup(
+            title="Automatic history",
+            description="The oldest snapshot is removed when a sixth snapshot is created.",
+        )
+        self._history_rows_widgets: list[Adw.ActionRow] = []
+        content.append(self.history_group)
+
         self.sessions_group = Adw.PreferencesGroup(
             title="Saved sessions",
             description="Restoring skips applications that are already running.",
@@ -274,6 +442,22 @@ class ManagerWindow(Adw.ApplicationWindow):
         limits_row.add_prefix(Gtk.Image.new_from_icon_name("dialog-information-symbolic"))
         limits_group.add(limits_row)
         content.append(limits_group)
+
+        update_group = Adw.PreferencesGroup(
+            title="Updates",
+            description="Checks a hash-verified package manifest stored in the SessionSifu GitHub repository.",
+        )
+        self.update_row = Adw.ActionRow(
+            title="SessionSifu software",
+            subtitle=f"Version {CURRENT_VERSION} · GitHub main",
+        )
+        self.update_button = Gtk.Button(label="Check for Updates", valign=Gtk.Align.CENTER)
+        self.update_button.connect("clicked", self._update_clicked)
+        self.update_row.add_suffix(self.update_button)
+        update_group.add(self.update_row)
+        content.append(update_group)
+        self._available_update: dict | None = None
+        self._downloaded_update: Path | None = None
 
         self.refresh()
 
@@ -346,25 +530,130 @@ class ManagerWindow(Adw.ApplicationWindow):
     def _toggle_indicator(self, row, _param) -> None:
         self._settings.set_boolean("show-indicator", row.get_active())
 
+    def _toggle_continuous_save(self, row, _param) -> None:
+        enabled = row.get_active()
+        self._settings.set_boolean("continuous-save-enabled", enabled)
+        self.snapshot_interval_row.set_sensitive(enabled)
+
+    def _snapshot_interval_changed(self, row, _param) -> None:
+        selected = row.get_selected()
+        if selected < len(self.snapshot_intervals):
+            self._settings.set_int("continuous-save-interval", self.snapshot_intervals[selected])
+
+    def _save_snapshot(self, _button) -> None:
+        self._call("SaveHistoryNow")
+        GLib.timeout_add(1400, self._refresh_once)
+
+    def _restore_history(self, _button, name: str) -> None:
+        self._call("RestoreHistory", GLib.Variant("(s)", (name,)))
+
     def _session_rows(self) -> list[dict]:
         try:
             return json.loads(call("ListSessions"))
         except (GLib.Error, json.JSONDecodeError):
             return []
 
+    def _history_rows(self) -> list[dict]:
+        try:
+            return json.loads(call("ListHistory"))
+        except (GLib.Error, json.JSONDecodeError):
+            return []
+
+    def _update_clicked(self, _button) -> None:
+        if self._downloaded_update is not None and self._downloaded_update.is_file():
+            try:
+                Gio.AppInfo.launch_default_for_uri(self._downloaded_update.as_uri(), None)
+            except GLib.Error as error:
+                self._message(f"Downloaded to {self._downloaded_update}: {error.message}")
+            return
+        if self._available_update is not None:
+            self._download_available_update()
+            return
+        self.update_button.set_sensitive(False)
+        self.update_row.set_subtitle("Checking the SessionSifu GitHub repository…")
+
+        def worker() -> None:
+            try:
+                manifest = fetch_update_manifest()
+                GLib.idle_add(self._finish_update_check, manifest, None)
+            except Exception as error:
+                GLib.idle_add(self._finish_update_check, None, str(error))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_update_check(self, manifest: dict | None, error: str | None) -> bool:
+        self.update_button.set_sensitive(True)
+        if error:
+            self.update_row.set_subtitle(f"Update check failed: {error}")
+            self.update_button.set_label("Try Again")
+            self.update_button.remove_css_class("suggested-action")
+            return GLib.SOURCE_REMOVE
+        if version_tuple(manifest["version"]) <= version_tuple(CURRENT_VERSION):
+            self.update_row.set_subtitle(f"Version {CURRENT_VERSION} is current")
+            self.update_button.set_label("Check Again")
+            self.update_button.remove_css_class("suggested-action")
+            return GLib.SOURCE_REMOVE
+
+        self._available_update = manifest
+        notes = manifest["notes"] or "A newer verified package is available."
+        self.update_row.set_subtitle(f"Version {manifest['version']} available · {notes}")
+        self.update_button.set_label("Download & Install")
+        self.update_button.add_css_class("suggested-action")
+        return GLib.SOURCE_REMOVE
+
+    def _download_available_update(self) -> None:
+        manifest = self._available_update
+        self.update_button.set_sensitive(False)
+        self.update_row.set_subtitle(f"Downloading and verifying version {manifest['version']}…")
+
+        def worker() -> None:
+            try:
+                package = download_update(manifest)
+                GLib.idle_add(self._finish_update_download, package, None)
+            except Exception as error:
+                GLib.idle_add(self._finish_update_download, None, str(error))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_update_download(self, package: Path | None, error: str | None) -> bool:
+        self.update_button.set_sensitive(True)
+        if error:
+            self.update_row.set_subtitle(f"Update download failed: {error}")
+            self.update_button.set_label("Try Again")
+            self._available_update = None
+            self.update_button.remove_css_class("suggested-action")
+            return GLib.SOURCE_REMOVE
+
+        self._downloaded_update = package
+        self.update_row.set_subtitle("Verified package downloaded; approve it in the system installer")
+        self.update_button.set_label("Open Installer")
+        try:
+            Gio.AppInfo.launch_default_for_uri(package.as_uri(), None)
+        except GLib.Error as launch_error:
+            self._message(f"Downloaded to {package}: {launch_error.message}")
+        return GLib.SOURCE_REMOVE
+
     def refresh(self) -> None:
         for child in self._session_rows_widgets:
             self.sessions_group.remove(child)
         self._session_rows_widgets.clear()
+        for child in self._history_rows_widgets:
+            self.history_group.remove(child)
+        self._history_rows_widgets.clear()
 
-        live = False
+        ping_message = None
         try:
-            live = call("Ping") is not None
+            ping_message = call("Ping")
         except GLib.Error:
             pass
+        live = ping_message is not None
+        integration_current = ping_message == f"SessionSifu {CURRENT_VERSION} is ready"
 
         state, _state_message = extension_state()
+        integration_update = extension_needs_update()
         self.status_row.set_subtitle(
+            "Update GNOME integration, then log out and back in" if integration_update else
+            "Integration updated; log out and back in to load it" if live and not integration_current else
             "Enabled and connected" if live else
             "Enabled; starting GNOME integration" if state == "enabled" else
             "Installed but not enabled" if state == "disabled" else
@@ -372,10 +661,36 @@ class ManagerWindow(Adw.ApplicationWindow):
             "Ready to install for this login" if state == "missing" else
             "GNOME extension manager is unavailable"
         )
-        self.status_icon.set_from_icon_name("emblem-ok-symbolic" if live else "dialog-warning-symbolic")
-        self.enable_button.set_visible(not live and state != "pending")
-        self.enable_button.set_label("Install & Enable" if state == "missing" else "Enable")
+        self.status_icon.set_from_icon_name(
+            "emblem-ok-symbolic" if live and integration_current else "dialog-warning-symbolic"
+        )
+        self.enable_button.set_visible(
+            integration_update or (not live and state != "pending")
+        )
+        self.enable_button.set_label(
+            "Update Integration" if integration_update else
+            "Install & Enable" if state == "missing" else "Enable"
+        )
         self.enable_button.set_sensitive(state != "unavailable")
+
+        history = self._history_rows() if live and integration_current else []
+        if not history:
+            row = Adw.ActionRow(
+                title="No automatic snapshots yet" if integration_current else "Update the GNOME integration to start history",
+                subtitle="The first snapshot is created shortly after login." if integration_current else "The snapshot engine runs inside GNOME Shell.",
+            )
+            self.history_group.add(row)
+            self._history_rows_widgets.append(row)
+        else:
+            for item in history:
+                modified = datetime.fromtimestamp(item.get("modified", 0)).strftime("%Y-%m-%d %H:%M:%S")
+                row = Adw.ActionRow(title=f"Snapshot from {modified}")
+                restore = Gtk.Button(label="Restore", valign=Gtk.Align.CENTER)
+                restore.add_css_class("suggested-action")
+                restore.connect("clicked", self._restore_history, item["name"])
+                row.add_suffix(restore)
+                self.history_group.add(row)
+                self._history_rows_widgets.append(row)
 
         sessions = self._session_rows() if live else []
         if not sessions:

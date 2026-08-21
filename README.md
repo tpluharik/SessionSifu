@@ -10,7 +10,9 @@ It consists of:
 * a GNOME Shell 50 extension with a top-bar indicator;
 * a GTK 4/libadwaita session manager;
 * a command-line client;
-* an opt-in login restore helper; and
+* five-file rolling automatic session history;
+* an opt-in login restore helper;
+* a verified GitHub-backed update checker; and
 * a self-contained Debian package.
 
 ## Important boundary
@@ -24,7 +26,7 @@ editors and many GNOME applications already do.
 ## Install
 
 ```sh
-sudo apt install ./dist/sessionsifu_1.0.2_all.deb
+sudo apt install ./dist/sessionsifu_1.1.0_all.deb
 ```
 
 Open **SessionSifu** from the application grid and select **Enable**. A
@@ -39,15 +41,19 @@ sessionsifu --restore Work
 sessionsifu --list
 ```
 
-Session data is stored under `~/.config/sessionsifu/`. It contains
+Session data is stored under `~/.config/sessionsifu/`. Automatic snapshots are
+written to `~/.config/sessionsifu/history/` every five minutes by default, and
+only the five newest snapshots are retained. Session data contains
 window titles, application identifiers, launch commands, working directories,
-window geometry and process metadata. It is local to the user and is not sent
-anywhere.
+window geometry and process metadata. It stays local to the user. Checking for
+software updates contacts the project's GitHub repository; a downloaded package
+is opened only after its size and SHA-256 digest match the repository manifest.
 
 ## Build
 
 Run `./packaging/build-deb.sh`. The script validates the Python, JavaScript,
-desktop entries, JSON and GSettings schema before producing the package.
+desktop entries, JSON and GSettings schema before producing the package and the
+GitHub update-channel manifest.
 
 ## Origin and license
 

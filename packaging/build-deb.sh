@@ -4,7 +4,10 @@ set -eu
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 extension_dir="$project_dir/extension/sessionsifu@local"
 dist_dir="$project_dir/dist"
-package="$dist_dir/sessionsifu_1.0.2_all.deb"
+updates_dir="$project_dir/updates"
+version="1.1.0"
+package="$dist_dir/sessionsifu_${version}_all.deb"
+update_package="$updates_dir/sessionsifu_${version}_all.deb"
 stage=$(mktemp -d /tmp/sessionsifu-package.XXXXXX)
 trap 'rm -rf -- "$stage"' EXIT HUP INT TERM
 chmod 0755 "$stage"
@@ -51,4 +54,14 @@ find "$stage" -type d -exec chmod 0755 {} \;
 
 mkdir -p "$dist_dir"
 dpkg-deb --build --root-owner-group "$stage" "$package"
+mkdir -p "$updates_dir"
+install -m 0644 "$package" "$update_package"
+update_sha=$(sha256sum "$update_package" | cut -d ' ' -f 1)
+update_size=$(stat -c %s "$update_package")
+sed \
+    -e "s/@VERSION@/$version/g" \
+    -e "s/@SHA256@/$update_sha/g" \
+    -e "s/@SIZE@/$update_size/g" \
+    "$project_dir/packaging/latest.json.in" > "$updates_dir/latest.json"
 printf '%s\n' "$package"
+printf '%s\n' "$updates_dir/latest.json"

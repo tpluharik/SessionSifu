@@ -1,5 +1,5 @@
 Package: sessionsifu
-Version: 1.0.2
+Version: 1.1.0
 Section: gnome
 Priority: optional
 Architecture: all
@@ -9,4 +9,5 @@ Suggests: ydotool
 Description: save and restore complete GNOME desktop layouts
  SessionSifu records running applications and window state, then relaunches
  applications and reconstructs their workspaces, monitors, geometry and state.
- It includes a GNOME Shell 50 extension, GTK 4 manager and top-bar indicator.
+ It includes rolling automatic snapshots, a GNOME Shell 50 extension, GTK 4
+ manager, top-bar indicator and verified updates from the project repository.

@@ -77,11 +77,12 @@ export const SaveSession = class {
                 await this.backupExistingSessionIfNecessary(sessionName, baseDir);
             }
 
-            await this._saveSessionConfigAsync(sessionConfig, baseDir);
+            return await this._saveSessionConfigAsync(sessionConfig, baseDir);
 
             // TODO saved Notification
         } catch (error) {
             this._log.error(error);
+            return false;
         }
     }
 

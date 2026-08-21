@@ -1,0 +1,7 @@
+{
+  "version": "1.1.0",
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_1.1.0_all.deb",
+  "sha256": "5df77f6bb100c51148bfb9bda26572d10ad719e73b431a449cf212f6be99d17c",
+  "size": 204470,
+  "notes": "Adds five-file rolling session history and secure in-app updates."
+}

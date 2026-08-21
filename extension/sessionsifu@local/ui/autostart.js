@@ -19,6 +19,7 @@ import * as Autoclose from './autoclose.js';
 import * as RestoreSession from '../restoreSession.js';
 import * as SaveSession from '../saveSession.js';
 import * as Constants from '../constants.js';
+import * as ContinuousSaver from '../continuousSaver.js';
 
 import * as Log from '../utils/log.js';
 import {PrefsUtils} from '../utils/prefsUtils.js';
@@ -109,10 +110,11 @@ const AutostartService = GObject.registerClass(
 
             this._settings = PrefsUtils.getSettings();
             this._sessionName = this._settings.get_string(Constants.PREFS_SETTING_AUTORESTORE_SESSIONS);
+            this._continuousSaver = new ContinuousSaver.ContinuousSaver(this._settings);
         }
 
         Ping() {
-            return 'SessionSifu 1.0.2 is ready';
+            return 'SessionSifu 1.1.0 is ready';
         }
 
         _validSessionName(sessionName) {
@@ -181,6 +183,27 @@ const AutostartService = GObject.registerClass(
             }
             sessions.sort((a, b) => b.modified - a.modified);
             return JSON.stringify(sessions);
+        }
+
+        ListHistory() {
+            return JSON.stringify(ContinuousSaver.listSnapshots());
+        }
+
+        SaveHistoryNow() {
+            this._continuousSaver.saveNow(true).catch(error => this._log.error(error));
+            return 'Saving an automatic snapshot now';
+        }
+
+        RestoreHistory(snapshotName) {
+            const path = ContinuousSaver.snapshotPath(snapshotName);
+            if (!path || !GLib.file_test(path, GLib.FileTest.EXISTS))
+                return 'ERROR: Automatic snapshot does not exist';
+
+            Autoclose.autocloseObject.sessionClosedByUser = false;
+            RestoreSession.restoreSessionObject.restoringApps = new Map();
+            const restorer = new RestoreSession.RestoreSession();
+            restorer.restoreSessionFromFile(path);
+            return `Restoring automatic snapshot '${snapshotName}'`;
         }
 
         OpenManager() {
@@ -295,6 +318,10 @@ const AutostartService = GObject.registerClass(
         }
 
         _disable() {
+            if (this._continuousSaver) {
+                this._continuousSaver.destroy();
+                this._continuousSaver = null;
+            }
             if (this._autostartDialog) {
                 this._autostartDialog.destroy();
                 this._autostartDialog = null;
