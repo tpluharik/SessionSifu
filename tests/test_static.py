@@ -16,6 +16,9 @@ symbolic_icon = extension / "icons" / "sessionsifu-symbolic.svg"
 for artwork in (app_icon, project_logo, symbolic_icon):
     assert artwork.is_file()
     assert ET.parse(artwork).getroot().tag.endswith("svg")
+symbolic_source = symbolic_icon.read_text()
+assert "<mask" not in symbolic_source
+assert "fill-rule=\"evenodd\"" in symbolic_source
 assert (root / "branding" / "sessionsifu-yinyang-concept.png").read_bytes().startswith(
     b"\x89PNG\r\n\x1a\n"
 )
@@ -24,8 +27,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "1.3.0"
-assert metadata["version"] == 2
+assert metadata["version-name"] == "1.3.1"
+assert metadata["version"] == 3
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -45,7 +48,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="1.3.0"' in build_script
+assert 'version="1.3.1"' in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
 assert "tests/open-files-smoke.js" in build_script
@@ -85,7 +88,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "1.3.0"' in app_source
+assert 'CURRENT_VERSION = "1.3.1"' in app_source
 assert "self.snapshot_intervals = [30, 60, 300, 600, 900, 1800]" in app_source
 assert "raw.githubusercontent.com/tpluharik/SessionSifu" in app_source
 assert "Downloaded update failed SHA-256 verification" in app_source

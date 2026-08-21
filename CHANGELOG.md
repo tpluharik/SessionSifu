@@ -2,6 +2,12 @@
 
 All notable SessionSifu changes are documented here.
 
+## 1.3.1
+
+- Fixed the GNOME top-bar icon appearing as a plain white circle.
+- Rebuilt the symbolic yin-yang mark from Shell-safe filled paths without SVG
+  masks or a closed outer ring, preserving the transparent half at 16 pixels.
+
 ## 1.3.0
 
 - Introduced a dedicated SessionSifu identity based on interlocking yin-yang

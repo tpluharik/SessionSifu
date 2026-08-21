@@ -8,7 +8,7 @@ SessionSifu saves and reconstructs a GNOME desktop layout. It records running
 applications and their windows, then can relaunch those applications and place
 their windows back on the saved workspaces and monitors.
 
-Version 1.3.0 targets Ubuntu 26.04 with GNOME Shell 50. The project is open
+Version 1.3.1 targets Ubuntu 26.04 with GNOME Shell 50. The project is open
 source under GPL-3.0.
 
 ## Features
@@ -76,17 +76,17 @@ depend on the application's own crash-recovery behavior.
 
 ## Install or upgrade
 
-Download `sessionsifu_1.3.0_all.deb` from the `updates/` directory, or build it
+Download `sessionsifu_1.3.1_all.deb` from the `updates/` directory, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_1.3.0_all.deb
+sudo apt install ./sessionsifu_1.3.1_all.deb
 ```
 
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_1.3.0_all.deb
+sudo apt install ./dist/sessionsifu_1.3.1_all.deb
 ```
 
 After installation:
@@ -217,8 +217,8 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_1.3.0_all.deb
-updates/sessionsifu_1.3.0_all.deb
+dist/sessionsifu_1.3.1_all.deb
+updates/sessionsifu_1.3.1_all.deb
 updates/latest.json
 ```
 
