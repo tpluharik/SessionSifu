@@ -1,0 +1,16 @@
+SessionSifu 1.0.0
+
+The GNOME Shell session engine is derived from Another Window Session Manager:
+  https://github.com/nlpsuge/gnome-shell-extension-another-window-session-manager
+  audited upstream revision: cf23fef152ce90692fc1df984f6fd945725334be
+
+Original project copyright remains with nlpsuge and its contributors.
+Modifications for SessionSifu include GNOME Shell 50 targeting, a distinct
+UUID/configuration namespace, safer defaults, a session-control D-Bus interface,
+a standalone GTK/libadwaita manager, login integration and Debian packaging.
+
+Both the upstream project and this derivative are licensed under GNU GPL v3.
+
+Smart Auto Move NG was evaluated as a possible foundation at revision
+b4a55a7b15439eb8f6bd94d7d559154143c3b20f. No Smart Auto Move NG source code is
+included in SessionSifu 1.0.0.

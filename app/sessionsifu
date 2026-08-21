@@ -1,0 +1,347 @@
+#!/usr/bin/python3
+"""SessionSifu GUI and command-line client for GNOME 50."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
+
+
+APP_ID = "org.gnome.SessionSifu"
+UUID = "sessionsifu@local"
+SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
+DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
+DBUS_PATH = "/org/gnome/Shell/Extensions/SessionSifu"
+DBUS_IFACE = "org.gnome.Shell.Extensions.SessionSifu.Control"
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$")
+
+
+def settings() -> Gio.Settings:
+    return Gio.Settings.new(SCHEMA_ID)
+
+
+def proxy(timeout: int = 2000) -> Gio.DBusProxy:
+    result = Gio.DBusProxy.new_for_bus_sync(
+        Gio.BusType.SESSION,
+        Gio.DBusProxyFlags.NONE,
+        None,
+        DBUS_NAME,
+        DBUS_PATH,
+        DBUS_IFACE,
+        None,
+    )
+    result.set_default_timeout(timeout)
+    return result
+
+
+def call(method: str, parameters: GLib.Variant | None = None, timeout: int = 5000):
+    return proxy(timeout).call_sync(
+        method,
+        parameters,
+        Gio.DBusCallFlags.NONE,
+        timeout,
+        None,
+    ).unpack()[0]
+
+
+def extension_enabled() -> bool:
+    completed = subprocess.run(
+        ["gnome-extensions", "info", UUID],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return completed.returncode == 0 and "STATE: ENABLED" in completed.stdout.upper()
+
+
+def enable_extension() -> tuple[bool, str]:
+    completed = subprocess.run(
+        ["gnome-extensions", "enable", UUID],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    message = (completed.stderr or completed.stdout).strip()
+    return completed.returncode == 0, message
+
+
+class ManagerWindow(Adw.ApplicationWindow):
+    def __init__(self, app: Adw.Application):
+        super().__init__(application=app, title="SessionSifu")
+        self.set_default_size(760, 680)
+        self._settings = settings()
+
+        toolbar = Adw.ToolbarView()
+        header = Adw.HeaderBar()
+        header.set_title_widget(Adw.WindowTitle(title="SessionSifu", subtitle="GNOME session restoration"))
+
+        refresh_button = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text="Refresh")
+        refresh_button.connect("clicked", lambda *_: self.refresh())
+        header.pack_start(refresh_button)
+
+        prefs_button = Gtk.Button(icon_name="preferences-system-symbolic", tooltip_text="Advanced settings")
+        prefs_button.connect("clicked", self._open_extension_preferences)
+        header.pack_end(prefs_button)
+
+        toolbar.add_top_bar(header)
+        scroller = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
+        clamp = Adw.Clamp(maximum_size=720, tightening_threshold=600)
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
+        content.set_margin_top(24)
+        content.set_margin_bottom(24)
+        content.set_margin_start(18)
+        content.set_margin_end(18)
+        clamp.set_child(content)
+        scroller.set_child(clamp)
+        toolbar.set_content(scroller)
+        self.set_content(toolbar)
+
+        self.banner = Adw.Banner()
+        self.banner.set_revealed(False)
+        content.append(self.banner)
+
+        self.status_group = Adw.PreferencesGroup(title="Integration")
+        self.status_row = Adw.ActionRow(title="GNOME Shell extension")
+        self.status_icon = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
+        self.status_row.add_prefix(self.status_icon)
+        self.enable_button = Gtk.Button(label="Enable", valign=Gtk.Align.CENTER)
+        self.enable_button.add_css_class("suggested-action")
+        self.enable_button.connect("clicked", self._enable_extension)
+        self.status_row.add_suffix(self.enable_button)
+        self.status_group.add(self.status_row)
+        content.append(self.status_group)
+
+        save_group = Adw.PreferencesGroup(
+            title="Save current desktop",
+            description="Captures running applications, windows, workspaces, monitors and window geometry.",
+        )
+        save_row = Adw.ActionRow(title="Session name")
+        self.name_entry = Gtk.Entry(placeholder_text="Work", hexpand=True, valign=Gtk.Align.CENTER)
+        self.name_entry.set_width_chars(24)
+        self.name_entry.connect("activate", self._save)
+        save_button = Gtk.Button(label="Save", valign=Gtk.Align.CENTER)
+        save_button.add_css_class("suggested-action")
+        save_button.connect("clicked", self._save)
+        save_row.add_suffix(self.name_entry)
+        save_row.add_suffix(save_button)
+        save_group.add(save_row)
+        content.append(save_group)
+
+        behavior_group = Adw.PreferencesGroup(
+            title="Automatic restoration",
+            description="The current desktop is recorded continuously. Restoration remains opt-in.",
+        )
+        self.restore_switch = Adw.SwitchRow(
+            title="Restore previous desktop after login",
+            subtitle="Relaunch applications and rebuild their saved window layout",
+        )
+        self.restore_switch.set_active(self._settings.get_boolean("enable-restore-previous-session"))
+        self.restore_switch.connect("notify::active", self._toggle_restore)
+        behavior_group.add(self.restore_switch)
+
+        self.indicator_switch = Adw.SwitchRow(
+            title="Show top-bar icon",
+            subtitle="Provides Save, Restore and session shortcuts in GNOME Shell",
+        )
+        self.indicator_switch.set_active(self._settings.get_boolean("show-indicator"))
+        self.indicator_switch.connect("notify::active", self._toggle_indicator)
+        behavior_group.add(self.indicator_switch)
+        content.append(behavior_group)
+
+        self.sessions_group = Adw.PreferencesGroup(
+            title="Saved sessions",
+            description="Restoring skips applications that are already running.",
+        )
+        self._session_rows_widgets: list[Adw.ActionRow] = []
+        content.append(self.sessions_group)
+
+        limits_group = Adw.PreferencesGroup(title="Restoration boundary")
+        limits_row = Adw.ActionRow(
+            title="Application content is restored by the application",
+            subtitle="SessionSifu restores processes and windows. Tabs, documents and unsaved data require each app's own recovery support.",
+        )
+        limits_row.add_prefix(Gtk.Image.new_from_icon_name("dialog-information-symbolic"))
+        limits_group.add(limits_row)
+        content.append(limits_group)
+
+        self.refresh()
+
+    def _message(self, text: str) -> None:
+        self.banner.set_title(text)
+        self.banner.set_revealed(True)
+
+    def _call(self, method: str, parameters: GLib.Variant | None = None) -> str | None:
+        try:
+            result = call(method, parameters)
+            self._message(result)
+            return result
+        except GLib.Error as error:
+            self._message(f"SessionSifu extension is unavailable: {error.message}")
+            return None
+
+    def _enable_extension(self, _button) -> None:
+        ok, message = enable_extension()
+        if ok:
+            self._message("Extension enabled. If the icon does not appear, log out and back in once.")
+        else:
+            self._message(message or "Could not enable the extension. Log out and back in, then try again.")
+        GLib.timeout_add(600, self._refresh_once)
+
+    def _refresh_once(self) -> bool:
+        self.refresh()
+        return GLib.SOURCE_REMOVE
+
+    def _open_extension_preferences(self, _button) -> None:
+        try:
+            subprocess.Popen(["gnome-extensions", "prefs", UUID])
+        except OSError as error:
+            self._message(str(error))
+
+    def _save(self, _widget) -> None:
+        name = self.name_entry.get_text().strip()
+        if not NAME_RE.fullmatch(name) or name == "backups":
+            self._message("Use 1–64 letters, numbers, spaces, dots, underscores or hyphens.")
+            return
+        if self._call("SaveSession", GLib.Variant("(s)", (name,))):
+            self.name_entry.set_text("")
+            GLib.timeout_add(900, self._refresh_once)
+
+    def _restore(self, _button, name: str) -> None:
+        self._call("RestoreSession", GLib.Variant("(s)", (name,)))
+
+    def _delete(self, _button, name: str) -> None:
+        dialog = Adw.AlertDialog(
+            heading="Delete saved session?",
+            body=f"“{name}” will be moved to Trash.",
+        )
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("delete", "Delete")
+        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+        dialog.connect("response", self._delete_response, name)
+        dialog.present(self)
+
+    def _delete_response(self, _dialog, response: str, name: str) -> None:
+        if response == "delete" and self._call("DeleteSession", GLib.Variant("(s)", (name,))):
+            self.refresh()
+
+    def _toggle_restore(self, row, _param) -> None:
+        enabled = row.get_active()
+        self._settings.set_boolean("enable-restore-previous-session", enabled)
+        if enabled:
+            self._settings.set_boolean("enable-autorestore-sessions", False)
+
+    def _toggle_indicator(self, row, _param) -> None:
+        self._settings.set_boolean("show-indicator", row.get_active())
+
+    def _session_rows(self) -> list[dict]:
+        try:
+            return json.loads(call("ListSessions"))
+        except (GLib.Error, json.JSONDecodeError):
+            return []
+
+    def refresh(self) -> None:
+        for child in self._session_rows_widgets:
+            self.sessions_group.remove(child)
+        self._session_rows_widgets.clear()
+
+        live = False
+        try:
+            live = call("Ping") is not None
+        except GLib.Error:
+            pass
+
+        enabled = extension_enabled()
+        self.status_row.set_subtitle(
+            "Enabled and connected" if live else
+            "Enabled; waiting for GNOME Shell" if enabled else
+            "Installed but not enabled"
+        )
+        self.status_icon.set_from_icon_name("emblem-ok-symbolic" if live else "dialog-warning-symbolic")
+        self.enable_button.set_visible(not live)
+
+        sessions = self._session_rows() if live else []
+        if not sessions:
+            row = Adw.ActionRow(
+                title="No saved sessions yet" if live else "Enable the extension to manage sessions",
+                subtitle="Arrange your desktop and save it with a name." if live else "A one-time logout/login may be required after installation.",
+            )
+            self.sessions_group.add(row)
+            self._session_rows_widgets.append(row)
+            return
+
+        for item in sessions:
+            modified = datetime.fromtimestamp(item.get("modified", 0)).strftime("%Y-%m-%d %H:%M")
+            row = Adw.ActionRow(title=item["name"], subtitle=f"Saved {modified}")
+            restore = Gtk.Button(label="Restore", valign=Gtk.Align.CENTER)
+            restore.add_css_class("suggested-action")
+            restore.connect("clicked", self._restore, item["name"])
+            delete = Gtk.Button(icon_name="user-trash-symbolic", tooltip_text="Move to Trash", valign=Gtk.Align.CENTER)
+            delete.connect("clicked", self._delete, item["name"])
+            row.add_suffix(restore)
+            row.add_suffix(delete)
+            self.sessions_group.add(row)
+            self._session_rows_widgets.append(row)
+
+
+class SessionSifuApplication(Adw.Application):
+    def __init__(self):
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
+
+    def do_activate(self):
+        window = self.get_active_window() or ManagerWindow(self)
+        window.present()
+
+
+def autostart() -> int:
+    config = settings()
+    if not config.get_boolean("enable-restore-previous-session"):
+        return 0
+    time.sleep(max(0, min(config.get_int("autostart-delay"), 60)))
+    try:
+        call("RestorePreviousSession", GLib.Variant("(a{sv})", ({"removeAfterRestore": GLib.Variant("b", False)},)), 15000)
+        return 0
+    except GLib.Error as error:
+        print(f"sessionsifu: {error.message}", file=sys.stderr)
+        return 1
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Save and restore GNOME desktop sessions")
+    parser.add_argument("--autostart", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--save", metavar="NAME")
+    parser.add_argument("--restore", metavar="NAME")
+    parser.add_argument("--list", action="store_true")
+    args = parser.parse_args()
+
+    if args.autostart:
+        return autostart()
+    if args.save:
+        print(call("SaveSession", GLib.Variant("(s)", (args.save,))))
+        return 0
+    if args.restore:
+        print(call("RestoreSession", GLib.Variant("(s)", (args.restore,))))
+        return 0
+    if args.list:
+        for item in json.loads(call("ListSessions")):
+            print(item["name"])
+        return 0
+
+    app = SessionSifuApplication()
+    return app.run([sys.argv[0]])
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

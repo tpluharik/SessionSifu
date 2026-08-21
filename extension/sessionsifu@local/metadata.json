@@ -1,0 +1,10 @@
+{
+  "name": "SessionSifu",
+  "description": "Save and restore applications, windows, workspaces, geometry and window state on GNOME 50.",
+  "uuid": "sessionsifu@local",
+  "shell-version": ["50"],
+  "settings-schema": "org.gnome.shell.extensions.sessionsifu",
+  "original-author": "nlpsuge and Another Window Session Manager contributors",
+  "version": 1,
+  "version-name": "1.0.0"
+}

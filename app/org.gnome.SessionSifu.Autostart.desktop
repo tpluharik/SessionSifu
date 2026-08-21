@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=SessionSifu Restore
+Comment=Restore the previous GNOME session when enabled
+Exec=sessionsifu --autostart
+Icon=org.gnome.SessionSifu
+Terminal=false
+Type=Application
+NoDisplay=true
+OnlyShowIn=GNOME;Unity;
+X-GNOME-Autostart-Delay=2
+X-GNOME-Autostart-enabled=true

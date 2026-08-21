@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+schema_dir=/usr/share/gnome-shell/extensions/sessionsifu@local/schemas
+if command -v glib-compile-schemas >/dev/null 2>&1 && [ -d "$schema_dir" ]; then
+    glib-compile-schemas "$schema_dir"
+fi
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q || true
+fi
+
+exit 0

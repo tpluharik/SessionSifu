@@ -1,0 +1,36 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+    "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+
+<node>
+    <interface name="org.gnome.Shell.Extensions.SessionSifu.Control">
+        <method name="Ping">
+            <arg type="s" name="message" direction="out"/>
+        </method>
+        <method name="SaveSession">
+            <arg type="s" name="session_name" direction="in"/>
+            <arg type="s" name="message" direction="out"/>
+        </method>
+        <method name="RestoreSession">
+            <arg type="s" name="session_name" direction="in"/>
+            <arg type="s" name="message" direction="out"/>
+        </method>
+        <method name="DeleteSession">
+            <arg type="s" name="session_name" direction="in"/>
+            <arg type="s" name="message" direction="out"/>
+        </method>
+        <method name="ListSessions">
+            <arg type="s" name="sessions_json" direction="out"/>
+        </method>
+        <method name="OpenManager">
+            <arg type="s" name="message" direction="out"/>
+        </method>
+        <method name="RestoreSelectedSession">
+            <arg type="s" name="message" direction="out"/>
+        </method>
+        <method name="RestorePreviousSession">
+            <!-- a{sv} stands for Map<String, Variant> -->
+            <arg type="a{sv}" name="args" direction= "in"/>
+            <arg type="s" name="message" direction="out"/>
+        </method>
+    </interface>
+</node>
