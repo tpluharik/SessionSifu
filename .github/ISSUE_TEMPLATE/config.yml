@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Troubleshooting guide
+    url: https://github.com/tpluharik/SessionSifu/blob/main/docs/TROUBLESHOOTING.md
+    about: Check known installation, extension and restoration recovery steps before filing a report.

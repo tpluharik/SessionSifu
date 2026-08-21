@@ -1,0 +1,58 @@
+name: Feature request
+description: Suggest an improvement to SessionSifu
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing an idea. Explain the workflow problem first so alternatives can be considered.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or limitation
+      description: What workflow is difficult today, and who is affected?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed improvement
+      description: Describe the desired behavior rather than only its visual appearance.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include current workarounds or other approaches you tried.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Session capture
+        - Application or document restoration
+        - Window layout restoration
+        - GNOME top-bar extension
+        - Manager interface
+        - Updates and packaging
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add mockups or examples if they clarify the request. Remove private information first.
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for a similar request.
+          required: true
+        - label: This request preserves local-only session storage unless explicit consent is designed.
+          required: true

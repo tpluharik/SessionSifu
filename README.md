@@ -228,6 +228,30 @@ always identifies the exact downloadable package.
 For development and release details, see [CONTRIBUTING.md](CONTRIBUTING.md).
 For component boundaries, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## Community and development
+
+SessionSifu is publicly readable and developed in the open. Direct repository
+writes remain restricted to maintainers, while everyone is welcome to
+participate through issues, comments, forks and pull requests. Testers on
+Ubuntu 26.04 and GNOME Shell 50 are especially welcome.
+
+- [Report a bug](https://github.com/tpluharik/SessionSifu/issues/new?template=bug_report.yml)
+- [Suggest a feature](https://github.com/tpluharik/SessionSifu/issues/new?template=feature_request.yml)
+- [Contribution guide](CONTRIBUTING.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+
+The current 1.3.1 release targets Ubuntu 26.04, GNOME Shell 50 and both Wayland
+and X11 sessions. Development currently focuses on reliable application and
+document relaunching, conservative window restoration, extension stability and
+safe user-local updates. Compatibility claims are added only after hands-on
+testing; reports from other GNOME distributions are useful, but are treated as
+best-effort until support is documented here.
+
+SessionSifu stores session state locally and does not include telemetry. New
+contributions must preserve that privacy model, avoid blocking GNOME Shell's
+main loop and keep all Mutter window operations guarded against windows that
+close or become unmanaged during restoration.
+
 ## Origin and license
 
 SessionSifu is a GPL-3.0 derivative of Another Window Session Manager. Original
