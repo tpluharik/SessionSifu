@@ -1,0 +1,4 @@
+dist/
+__pycache__/
+*.py[cod]
+extension/sessionsifu@local/schemas/gschemas.compiled
