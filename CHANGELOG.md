@@ -2,6 +2,17 @@
 
 All notable SessionSifu changes are documented here.
 
+## 1.2.2
+
+- Fixed a GNOME Shell crash when a window closed while its saved maximization
+  and geometry were being restored on Wayland.
+- Rejects unmanaged windows, removed monitors, invalid geometry and excessive
+  workspace indices before calling Mutter window operations.
+- Serializes per-window restore callbacks and cancels monitor waits and delayed
+  geometry work when a window closes or the extension is disabled.
+- Stops recording incomplete windows without a WM class into a `null` session
+  folder.
+
 ## 1.2.1
 
 - Added document discovery from process arguments and GNOME's recent-file

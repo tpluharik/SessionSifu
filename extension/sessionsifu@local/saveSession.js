@@ -52,9 +52,10 @@ export const SaveSession = class {
             sessionConfig.active_workspace_index = global.workspace_manager.get_active_workspace_index();
             sessionConfig.n_workspace = global.workspace_manager.n_workspaces;
             const focusedWindow = global.display.get_focus_window();
-            if (focusedWindow) {
+            const focusedWindowClass = focusedWindow?.get_wm_class();
+            if (focusedWindow && focusedWindowClass) {
                 const sessionName = `${MetaWindowUtils.getStableWindowId(focusedWindow)}.json`;
-                sessionConfig.focused_window = GLib.build_filenamev([FileUtils.current_session_path, focusedWindow.get_wm_class(), sessionName]);
+                sessionConfig.focused_window = GLib.build_filenamev([FileUtils.current_session_path, focusedWindowClass, sessionName]);
             }
             delete sessionConfig.x_session_config_objects;
 
@@ -114,9 +115,11 @@ export const SaveSession = class {
                     const app = this._windowTracker.get_window_app(metaWindow);
                     if (!app) continue;
                     if (UiHelper.ignoreWindows(metaWindow)) continue;
+                    const wmClass = metaWindow.get_wm_class();
+                    if (!wmClass) continue;
 
                     const sessionName = `${MetaWindowUtils.getStableWindowId(metaWindow)}.json`;
-                    const baseDir = `${FileUtils.current_session_path}/${metaWindow.get_wm_class()}`;
+                    const baseDir = `${FileUtils.current_session_path}/${wmClass}`;
 
                     this._log.debug(`Generating window session ${sessionName}`);
 

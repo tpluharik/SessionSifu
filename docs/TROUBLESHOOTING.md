@@ -49,6 +49,22 @@ desktop entry does not accept files or URIs cannot be restored generically.
 Open SessionSifu from the application grid and select **Enable**. If GNOME says
 a new login is required, log out and back in once.
 
+## GNOME Shell or Wayland restarted during restoration
+
+Upgrade to SessionSifu 1.2.2 or newer and select **Update Integration**, then
+log out and back in. Version 1.2.2 prevents restore callbacks from operating on
+a window after Mutter begins unmanaging it and validates monitor and geometry
+values before native window operations.
+
+If a restart still occurs, capture the current-boot journal before logging out:
+
+```sh
+journalctl --user -b -o short-iso _COMM=gnome-shell
+```
+
+Include the lines containing `GNOME Shell crashed` and the following stack trace
+in a bug report.
+
 ## Restoration reopens windows but not their content
 
 This is expected for applications that do not expose recovery support.

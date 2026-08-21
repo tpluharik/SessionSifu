@@ -93,7 +93,7 @@ with tempfile.TemporaryDirectory() as install_root:
     source_autostart.write_text("[Desktop Entry]\nType=Application\nExec=sessionsifu --autostart\n")
     source_icon.write_text("<svg/>\n")
     source_bundle.write_bytes(b"extension bundle")
-    (source_extension / "metadata.json").write_text('{"version-name":"1.2.1"}\n')
+    (source_extension / "metadata.json").write_text('{"version-name":"1.2.2"}\n')
 
     data_dir = install_root / "data"
     config_dir = install_root / "config"

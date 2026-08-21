@@ -3,5 +3,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "Restores documents from process arguments and GNOME recent files, and adds user-local in-app updates."
+  "notes": "Prevents Wayland compositor restarts by cancelling stale window restores and validating monitor and geometry state."
 }

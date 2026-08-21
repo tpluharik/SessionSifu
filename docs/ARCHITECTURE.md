@@ -21,6 +21,14 @@ When a desktop entry supports files or URIs, the extension calls
 `Gio.AppInfo.launch()` for each new group of files, including after the first
 window has launched or when the application is already running.
 
+Window restoration treats Mutter objects as short-lived. `windowSafety.js`
+rejects windows without a compositor actor, workspace or valid monitor before
+native state or geometry calls. The indicator serializes restore callbacks for
+each window, while `moveSession.js` cancels monitor waits and delayed geometry
+work as soon as `unmanaging` is emitted. Saved monitor, geometry and workspace
+values are bounded before they reach Mutter. Maximized windows are not passed to
+`move_resize_frame()` while their maximized state is being applied.
+
 `continuousSaver.js` owns the rolling history timer. It reads the GSettings
 interval, performs an initial save shortly after startup, prevents overlapping
 saves and removes files older than the five newest successful snapshots.

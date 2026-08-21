@@ -35,7 +35,8 @@ export default class SessionSifuExtension extends Extension {
 
         this.initUtils();
 
-        this._settings.connect('changed::show-indicator', () => this.showOrHideIndicator());
+        this._showIndicatorChangedId = this._settings.connect(
+            'changed::show-indicator', () => this.showOrHideIndicator());
         this.showOrHideIndicator();
 
         _autostartServiceProvider = new Autostart.AutostartServiceProvider();
@@ -101,6 +102,10 @@ export default class SessionSifuExtension extends Extension {
         }
 
         if (this._settings) {
+            if (this._showIndicatorChangedId) {
+                this._settings.disconnect(this._showIndicatorChangedId);
+                this._showIndicatorChangedId = 0;
+            }
             this._settings = null;
         }
 

@@ -75,7 +75,37 @@ class AwsIndicator extends PanelMenu.Button {
         this._displayId = this._display.connect('window-created', this._windowCreated.bind(this));
 
         this._isDestroyed = false;
+        this._closingWindows = new WeakSet();
+        this._restoringWindows = new WeakMap();
+        this._restoredWindows = new WeakSet();
 
+    }
+
+    async _restoreWindowOnce(metaWindow, savedWindowSessions) {
+        if (this._isDestroyed || this._closingWindows.has(metaWindow))
+            return false;
+        if (this._restoredWindows.has(metaWindow))
+            return true;
+        const activeRestore = this._restoringWindows.get(metaWindow);
+        if (activeRestore)
+            return activeRestore;
+
+        const operation = (async () => {
+            try {
+                const restored = await this._moveSession.moveWindowByMetaWindow(
+                    metaWindow, savedWindowSessions);
+                if (restored)
+                    this._restoredWindows.add(metaWindow);
+                return restored;
+            } catch (error) {
+                this._log.error(error, 'Could not restore a newly created window');
+                return false;
+            } finally {
+                this._restoringWindows.delete(metaWindow);
+            }
+        })();
+        this._restoringWindows.set(metaWindow, operation);
+        return operation;
     }
 
     // TODO Move this method and related code to a single .js file
@@ -83,13 +113,13 @@ class AwsIndicator extends PanelMenu.Button {
         let metaWindowActor = metaWindow.get_compositor_private();
         // https://github.com/paperwm/PaperWM/blob/10215f57e8b34a044e10b7407cac8fac4b93bbbc/tiling.js#L2120
         // https://gjs-docs.gnome.org/meta8~8_api/meta.windowactor#signal-first-frame
-        let firstFrameId = metaWindowActor.connect('first-frame', () => {
+        let firstFrameId = metaWindowActor?.connect('first-frame', async () => {
             if (this._isDestroyed) {
                 metaWindowActor.disconnect(firstFrameId);
                 return;
             }
 
-            if (metaWindow._aboutToClose) {
+            if (this._closingWindows.has(metaWindow)) {
                 return;
             }
 
@@ -101,9 +131,12 @@ class AwsIndicator extends PanelMenu.Button {
             // NOTE: The title of a dialog (for example a close warning dialog, like gnome-terminal) attached to a window is ''
             this._log.debug(`window-created -> first-frame: ${shellApp.get_name()} -> ${metaWindow.get_title()}`);
 
-            let shellAppData = RestoreSession.restoreSessionObject.restoringApps.get(shellApp);
+            const restoringApps = RestoreSession.restoreSessionObject.restoringApps;
+            if (!restoringApps)
+                return;
+            let shellAppData = restoringApps.get(shellApp);
             if (!shellAppData) {
-                shellAppData = RestoreSession.restoreSessionObject.restoringApps.get(metaWindow.get_pid());
+                shellAppData = restoringApps.get(metaWindow.get_pid());
             }
             if (!shellAppData) {
                 return;
@@ -111,19 +144,20 @@ class AwsIndicator extends PanelMenu.Button {
 
             const saved_window_sessions = shellAppData.saved_window_sessions;
 
-            this._moveSession.moveWindowByMetaWindow(metaWindow, saved_window_sessions);
+            if (await this._restoreWindowOnce(metaWindow, saved_window_sessions) &&
+                !this._isDestroyed && firstFrameId) {
+                metaWindowActor.disconnect(firstFrameId);
+                firstFrameId = 0;
+            }
+        }) ?? 0;
 
-            metaWindowActor.disconnect(firstFrameId);
-            firstFrameId = 0;
-        })
-
-        let shownId = metaWindow.connect('shown', () => {
+        let shownId = metaWindow.connect('shown', async () => {
             if (this._isDestroyed) {
                 metaWindow.disconnect(shownId);
                 return;
             }
 
-            if (metaWindow._aboutToClose) {
+            if (this._closingWindows.has(metaWindow)) {
                 return;
             }
 
@@ -135,9 +169,12 @@ class AwsIndicator extends PanelMenu.Button {
             // NOTE: The title of a dialog (for example a close warning dialog, like gnome-terminal) attached to a window is ''
             this._log.debug(`window-created -> shown: ${shellApp.get_name()} -> ${metaWindow.get_title()}`);
 
-            let shellAppData = RestoreSession.restoreSessionObject.restoringApps.get(shellApp);
+            const restoringApps = RestoreSession.restoreSessionObject.restoringApps;
+            if (!restoringApps)
+                return;
+            let shellAppData = restoringApps.get(shellApp);
             if (!shellAppData) {
-                shellAppData = RestoreSession.restoreSessionObject.restoringApps.get(metaWindow.get_pid());
+                shellAppData = restoringApps.get(metaWindow.get_pid());
             }
             if (!shellAppData) {
                 return;
@@ -145,10 +182,11 @@ class AwsIndicator extends PanelMenu.Button {
 
             const saved_window_sessions = shellAppData.saved_window_sessions;
 
-            this._moveSession.moveWindowByMetaWindow(metaWindow, saved_window_sessions);
-
-            metaWindow.disconnect(shownId);
-            shownId = 0;
+            if (await this._restoreWindowOnce(metaWindow, saved_window_sessions) &&
+                !this._isDestroyed && shownId) {
+                metaWindow.disconnect(shownId);
+                shownId = 0;
+            }
         });
 
 
@@ -162,6 +200,8 @@ class AwsIndicator extends PanelMenu.Button {
         But metaWindow is not disposed in `destroy()`, so we can disconnect signals from it there.
         */
         let unmanagingId = metaWindow.connect('unmanaging', () => {
+            this._closingWindows.add(metaWindow);
+            this._moveSession.cancelWindow(metaWindow);
             // Fix ../gobject/gsignal.c:2732: instance '0x55629xxxxxx' has no handler with id '11000' when disable this extension right after restore apps
             this._signal.disconnectSafely(metaWindowActor, firstFrameId);
         });
@@ -170,13 +210,13 @@ class AwsIndicator extends PanelMenu.Button {
         // For some apps, such as Visual Studio Code, when it's starting, the first title is `Visual Studio Code`,
         // the second could be `indicator.js - gnome-shell-extension-sessionsifu - Visual Studio Code`.
         // In the above instance, `notify::title` catches the second.
-        let titleChangedId = metaWindow.connect('notify::title', () => {
+        let titleChangedId = metaWindow.connect('notify::title', async () => {
             if (this._isDestroyed) {
                 metaWindow.disconnect(titleChangedId);
                 return;
             }
 
-            if (metaWindow._aboutToClose) {
+            if (this._closingWindows.has(metaWindow)) {
                 return;
             }
 
@@ -188,9 +228,12 @@ class AwsIndicator extends PanelMenu.Button {
             // NOTE: The title of a dialog (for example a close warning dialog, like gnome-terminal) attached to a window is ''
             this._log.debug(`window-created -> title changed: ${shellApp.get_name()} -> ${metaWindow.get_title()}`);
 
-            let shellAppData = RestoreSession.restoreSessionObject.restoringApps.get(shellApp);
+            const restoringApps = RestoreSession.restoreSessionObject.restoringApps;
+            if (!restoringApps)
+                return;
+            let shellAppData = restoringApps.get(shellApp);
             if (!shellAppData) {
-                shellAppData = RestoreSession.restoreSessionObject.restoringApps.get(metaWindow.get_pid());
+                shellAppData = restoringApps.get(metaWindow.get_pid());
             }
             if (!shellAppData) {
                 return;
@@ -198,10 +241,11 @@ class AwsIndicator extends PanelMenu.Button {
 
             const saved_window_sessions = shellAppData.saved_window_sessions;
 
-            this._moveSession.moveWindowByMetaWindow(metaWindow, saved_window_sessions);
-
-            metaWindow.disconnect(titleChangedId);
-            titleChangedId = 0;
+            if (await this._restoreWindowOnce(metaWindow, saved_window_sessions) &&
+                !this._isDestroyed && titleChangedId) {
+                metaWindow.disconnect(titleChangedId);
+                titleChangedId = 0;
+            }
         });
 
         this._metaWindowConnectIds.push([metaWindow, shownId]);
@@ -518,6 +562,8 @@ class AwsIndicator extends PanelMenu.Button {
     }
 
     destroy() {
+        this._isDestroyed = true;
+
         if (this.monitors) {
             this.monitors.forEach ((monitor) => {
                 monitor.cancel();
@@ -543,14 +589,17 @@ class AwsIndicator extends PanelMenu.Button {
             this._displayId = 0;
         }
 
+        if (this._moveSession) {
+            this._moveSession.destroy();
+            this._moveSession = null;
+        }
+
         if (this._log) {
             this._log.destroy();
             this._log = null;
         }
 
         super.destroy();
-
-        this._isDestroyed = true;
 
     }
 

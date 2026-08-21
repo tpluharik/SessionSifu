@@ -11,6 +11,7 @@ import * as SubprocessUtils from './utils/subprocessUtils.js';
 import * as DateUtils from './utils/dateUtils.js';
 import * as StringUtils from './utils/stringUtils.js';
 import * as OpenFiles from './openFiles.js';
+import {MAX_WORKSPACE_INDEX} from './windowSafety.js';
 
 
 export const restoreSessionObject = {
@@ -23,6 +24,7 @@ export const RestoreSession = class {
     constructor() {
         this._log = new Log.Log();
         this._settings = PrefsUtils.getSettings();
+        restoreSessionObject.restoringApps ??= new Map();
 
         this.sessionName = FileUtils.default_sessionName;
         this._defaultAppSystem = Shell.AppSystem.get_default();
@@ -53,12 +55,13 @@ export const RestoreSession = class {
         Log.Log.getDefault().debug(`Prepare to restore summary`);
         FileUtils.loadSummary().then(([summary, path]) => {
             Log.Log.getDefault().info(`Restoring summary from ${path}`);
-            const savedNWorkspace = summary.n_workspace;
             const workspaceManager = global.workspace_manager;
             const currentNWorkspace = workspaceManager.n_workspaces;
-            const moreWorkspace = savedNWorkspace - currentNWorkspace;
-            if (moreWorkspace) {
-                for (let i = currentNWorkspace; i <= savedNWorkspace; i++) {
+            const savedNWorkspace = Number.isInteger(summary.n_workspace)
+                ? Math.min(summary.n_workspace, MAX_WORKSPACE_INDEX + 1)
+                : currentNWorkspace;
+            if (savedNWorkspace > currentNWorkspace) {
+                for (let i = currentNWorkspace; i < savedNWorkspace; i++) {
                     workspaceManager.append_new_workspace(false, DateUtils.get_current_time());
                     workspaceManager.get_workspace_by_index(i)._keepAliveId = true;
                 }
