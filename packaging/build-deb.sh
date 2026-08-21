@@ -5,7 +5,7 @@ project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 extension_dir="$project_dir/extension/sessionsifu@local"
 dist_dir="$project_dir/dist"
 updates_dir="$project_dir/updates"
-version="1.1.0"
+version="1.1.1"
 package="$dist_dir/sessionsifu_${version}_all.deb"
 update_package="$updates_dir/sessionsifu_${version}_all.deb"
 stage=$(mktemp -d /tmp/sessionsifu-package.XXXXXX)
@@ -32,6 +32,7 @@ mkdir -p "$stage/usr/share/gnome-shell/extensions/sessionsifu@local"
 mkdir -p "$stage/usr/share/glib-2.0/schemas"
 mkdir -p "$stage/usr/share/sessionsifu"
 mkdir -p "$stage/usr/share/doc/sessionsifu"
+mkdir -p "$stage/usr/share/doc/sessionsifu/docs"
 
 install -m 0644 "$project_dir/packaging/control" "$stage/DEBIAN/control"
 install -m 0755 "$project_dir/packaging/postinst" "$stage/DEBIAN/postinst"
@@ -48,6 +49,10 @@ find "$stage/usr/share/gnome-shell/extensions/sessionsifu@local" -type d -exec c
 find "$stage/usr/share/gnome-shell/extensions/sessionsifu@local" -type f -exec chmod 0644 {} \;
 chmod 0755 "$stage/usr/share/gnome-shell/extensions/sessionsifu@local/template/launch-app.sh"
 install -m 0644 "$project_dir/README.md" "$stage/usr/share/doc/sessionsifu/README.md"
+install -m 0644 "$project_dir/CHANGELOG.md" "$stage/usr/share/doc/sessionsifu/CHANGELOG.md"
+install -m 0644 "$project_dir/CONTRIBUTING.md" "$stage/usr/share/doc/sessionsifu/CONTRIBUTING.md"
+install -m 0644 "$project_dir/docs/ARCHITECTURE.md" "$stage/usr/share/doc/sessionsifu/docs/ARCHITECTURE.md"
+install -m 0644 "$project_dir/docs/TROUBLESHOOTING.md" "$stage/usr/share/doc/sessionsifu/docs/TROUBLESHOOTING.md"
 install -m 0644 "$project_dir/NOTICE" "$stage/usr/share/doc/sessionsifu/NOTICE"
 install -m 0644 "$extension_dir/LICENSE" "$stage/usr/share/doc/sessionsifu/copyright"
 find "$stage" -type d -exec chmod 0755 {} \;

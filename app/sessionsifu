@@ -25,7 +25,7 @@ from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "1.1.0"
+CURRENT_VERSION = "1.1.1"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -395,10 +395,17 @@ class ManagerWindow(Adw.ApplicationWindow):
         self.snapshot_switch.connect("notify::active", self._toggle_continuous_save)
         snapshot_group.add(self.snapshot_switch)
 
-        self.snapshot_intervals = [300, 600, 900, 1800]
+        self.snapshot_intervals = [30, 60, 300, 600, 900, 1800]
         self.snapshot_interval_row = Adw.ComboRow(title="Snapshot frequency")
         self.snapshot_interval_row.set_model(
-            Gtk.StringList.new(["Every 5 minutes", "Every 10 minutes", "Every 15 minutes", "Every 30 minutes"])
+            Gtk.StringList.new([
+                "Every 30 seconds",
+                "Every minute",
+                "Every 5 minutes",
+                "Every 10 minutes",
+                "Every 15 minutes",
+                "Every 30 minutes",
+            ])
         )
         configured_interval = self._settings.get_int("continuous-save-interval")
         selected = min(

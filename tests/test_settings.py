@@ -26,6 +26,9 @@ assert settings.get_boolean("show-indicator") is True
 assert settings.get_int("autostart-delay") >= 0
 assert settings.get_boolean("continuous-save-enabled") is True
 assert settings.get_int("continuous-save-interval") == 300
+settings.set_int("continuous-save-interval", 30)
+assert settings.get_int("continuous-save-interval") == 30
+settings.set_int("continuous-save-interval", 300)
 
 manifest = module.parse_update_manifest(
     json.dumps(

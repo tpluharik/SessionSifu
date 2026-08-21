@@ -82,7 +82,7 @@ export const ContinuousSaver = class {
         if (!this._settings.get_boolean('continuous-save-enabled'))
             return;
 
-        const interval = Math.max(60, this._settings.get_int('continuous-save-interval'));
+        const interval = Math.max(30, this._settings.get_int('continuous-save-interval'));
         this._initialTimeoutId = GLib.timeout_add_seconds(
             GLib.PRIORITY_LOW,
             Math.min(30, interval),
