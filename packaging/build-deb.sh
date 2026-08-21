@@ -5,7 +5,7 @@ project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 extension_dir="$project_dir/extension/sessionsifu@local"
 dist_dir="$project_dir/dist"
 updates_dir="$project_dir/updates"
-version="1.3.1"
+version="2.0.0"
 package="$dist_dir/sessionsifu_${version}_all.deb"
 update_package="$updates_dir/sessionsifu_${version}_all.deb"
 stage=$(mktemp -d /tmp/sessionsifu-package.XXXXXX)
@@ -13,6 +13,7 @@ trap 'rm -rf -- "$stage"' EXIT HUP INT TERM
 chmod 0755 "$stage"
 
 python3 -m py_compile "$project_dir/app/sessionsifu"
+python3 -m compileall -q "$project_dir/portable/sessionsifu_portable" "$project_dir/packaging/build-portable.py"
 python3 -m json.tool "$extension_dir/metadata.json" >/dev/null
 desktop-file-validate "$project_dir/app/org.gnome.SessionSifu.desktop"
 desktop-file-validate "$project_dir/app/org.gnome.SessionSifu.Autostart.desktop"
@@ -25,6 +26,7 @@ gjs -m "$project_dir/tests/open-files-smoke.js"
 gjs -m "$project_dir/tests/runtime-safety-smoke.js"
 gjs -m "$project_dir/tests/window-safety-smoke.js"
 python3 "$project_dir/tests/test_static.py" "$project_dir"
+python3 "$project_dir/tests/test_portable.py"
 
 mkdir -p "$stage/DEBIAN"
 mkdir -p "$stage/usr/bin"
@@ -54,6 +56,8 @@ chmod 0755 "$stage/usr/share/gnome-shell/extensions/sessionsifu@local/template/l
 install -m 0644 "$project_dir/README.md" "$stage/usr/share/doc/sessionsifu/README.md"
 install -m 0644 "$project_dir/CHANGELOG.md" "$stage/usr/share/doc/sessionsifu/CHANGELOG.md"
 install -m 0644 "$project_dir/CONTRIBUTING.md" "$stage/usr/share/doc/sessionsifu/CONTRIBUTING.md"
+install -m 0644 "$project_dir/CODE_OF_CONDUCT.md" "$stage/usr/share/doc/sessionsifu/CODE_OF_CONDUCT.md"
+install -m 0644 "$project_dir/ROADMAP.md" "$stage/usr/share/doc/sessionsifu/ROADMAP.md"
 install -m 0644 "$project_dir/docs/ARCHITECTURE.md" "$stage/usr/share/doc/sessionsifu/docs/ARCHITECTURE.md"
 install -m 0644 "$project_dir/docs/TROUBLESHOOTING.md" "$stage/usr/share/doc/sessionsifu/docs/TROUBLESHOOTING.md"
 install -m 0644 "$project_dir/NOTICE" "$stage/usr/share/doc/sessionsifu/NOTICE"

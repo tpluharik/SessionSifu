@@ -36,8 +36,13 @@ body:
         - Application or document restoration
         - Window layout restoration
         - GNOME top-bar extension
+        - Windows adapter
+        - macOS adapter
+        - KDE Plasma adapter
+        - General GNOME/Linux adapter
         - Manager interface
         - Updates and packaging
+        - Release pipeline
         - Documentation
         - Other
     validations:

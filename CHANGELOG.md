@@ -2,6 +2,27 @@
 
 All notable SessionSifu changes are documented here.
 
+## 2.0.0
+
+- Added a shared, validated session model and atomic five-snapshot storage for
+  Windows, macOS, KDE Plasma and portable GNOME builds.
+- Added a Win32 backend for application, document and window-geometry capture
+  and restoration.
+- Added a macOS backend using System Events and the public `open` command, with
+  explicit Accessibility-permission diagnostics.
+- Added a KDE Plasma 6 backend using `kdotool` for native Wayland window and
+  virtual-desktop handling, with `wmctrl` fallback on X11.
+- Added a generic Linux/GNOME portable fallback, while retaining the existing
+  GNOME Shell 50 extension as the full-fidelity Wayland backend.
+- Added a shared Qt manager and system-tray menu, portable command line, named
+  sessions and configurable automatic snapshots.
+- Added PyInstaller packaging for Windows x64, macOS arm64/x64 and Linux
+  x64 alongside the existing GNOME Debian package.
+- Added a GitHub Actions pipeline that tests all target operating systems,
+  builds release artifacts and publishes tagged releases with SHA-256 sums.
+- Added a public ten-item roadmap and expanded architecture, installation,
+  privacy and contribution documentation for the new platform family.
+
 ## 1.3.1
 
 - Fixed the GNOME top-bar icon appearing as a plain white circle.

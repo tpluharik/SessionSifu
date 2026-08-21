@@ -16,21 +16,31 @@ body:
       placeholder: "1.3.1"
     validations:
       required: true
-  - type: input
-    id: ubuntu-version
+  - type: dropdown
+    id: edition
     attributes:
-      label: Ubuntu version
-      placeholder: "26.04"
+      label: SessionSifu edition
+      options:
+        - GNOME 50 full integration
+        - KDE Plasma portable
+        - General GNOME/Linux portable
+        - Windows portable
+        - macOS portable
     validations:
       required: true
   - type: input
-    id: gnome-version
+    id: os-version
     attributes:
-      label: GNOME Shell version
-      description: Run `gnome-shell --version` if needed.
-      placeholder: "GNOME Shell 50.x"
+      label: Operating system and version
+      placeholder: "Ubuntu 26.04, Windows 11 25H2, or macOS 26"
     validations:
       required: true
+  - type: input
+    id: desktop-version
+    attributes:
+      label: Desktop or compositor version
+      description: For Linux, include GNOME Shell or KDE Plasma and its version.
+      placeholder: "GNOME Shell 50.x or KDE Plasma 6.7"
   - type: dropdown
     id: session-type
     attributes:
@@ -38,6 +48,9 @@ body:
       options:
         - Wayland
         - X11
+        - Windows Desktop
+        - macOS
+        - Not applicable
         - Unknown
     validations:
       required: true
@@ -48,6 +61,7 @@ body:
       options:
         - Debian package from this repository
         - SessionSifu in-app updater
+        - Portable GitHub Release bundle
         - Built from source
         - Other
     validations:
@@ -55,12 +69,15 @@ body:
   - type: dropdown
     id: extension-state
     attributes:
-      label: GNOME extension state
+      label: Desktop integration state
       options:
         - Enabled and top-bar icon visible
         - Enabled but top-bar icon missing
         - Installed but disabled
         - Extension not found
+        - Portable tray icon visible
+        - Portable app running without tray icon
+        - Not applicable
         - Unknown
     validations:
       required: true

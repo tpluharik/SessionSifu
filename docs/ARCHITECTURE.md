@@ -1,6 +1,7 @@
 # Architecture
 
-SessionSifu is split into three runtime layers and one distribution layer.
+SessionSifu 2 has a full GNOME runtime, a portable runtime shared by Windows,
+macOS and Linux desktops, and platform-specific distribution layers.
 
 ## GNOME Shell extension
 
@@ -59,6 +60,43 @@ the expected payload, then atomically installs the manager, desktop files, icon,
 extension bundle and extension below the user's XDG directories and
 `~/.local/bin`. It never invokes `apt`, `dpkg -i`, PackageKit or Ubuntu Software.
 
+## Portable core and manager
+
+`portable/sessionsifu_portable/` is a Python package independent of GTK, GNOME
+Shell and D-Bus. `model.py` validates schema-2 session JSON and bounds window,
+text and document collections. `storage.py` performs atomic same-directory
+replacement, confines loads to SessionSifu-owned directories and retains the
+five newest automatic snapshots. `controller.py` is the small application API
+used by both the command line and the Qt manager.
+
+`ui.py` provides the Windows, macOS and portable Linux manager. It uses
+`QSystemTrayIcon`, offers named sessions and rolling history, saves at 30-second
+through 30-minute intervals and exits through **Turn Off SessionSifu**. Slow or
+privileged platform operations are delegated to adapters rather than embedded
+in widget code.
+
+The portable model intentionally records only observable state. Process files
+are restricted to readable regular files below the user's home directory,
+hidden state paths are excluded and each window is capped at 32 files.
+
+## Platform adapters
+
+- `windows.py` enumerates visible top-level windows with Win32 `EnumWindows`,
+  records process identity through `psutil`, and restores safe geometry and
+  minimized/maximized state using public User32 calls. Windows virtual desktops
+  remain outside the current public adapter.
+- `macos.py` uses JavaScript for Automation with System Events to inspect and
+  position accessible application windows. Applications and files are opened
+  through `/usr/bin/open`; the user must grant Accessibility permission. Spaces
+  are not manipulated through private APIs.
+- `linux.py` provides three runtime profiles. KDE Plasma 6 uses `kdotool`, which
+  executes KWin scripts over D-Bus and works on native Wayland. X11 desktops use
+  `wmctrl`. General GNOME uses that portable fallback and directs GNOME 50 users
+  to the bundled extension for full Wayland fidelity.
+- `base.py` centralizes capability reporting, bounded document discovery and
+  shell-free application launches. An adapter reports unsupported geometry or
+  workspace features instead of fabricating restored state.
+
 ## Local storage
 
 Named and automatic session files are JSON. They are kept below the XDG user
@@ -68,6 +106,13 @@ the XDG cache directory, normally `~/.cache/sessionsifu/updates/`.
 Automatic snapshot filenames use UTC timestamps in the form
 `auto-YYYYMMDD-HHMMSS.json`. Only filenames matching that pattern can be listed
 or restored through the automatic-history D-Bus methods.
+
+Portable storage uses schema-2 JSON under `%APPDATA%/SessionSifu` on Windows,
+`~/Library/Application Support/SessionSifu` on macOS and the XDG configuration
+directory on Linux. Portable snapshot names include microseconds to prevent
+rapid captures from overwriting one another. The portable schema is separate
+from the inherited GNOME extension format; an explicit migration layer will be
+required before files can be exchanged between those engines.
 
 Session JSON can contain an `open_files` array on each saved window object. This
 is best-effort metadata rather than a promise that every application's internal
@@ -85,3 +130,15 @@ only HTTPS package URLs under `tpluharik/SessionSifu` on
 `raw.githubusercontent.com`. The Debian package remains necessary for initial
 dependency installation; later application updates are unprivileged and local
 to the user.
+
+## Multi-platform release pipeline
+
+`.github/workflows/release.yml` runs the portable model/storage tests on Ubuntu
+26.04, Windows 2025, Apple-silicon macOS and Intel macOS. PyInstaller then
+creates Windows x64, macOS arm64/x64 and Linux x64 desktop bundles. A separate
+Ubuntu job runs the full GNOME validation and Debian build.
+
+Pushes and pull requests retain build artifacts for inspection. A verified
+`v*` tag additionally downloads all job artifacts, generates `SHA256SUMS` and
+creates one GitHub Release. Signing, Apple notarization and artifact attestation
+are deliberately tracked as roadmap work rather than implied by the pipeline.

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import sys
 import xml.etree.ElementTree as ET
 
@@ -22,13 +23,16 @@ assert "fill-rule=\"evenodd\"" in symbolic_source
 assert (root / "branding" / "sessionsifu-yinyang-concept.png").read_bytes().startswith(
     b"\x89PNG\r\n\x1a\n"
 )
+assert (root / "branding" / "sessionsifu-app-icon.png").read_bytes().startswith(
+    b"\x89PNG\r\n\x1a\n"
+)
 
 metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "1.3.1"
-assert metadata["version"] == 3
+assert metadata["version-name"] == "2.0.0"
+assert metadata["version"] == 4
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -48,12 +52,14 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="1.3.1"' in build_script
+assert 'version="2.0.0"' in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
 assert "tests/open-files-smoke.js" in build_script
 assert "tests/runtime-safety-smoke.js" in build_script
 assert "tests/window-safety-smoke.js" in build_script
+assert "tests/test_portable.py" in build_script
+assert "ROADMAP.md" in build_script
 
 dbus = ET.parse(
     extension
@@ -88,7 +94,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "1.3.1"' in app_source
+assert 'CURRENT_VERSION = "2.0.0"' in app_source
 assert "self.snapshot_intervals = [30, 60, 300, 600, 900, 1800]" in app_source
 assert "raw.githubusercontent.com/tpluharik/SessionSifu" in app_source
 assert "Downloaded update failed SHA-256 verification" in app_source
@@ -117,5 +123,28 @@ assert "restorePreviousDelay = this._settings.get_int('restore-previous-delay') 
 assert "_sessionApplicationKey" in source_text
 assert "Turn Off SessionSifu" in source_text
 assert "['gnome-extensions', 'disable', 'sessionsifu@local']" in source_text
+
+portable = root / "portable" / "sessionsifu_portable"
+for required in (
+    portable / "model.py",
+    portable / "storage.py",
+    portable / "controller.py",
+    portable / "ui.py",
+    portable / "adapters" / "windows.py",
+    portable / "adapters" / "macos.py",
+    portable / "adapters" / "linux.py",
+    root / ".github" / "workflows" / "release.yml",
+    root / "ROADMAP.md",
+):
+    assert required.is_file(), required
+
+roadmap = (root / "ROADMAP.md").read_text()
+assert len(re.findall(r"^## \d+\.", roadmap, re.MULTILINE)) == 10
+
+workflow = (root / ".github" / "workflows" / "release.yml").read_text()
+for runner in ("ubuntu-26.04", "windows-2025", "macos-15", "macos-15-intel"):
+    assert runner in workflow
+assert "contents: write" in workflow
+assert "gh release create" in workflow
 
 print("static checks passed")

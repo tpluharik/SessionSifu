@@ -1,8 +1,9 @@
 # Contributing to SessionSifu
 
-SessionSifu targets Ubuntu 26.04 and GNOME Shell 50. Changes should preserve the
-separation between the GNOME Shell extension, the unprivileged manager and the
-Debian packaging layer.
+SessionSifu 2 targets Ubuntu 26.04/GNOME Shell 50, KDE Plasma 6, Windows and
+macOS. Changes should preserve the separation between the GNOME Shell
+extension, portable core, platform adapters, unprivileged managers and
+distribution layers.
 
 ## Ways to participate
 
@@ -23,11 +24,12 @@ All participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Bug reports
 
-A useful report includes the SessionSifu version, Ubuntu version, GNOME Shell
-version, Wayland or X11 session type, installation method, extension state and
-the smallest reliable sequence that reproduces the problem. For restoration
-problems, say what was saved, what reopened and what did not. Attach only the
-relevant log excerpt after removing personal information.
+A useful report includes the SessionSifu edition and version, operating system,
+desktop/compositor where applicable, display session, installation method,
+integration state and the smallest reliable sequence that reproduces the
+problem. For restoration problems, say what was saved, what reopened and what
+did not. Attach only the relevant log excerpt after removing personal
+information.
 
 ## Pull requests
 
@@ -55,7 +57,14 @@ Install the build-time tools used by `packaging/build-deb.sh`, including Python
 
 The script is the canonical validation entry point. It checks source syntax,
 desktop files, schema lookup, D-Bus method declarations, update-manifest safety
-and package assembly.
+portable storage/model behavior and package assembly.
+
+Portable-only work can be checked quickly with:
+
+```sh
+python3 tests/test_portable.py
+python3 -m compileall -q portable/sessionsifu_portable packaging/build-portable.py
+```
 
 For GNOME Shell changes, also verify extension enable/disable, the top-bar menu,
 manual save and restore, logout/login activation and repeated restoration on a
@@ -81,6 +90,16 @@ GNOME Shell JavaScript APIs change between major releases. Do not add an
 untested Shell version to `metadata.json`. A compatibility bump should be tested
 with the top-bar indicator, D-Bus service, snapshot timer, manual restoration
 and logout/login activation path.
+
+Windows code must use documented Win32 APIs and be tested on an actual Windows
+runner. macOS code must avoid private Spaces APIs, state its Accessibility
+requirements and be tested on both architecture jobs. KDE Wayland window
+operations must remain behind the `kdotool` capability check. A generic Linux
+fallback must never claim geometry that its compositor did not expose.
+
+For release-pipeline changes, validate the workflow YAML, keep permissions at
+read-only except for the tag release job and never execute pull-request code
+with a write-capable token.
 
 ## Privacy and security
 

@@ -1,0 +1,107 @@
+name: Build and release SessionSifu
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-tests:
+    name: Portable tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, windows-2025, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install portable core
+        run: python -m pip install ./portable
+      - name: Run portable tests
+        run: python tests/test_portable.py
+      - name: Compile portable sources
+        run: python -m compileall -q portable/sessionsifu_portable packaging/build-portable.py
+
+  portable-bundles:
+    name: Build ${{ matrix.artifact }}
+    needs: portable-tests
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            target: windows
+            arch: x64
+            artifact: SessionSifu-Windows-x64
+          - os: macos-15
+            target: macos
+            arch: arm64
+            artifact: SessionSifu-macOS-arm64
+          - os: macos-15-intel
+            target: macos
+            arch: x64
+            artifact: SessionSifu-macOS-x64
+          - os: ubuntu-26.04
+            target: linux
+            arch: x64
+            artifact: SessionSifu-Linux-portable-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install bundle dependencies
+        run: python -m pip install "./portable[gui,build]"
+      - name: Build desktop bundle
+        run: python packaging/build-portable.py --target ${{ matrix.target }} --arch ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/portable/*
+          if-no-files-found: error
+
+  gnome-package:
+    name: Build GNOME Debian package
+    needs: portable-tests
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install GNOME build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y desktop-file-utils dpkg-dev gjs gir1.2-adw-1 gir1.2-gtk-4.0 gir1.2-gtop-2.0 libglib2.0-bin nodejs python3-gi zip
+      - name: Build and validate Debian package
+        run: ./packaging/build-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SessionSifu-GNOME-Debian
+          path: dist/sessionsifu_2.0.0_all.deb
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [portable-bundles, gnome-package]
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: release-artifacts
+          merge-multiple: true
+      - name: Generate checksums
+        run: sha256sum release-artifacts/* > release-artifacts/SHA256SUMS
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" release-artifacts/* --generate-notes --verify-tag
