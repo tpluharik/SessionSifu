@@ -3,14 +3,16 @@
 import GLib from 'gi://GLib';
 import * as SubprocessUtils from '../extension/sessionsifu@local/utils/subprocessUtils.js';
 
-const executable = GLib.find_program_in_path('true');
+const executable = GLib.find_program_in_path('python3');
 if (!executable)
-    throw new Error('true executable is unavailable');
+    throw new Error('python3 executable is unavailable');
 const marker = GLib.build_filenamev([
     GLib.get_tmp_dir(), `sessionsifu-security-${GLib.get_real_time()}`]);
 
 const hostileArguments = [
     executable,
+    '-c',
+    'import time; time.sleep(1)',
     `$(touch ${marker})`,
     '`id`',
     '; echo injected',
