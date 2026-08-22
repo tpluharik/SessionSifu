@@ -121,8 +121,18 @@ export const SaveSession = class {
                 });
             if (!sessionConfig.x_session_config_objects.length)
                 return false;
-            sessionConfig.recall_schema = 1;
+            sessionConfig.recall_schema = 2;
             sessionConfig.recall_include_file_paths = Boolean(includeFilePaths);
+            sessionConfig.recall_displays = Main.layoutManager.monitors
+                .slice(0, 8)
+                .map((monitor, index) => ({
+                    index,
+                    x: Math.trunc(monitor.x),
+                    y: Math.trunc(monitor.y),
+                    width: Math.trunc(monitor.width),
+                    height: Math.trunc(monitor.height),
+                }))
+                .filter(monitor => monitor.width > 0 && monitor.height > 0);
             return await this._saveSessionConfigAsync(sessionConfig, baseDir, null, true);
         } catch (error) {
             this._log.error(error);

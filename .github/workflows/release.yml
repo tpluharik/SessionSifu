@@ -78,7 +78,7 @@ jobs:
       - name: Install GNOME build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y desktop-file-utils dpkg-dev gjs gir1.2-adw-1 gir1.2-gtk-4.0 gir1.2-gtop-2.0 gnome-shell libglib2.0-bin nodejs python3-gi zip
+          sudo apt-get install -y desktop-file-utils dpkg-dev gjs gir1.2-adw-1 gir1.2-gdkpixbuf-2.0 gir1.2-gtk-4.0 gir1.2-gtop-2.0 gnome-shell libglib2.0-bin nodejs python3-gi zip
       - name: Build and validate Debian package
         run: ./packaging/build-deb.sh
       - uses: actions/upload-artifact@v4

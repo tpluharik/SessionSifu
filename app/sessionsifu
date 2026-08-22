@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import os
@@ -24,11 +25,12 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "2.3.3"
+CURRENT_VERSION = "2.4.0"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -48,11 +50,18 @@ UPDATE_MANIFEST_URL = (
 UPDATE_REPOSITORY_PREFIX = "/tpluharik/SessionSifu/"
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_UPDATE_BYTES = 50 * 1024 * 1024
-MAX_RECALL_SCREENSHOT_BYTES = 64 * 1024 * 1024
+MAX_RECALL_SCREENSHOT_BYTES = 8 * 1024 * 1024
+MAX_RECALL_SOURCE_BYTES = 64 * 1024 * 1024
+MAX_RECALL_PREVIEW_EDGE = 1280
+RECALL_IMAGE_RE = re.compile(
+    r"^recall-\d{8}-\d{6}-\d{3}(?:-display-\d+)?\.(?:png|jpe?g)$",
+    re.IGNORECASE,
+)
+RECALL_STEM_RE = re.compile(r"^recall-\d{8}-\d{6}-\d{3}$")
 
 
 def recall_screenshot_path(value: object) -> Path | None:
-    """Accept only private PNG previews from SessionSifu's Recall directory."""
+    """Accept only private image previews from SessionSifu's Recall directory."""
     if not value:
         return None
     recall_dir = Path(GLib.get_user_config_dir()).resolve() / "sessionsifu" / "recall"
@@ -61,23 +70,114 @@ def recall_screenshot_path(value: object) -> Path | None:
         if candidate.is_symlink() or not candidate.is_file():
             return None
         resolved = candidate.resolve(strict=True)
-        if resolved.parent != recall_dir or resolved.suffix.casefold() != ".png":
+        if resolved.parent != recall_dir or not RECALL_IMAGE_RE.fullmatch(resolved.name):
             return None
-        if resolved.stat().st_size <= 0 or resolved.stat().st_size > MAX_RECALL_SCREENSHOT_BYTES:
+        size_limit = (
+            MAX_RECALL_SOURCE_BYTES
+            if resolved.suffix.casefold() == ".png"
+            else MAX_RECALL_SCREENSHOT_BYTES
+        )
+        if resolved.stat().st_size <= 0 or resolved.stat().st_size > size_limit:
             return None
         return resolved
     except OSError:
         return None
 
 
-def recall_preview(item: dict, width: int = 300, height: int = 170) -> Gtk.Widget:
-    path = recall_screenshot_path(item.get("screenshot"))
-    if path is not None:
+@functools.lru_cache(maxsize=16)
+def _recall_pixbuf(path: str, modified_ns: int, size: int) -> GdkPixbuf.Pixbuf:
+    del modified_ns, size
+    return GdkPixbuf.Pixbuf.new_from_file(path)
+
+
+def _picture(path: Path, width: int, height: int, pixbuf=None) -> Gtk.Picture:
+    if pixbuf is None:
         picture = Gtk.Picture.new_for_filename(str(path))
-        picture.set_content_fit(Gtk.ContentFit.COVER)
-        picture.set_can_shrink(True)
-        picture.set_size_request(width, height)
-        return picture
+    else:
+        picture = Gtk.Picture.new_for_paintable(Gdk.Texture.new_for_pixbuf(pixbuf))
+    picture.set_content_fit(Gtk.ContentFit.COVER)
+    picture.set_can_shrink(True)
+    picture.set_size_request(width, height)
+    return picture
+
+
+def _matching_window_picture(
+    item: dict, match: dict, width: int, height: int
+) -> Gtk.Picture | None:
+    displays = item.get("screenshots", [])
+    display = next(
+        (value for value in displays if value.get("index") == match.get("monitor")),
+        None,
+    )
+    if display is None:
+        return None
+    path = recall_screenshot_path(display.get("path"))
+    if path is None:
+        return None
+    try:
+        stat = path.stat()
+        pixbuf = _recall_pixbuf(str(path), stat.st_mtime_ns, stat.st_size)
+        display_width = float(display["width"])
+        display_height = float(display["height"])
+        scale_x = pixbuf.get_width() / display_width
+        scale_y = pixbuf.get_height() / display_height
+        crop_x = round((float(match["x"]) - float(display["x"])) * scale_x)
+        crop_y = round((float(match["y"]) - float(display["y"])) * scale_y)
+        crop_width = round(float(match["width"]) * scale_x)
+        crop_height = round(float(match["height"]) * scale_y)
+        crop_x = max(0, min(crop_x, pixbuf.get_width() - 1))
+        crop_y = max(0, min(crop_y, pixbuf.get_height() - 1))
+        crop_width = max(1, min(crop_width, pixbuf.get_width() - crop_x))
+        crop_height = max(1, min(crop_height, pixbuf.get_height() - crop_y))
+        cropped = pixbuf.new_subpixbuf(crop_x, crop_y, crop_width, crop_height)
+        return _picture(path, width, height, cropped)
+    except (KeyError, OSError, TypeError, ValueError, GLib.Error):
+        return None
+
+
+def recall_preview(
+    item: dict,
+    width: int = 300,
+    height: int = 170,
+    show_all: bool = False,
+) -> Gtk.Widget:
+    pictures: list[Gtk.Picture] = []
+    max_pictures = 8 if show_all else (1 if width < 220 else 2)
+    candidate_count = min(
+        max_pictures,
+        len(item.get("matches", [])) or len(item.get("screenshots", [])) or 1,
+    )
+    columns = 1 if candidate_count == 1 else 2
+    rows = max(1, (candidate_count + columns - 1) // columns)
+    picture_width = max(1, width // columns)
+    picture_height = max(1, height // rows)
+    for match in item.get("matches", [])[:max_pictures]:
+        picture = _matching_window_picture(
+            item, match, picture_width, picture_height
+        )
+        if picture is not None:
+            pictures.append(picture)
+    if not pictures:
+        screenshot_values = item.get("screenshots", [])[:max_pictures]
+        for screenshot in screenshot_values:
+            path = recall_screenshot_path(screenshot.get("path"))
+            if path is not None:
+                pictures.append(_picture(path, picture_width, picture_height))
+    if not pictures:
+        path = recall_screenshot_path(item.get("screenshot"))
+        if path is not None:
+            pictures.append(_picture(path, width, height))
+    if pictures:
+        if len(pictures) == 1:
+            pictures[0].set_size_request(width, height)
+            return pictures[0]
+        grid = Gtk.Grid(column_spacing=4, row_spacing=4)
+        grid.set_size_request(width, height)
+        for index, picture in enumerate(pictures):
+            picture.set_hexpand(True)
+            picture.set_vexpand(True)
+            grid.attach(picture, index % columns, index // columns, 1, 1)
+        return grid
     placeholder = Gtk.Box(
         orientation=Gtk.Orientation.VERTICAL,
         halign=Gtk.Align.CENTER,
@@ -89,6 +189,114 @@ def recall_preview(item: dict, width: int = 300, height: int = 170) -> Gtk.Widge
     placeholder.append(Gtk.Image(icon_name="image-missing-symbolic", pixel_size=42))
     placeholder.append(Gtk.Label(label="Metadata-only snapshot"))
     return placeholder
+
+
+def compress_recall_preview(source_value: str, stem_value: str, layout_value: str) -> int:
+    """Crop one trusted Shell grab into bounded, private per-display JPEGs."""
+    configured_recall_dir = Path(GLib.get_user_config_dir()) / "sessionsifu" / "recall"
+    source = Path(source_value)
+    stem = Path(stem_value)
+    temporary_paths: list[Path] = []
+    try:
+        if configured_recall_dir.is_symlink():
+            raise ValueError("Refusing symbolic-link Recall storage")
+        recall_dir = configured_recall_dir.resolve()
+        if source.is_symlink() or not source.is_file():
+            raise ValueError("Recall screenshot source is not a regular file")
+        source = source.resolve(strict=True)
+        if source.parent != recall_dir or stem.parent.resolve() != recall_dir:
+            raise ValueError("Recall preview paths must remain in private Recall storage")
+        if not RECALL_STEM_RE.fullmatch(stem.name):
+            raise ValueError("Recall preview stem is invalid")
+        if source.name != f"{stem.name}-raw.png":
+            raise ValueError("Recall screenshot source does not match its entry")
+        source_size = source.stat().st_size
+        if source_size <= 0 or source_size > MAX_RECALL_SOURCE_BYTES:
+            raise ValueError("Recall screenshot source is outside the size limit")
+        displays = json.loads(layout_value)
+        if not isinstance(displays, list) or not 1 <= len(displays) <= 8:
+            raise ValueError("Recall display layout is invalid")
+        normalized = []
+        for fallback_index, display in enumerate(displays):
+            index = int(display.get("index", fallback_index))
+            x, y = int(display["x"]), int(display["y"])
+            display_width, display_height = int(display["width"]), int(display["height"])
+            if not 0 <= index < 8 or display_width <= 0 or display_height <= 0:
+                raise ValueError("Recall display geometry is invalid")
+            normalized.append((index, x, y, display_width, display_height))
+
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file(str(source))
+        if pixbuf.get_width() * pixbuf.get_height() > 150_000_000:
+            raise ValueError("Recall screenshot dimensions are outside the safety limit")
+        min_x = min(value[1] for value in normalized)
+        min_y = min(value[2] for value in normalized)
+        virtual_width = max(value[1] + value[3] for value in normalized) - min_x
+        virtual_height = max(value[2] + value[4] for value in normalized) - min_y
+        coordinate_scale_x = pixbuf.get_width() / virtual_width
+        coordinate_scale_y = pixbuf.get_height() / virtual_height
+
+        for index, x, y, display_width, display_height in normalized:
+            crop_x = round((x - min_x) * coordinate_scale_x)
+            crop_y = round((y - min_y) * coordinate_scale_y)
+            crop_width = round(display_width * coordinate_scale_x)
+            crop_height = round(display_height * coordinate_scale_y)
+            crop_x = max(0, min(crop_x, pixbuf.get_width() - 1))
+            crop_y = max(0, min(crop_y, pixbuf.get_height() - 1))
+            crop_width = max(1, min(crop_width, pixbuf.get_width() - crop_x))
+            crop_height = max(1, min(crop_height, pixbuf.get_height() - crop_y))
+            cropped = pixbuf.new_subpixbuf(crop_x, crop_y, crop_width, crop_height)
+            scale = min(1.0, MAX_RECALL_PREVIEW_EDGE / max(crop_width, crop_height))
+            output_width = max(1, round(crop_width * scale))
+            output_height = max(1, round(crop_height * scale))
+            if scale < 1.0:
+                cropped = cropped.scale_simple(
+                    output_width, output_height, GdkPixbuf.InterpType.BILINEAR
+                )
+            if cropped.get_has_alpha():
+                flattened = GdkPixbuf.Pixbuf.new(
+                    GdkPixbuf.Colorspace.RGB,
+                    False,
+                    8,
+                    cropped.get_width(),
+                    cropped.get_height(),
+                )
+                flattened.fill(0xFFFFFFFF)
+                cropped.composite(
+                    flattened,
+                    0,
+                    0,
+                    cropped.get_width(),
+                    cropped.get_height(),
+                    0,
+                    0,
+                    1,
+                    1,
+                    GdkPixbuf.InterpType.NEAREST,
+                    255,
+                )
+                cropped = flattened
+            target = recall_dir / f"{stem.name}-display-{index}.jpg"
+            temporary = recall_dir / f".{stem.name}-display-{index}.tmp"
+            temporary_paths.append(temporary)
+            cropped.savev(str(temporary), "jpeg", ["quality"], ["70"])
+            temporary.chmod(0o600)
+            if temporary.stat().st_size > MAX_RECALL_SCREENSHOT_BYTES:
+                raise ValueError("Compressed Recall preview exceeds the size limit")
+            temporary.replace(target)
+        return 0
+    except (GLib.Error, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        print(f"sessionsifu: could not compress Recall preview: {error}", file=sys.stderr)
+        return 1
+    finally:
+        for temporary in temporary_paths:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+        try:
+            source.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def version_tuple(version: str) -> tuple[int, int, int]:
@@ -703,7 +911,7 @@ class RecallSearchWindow(Adw.ApplicationWindow):
                 margin_end=10,
             )
             row.add_css_class("card")
-            row.append(recall_preview(item))
+            row.append(recall_preview(item, show_all=True))
             title = Gtk.Label(label=f"{modified} — {apps}", xalign=0, wrap=True)
             title.add_css_class("heading")
             row.append(title)
@@ -966,7 +1174,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         capture_recall_row = Adw.ActionRow(
             title="Capture current Recall snapshot",
             subtitle=(
-                "Captures metadata and, when explicitly enabled, a private local desktop preview"
+                "Captures metadata and, when enabled, compressed private display previews"
             ),
         )
         self.recall_capture_button = Gtk.Button(label="Capture Now", valign=Gtk.Align.CENTER)
@@ -1583,8 +1791,21 @@ def main() -> int:
     parser.add_argument("--restore", metavar="NAME")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--recall-search", action="store_true")
+    parser.add_argument(
+        "--compress-recall-preview",
+        nargs=2,
+        metavar=("SOURCE", "OUTPUT_STEM"),
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument("--display-layout", default="[]", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
+    if args.compress_recall_preview:
+        return compress_recall_preview(
+            args.compress_recall_preview[0],
+            args.compress_recall_preview[1],
+            args.display_layout,
+        )
     if args.autostart:
         return autostart()
     if args.save:

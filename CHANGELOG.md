@@ -2,6 +2,21 @@
 
 All notable SessionSifu changes are documented here.
 
+## 2.4.0
+
+- Replaced the single full-size Recall PNG with one bounded JPEG preview per
+  connected display. A separate helper crops, downsizes and compresses the
+  images after GNOME Shell completes its asynchronous desktop grab.
+- Added application-window crops to metadata search results: matching app,
+  window-title and opted-in file keywords now show the relevant window area
+  from its display preview, without storing duplicate per-app images or using
+  OCR.
+- Added schema-1 Recall compatibility while emitting schema 2 with a bounded
+  display manifest, private atomic preview replacement and complete cleanup of
+  legacy, raw and per-display image files.
+- Reduced Shell-side image work to one non-overlapping capture and moved image
+  decoding/compression out of GNOME Shell's process.
+
 ## 2.3.3
 
 - Fixed Recall **Capture Now** after an in-app or package upgrade by detecting

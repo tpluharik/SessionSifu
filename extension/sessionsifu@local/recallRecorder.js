@@ -15,6 +15,7 @@ export const RECALL_PATTERN = /^recall-\d{8}-\d{6}-\d{3}\.json$/;
 export const RECALL_LIMIT = 500;
 const MAX_RECALL_BYTES = 2 * 1024 * 1024;
 const MAX_SCREENSHOT_BYTES = 64 * 1024 * 1024;
+const MAX_DISPLAYS = 8;
 const PRUNE_INTERVAL_US = 5 * 60 * 1000 * 1000;
 const _summaryCache = new Map();
 
@@ -76,14 +77,30 @@ function _screenshotPath(name) {
         FileUtils.recall_path, name.replace(/\.json$/, '.png')]);
 }
 
-function _removeScreenshot(name) {
-    const path = _screenshotPath(name);
+function _rawScreenshotPath(name) {
+    return GLib.build_filenamev([
+        FileUtils.recall_path, name.replace(/\.json$/, '-raw.png')]);
+}
+
+function _displayScreenshotPath(name, index) {
+    return GLib.build_filenamev([
+        FileUtils.recall_path, name.replace(/\.json$/, `-display-${index}.jpg`)]);
+}
+
+function _removeFile(path) {
     try {
         Gio.File.new_for_path(path).delete(null);
     } catch (error) {
         if (!error.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND))
             Log.Log.getDefault().error(error, `Could not delete Recall screenshot ${path}`);
     }
+}
+
+function _removeScreenshots(name) {
+    _removeFile(_screenshotPath(name));
+    _removeFile(_rawScreenshotPath(name));
+    for (let index = 0; index < MAX_DISPLAYS; index++)
+        _removeFile(_displayScreenshotPath(name, index));
 }
 
 function _invalidateSummary(name) {
@@ -134,7 +151,7 @@ function _captureScreenshot(path) {
                     } catch (_) {
                         // The callback may already have closed the stream.
                     }
-                    _removeScreenshot(GLib.path_get_basename(path).replace(/\.png$/, '.json'));
+                    _removeFile(path);
                     reject(error);
                 }
             });
@@ -144,6 +161,35 @@ function _captureScreenshot(path) {
             } catch (_) {
                 // Ignore cleanup failures while reporting the original error.
             }
+            reject(error);
+        }
+    });
+}
+
+function _compressScreenshot(rawPath, name, displays) {
+    return new Promise((resolve, reject) => {
+        try {
+            const stem = GLib.build_filenamev([
+                FileUtils.recall_path, name.replace(/\.json$/, '')]);
+            const process = Gio.Subprocess.new([
+                FileUtils.getManagerExecutable(),
+                '--compress-recall-preview',
+                rawPath,
+                stem,
+                '--display-layout',
+                JSON.stringify(displays),
+            ], Gio.SubprocessFlags.STDERR_PIPE);
+            process.communicate_utf8_async(null, null, (source, result) => {
+                try {
+                    const [, , stderr] = source.communicate_utf8_finish(result);
+                    if (!source.get_successful())
+                        throw new Error(stderr?.trim() || 'Recall preview compressor failed');
+                    resolve(true);
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        } catch (error) {
             reject(error);
         }
     });
@@ -164,11 +210,13 @@ function _summary(entry, excludedApps = []) {
         if (!ok)
             return null;
         const payload = JSON.parse(new TextDecoder().decode(contents));
-        if (payload.recall_schema !== 1 || !Array.isArray(payload.x_session_config_objects))
+        if (![1, 2].includes(payload.recall_schema) ||
+            !Array.isArray(payload.x_session_config_objects))
             return null;
         const apps = [];
         const titles = [];
         const files = [];
+        const windows = [];
         let includedWindows = 0;
         for (const window of payload.x_session_config_objects.slice(0, 512)) {
             const identity = [window.app_name, window.desktop_file_id, window.wm_class]
@@ -188,6 +236,20 @@ function _summary(entry, excludedApps = []) {
                 if (value && !files.includes(value))
                     files.push(value);
             }
+            const position = window.window_position ?? {};
+            windows.push({
+                app,
+                title,
+                files: (window.open_files ?? []).slice(0, 32)
+                    .map(path => String(path).slice(0, 4096)),
+                monitor: Number.isInteger(window.monitor_number)
+                    ? window.monitor_number
+                    : 0,
+                x: Number(position.x_offset),
+                y: Number(position.y_offset),
+                width: Number(position.width),
+                height: Number(position.height),
+            });
         }
         if (!includedWindows) {
             _summaryCache.set(entry.path, {
@@ -198,6 +260,25 @@ function _summary(entry, excludedApps = []) {
             });
             return null;
         }
+        const displays = (payload.recall_displays ?? [])
+            .slice(0, MAX_DISPLAYS)
+            .map((display, fallbackIndex) => ({
+                index: Number.isInteger(display.index) ? display.index : fallbackIndex,
+                x: Number(display.x),
+                y: Number(display.y),
+                width: Number(display.width),
+                height: Number(display.height),
+            }))
+            .filter(display => Number.isFinite(display.x) && Number.isFinite(display.y) &&
+                Number.isFinite(display.width) && Number.isFinite(display.height) &&
+                display.width > 0 && display.height > 0);
+        const screenshots = displays
+            .map(display => ({
+                ...display,
+                path: _displayScreenshotPath(entry.name, display.index),
+            }))
+            .filter(display => GLib.file_test(display.path, GLib.FileTest.IS_REGULAR));
+        const legacyScreenshot = _screenshotPath(entry.name);
         const summary = {
             name: entry.name,
             modified: entry.modified,
@@ -205,9 +286,11 @@ function _summary(entry, excludedApps = []) {
             apps,
             titles,
             files,
-            screenshot: GLib.file_test(_screenshotPath(entry.name), GLib.FileTest.IS_REGULAR)
-                ? _screenshotPath(entry.name)
+            screenshots,
+            screenshot: GLib.file_test(legacyScreenshot, GLib.FileTest.IS_REGULAR)
+                ? legacyScreenshot
                 : '',
+            _windows: windows,
         };
         _summaryCache.set(entry.path, {
             modified: entry.modified,
@@ -232,8 +315,20 @@ export function listRecall(query = '', excludedApps = []) {
             continue;
         const searchable = [...summary.apps, ...summary.titles, ...summary.files]
             .join('\n').toLowerCase();
-        if (!needle || searchable.includes(needle))
-            results.push(summary);
+        if (!needle || searchable.includes(needle)) {
+            const result = {...summary};
+            delete result._windows;
+            result.matches = needle
+                ? summary._windows.filter(window => [
+                    window.app, window.title, ...window.files,
+                ].join('\n').toLowerCase().includes(needle))
+                    .filter(window => Number.isFinite(window.x) &&
+                        Number.isFinite(window.y) && Number.isFinite(window.width) &&
+                        Number.isFinite(window.height) && window.width > 0 && window.height > 0)
+                    .slice(0, 12)
+                : [];
+            results.push(result);
+        }
         if (results.length >= 100)
             break;
     }
@@ -245,7 +340,7 @@ export function deleteRecall() {
     for (const entry of _entryFiles()) {
         try {
             Gio.File.new_for_path(entry.path).delete(null);
-            _removeScreenshot(entry.name);
+            _removeScreenshots(entry.name);
             _summaryCache.delete(entry.path);
             removed++;
         } catch (error) {
@@ -258,17 +353,16 @@ export function deleteRecall() {
 export function deleteRecallScreenshots() {
     let removed = 0;
     for (const entry of _entryFiles()) {
-        const path = _screenshotPath(entry.name);
-        if (!GLib.file_test(path, GLib.FileTest.IS_REGULAR))
-            continue;
-        try {
-            Gio.File.new_for_path(path).delete(null);
-            _summaryCache.delete(entry.path);
+        const candidates = [_screenshotPath(entry.name), _rawScreenshotPath(entry.name)];
+        for (let index = 0; index < MAX_DISPLAYS; index++)
+            candidates.push(_displayScreenshotPath(entry.name, index));
+        for (const path of candidates) {
+            if (!GLib.file_test(path, GLib.FileTest.IS_REGULAR))
+                continue;
+            _removeFile(path);
             removed++;
-        } catch (error) {
-            Log.Log.getDefault().error(
-                error, `Could not delete Privacy Recall screenshot ${path}`);
         }
+        _summaryCache.delete(entry.path);
     }
     return removed;
 }
@@ -360,7 +454,17 @@ export const RecallRecorder = class {
                     this._log.info(
                         'Skipped Recall screenshot because the previous preview is still encoding');
                 } else
-                    this._captureScreenshotForEntry(name, screenshotGeneration);
+                    this._captureScreenshotForEntry(
+                        name, screenshotGeneration, Main.layoutManager.monitors
+                            .slice(0, MAX_DISPLAYS)
+                            .map((monitor, index) => ({
+                                index,
+                                x: Math.trunc(monitor.x),
+                                y: Math.trunc(monitor.y),
+                                width: Math.trunc(monitor.width),
+                                height: Math.trunc(monitor.height),
+                            }))
+                            .filter(monitor => monitor.width > 0 && monitor.height > 0));
             }
             this._prune();
             return true;
@@ -372,14 +476,19 @@ export const RecallRecorder = class {
         }
     }
 
-    async _captureScreenshotForEntry(name, screenshotGeneration) {
+    async _captureScreenshotForEntry(name, screenshotGeneration, displays) {
         this._screenshotSaving = true;
         try {
-            await _captureScreenshot(_screenshotPath(name));
+            if (!displays.length)
+                throw new Error('No active displays are available for Recall preview capture');
+            const rawPath = _rawScreenshotPath(name);
+            await _captureScreenshot(rawPath);
+            await _compressScreenshot(rawPath, name, displays);
             if (this._destroyed || screenshotGeneration !== this._screenshotGeneration)
-                _removeScreenshot(name);
+                _removeScreenshots(name);
             _invalidateSummary(name);
         } catch (error) {
+            _removeScreenshots(name);
             this._log.error(error, 'Could not capture Recall screenshot preview');
         } finally {
             this._screenshotSaving = false;
@@ -400,7 +509,7 @@ export const RecallRecorder = class {
                 continue;
             try {
                 Gio.File.new_for_path(entry.path).delete(null);
-                _removeScreenshot(entry.name);
+                _removeScreenshots(entry.name);
                 _summaryCache.delete(entry.path);
             } catch (error) {
                 this._log.error(error, `Could not prune Privacy Recall entry ${entry.path}`);

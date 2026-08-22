@@ -1,7 +1,7 @@
 {
-  "version": "2.3.3",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.3.3_all.deb",
-  "sha256": "c8ad9cd3300419ba1bc2aa9dabdb734db9b285ce3f6fc1a9fbc9e349fda3efdb",
-  "size": 249916,
-  "notes": "Fixes Recall Capture Now after upgrades by safely reloading a stale GNOME integration, while retaining the bounded asynchronous snapshot pipeline."
+  "version": "2.4.0",
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.4.0_all.deb",
+  "sha256": "b8f0df5ec600fca4776852d1fe84d0b6ac7a80eb51e7dc44848f7ff6b3c4c3f8",
+  "size": 254320,
+  "notes": "Adds compressed per-display Recall previews and keyword-matched application crops while moving image processing outside GNOME Shell."
 }

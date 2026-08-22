@@ -31,8 +31,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "2.3.3"
-assert metadata["version"] == 11
+assert metadata["version-name"] == "2.4.0"
+assert metadata["version"] == 12
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -59,7 +59,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="2.3.3"' in build_script
+assert 'version="2.4.0"' in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
 assert "tests/open-files-smoke.js" in build_script
@@ -109,6 +109,10 @@ assert "sessionsifu-recall/" in source_text
 assert "changed::recall-search-shortcut'" in source_text
 assert "new Shell.Screenshot" in source_text
 assert "screenshot.screenshot(false, stream" in source_text
+assert "recall_displays" in source_text
+assert "-display-${index}.jpg" in source_text
+assert "--compress-recall-preview" in source_text
+assert "result.matches" in source_text
 assert "_excludedApplicationVisible" in source_text
 assert "PRUNE_INTERVAL_US" in source_text
 assert "_screenshotSaving" in source_text
@@ -119,13 +123,16 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "2.3.3"' in app_source
+assert 'CURRENT_VERSION = "2.4.0"' in app_source
 assert 'self.settings.value("recall_enabled", False, type=bool)' in (
     root / "portable" / "sessionsifu_portable" / "ui.py"
 ).read_text()
 assert "class RecallSearchWindow" in app_source
 assert "Gtk.FlowBox" in app_source
 assert "recall_screenshot_path" in app_source
+assert "def compress_recall_preview" in app_source
+assert "MAX_RECALL_PREVIEW_EDGE = 1280" in app_source
+assert 'cropped.savev(str(temporary), "jpeg", ["quality"], ["70"])' in app_source
 assert "sync_gnome_recall_shortcut" in app_source
 assert "def live_extension_current" in app_source
 assert "def reload_extension" in app_source

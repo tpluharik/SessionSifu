@@ -152,21 +152,26 @@ Session JSON can contain an `open_files` array on each saved window object. This
 is best-effort metadata rather than a promise that every application's internal
 document state can be observed.
 
-Privacy Recall data is separate from named/restorable sessions. Version 2.3 can
-store full-desktop PNG previews on the full GNOME integration only, behind a
-second opt-in. Capture is skipped on the lock screen and whenever an excluded
-application is visible; PNGs use mode 0600 and are removed with their metadata.
-Search remains metadata-based and does not perform OCR. Portable editions stay
-metadata-only pending cross-platform security review.
+Privacy Recall data is separate from named/restorable sessions. Version 2.4 can
+store one bounded JPEG preview per display on the full GNOME integration only,
+behind a second opt-in. Capture is skipped on the lock screen and whenever an
+excluded application is visible. Preview files use mode 0600 and are removed
+with their metadata. Search remains metadata-based and does not perform OCR;
+when a keyword matches an app, title or opted-in file, GTK crops that window's
+geometry from the corresponding display preview in memory. Portable editions
+stay metadata-only pending cross-platform security review.
 
 Changing the exclusion list purges existing screenshot previews while preserving
 metadata because previously captured pixels cannot be retroactively redacted.
 
 Recall's hot path uses compact atomic asynchronous writes. Open-file discovery is
 bounded and avoids redundant target probes; paths are validated before restore.
-PNG encoding runs after metadata completion and never overlaps another Recall PNG
-capture. Summary parsing is cached, and retention scans run at most every five
-minutes unless the retention setting changes.
+GNOME Shell performs one asynchronous desktop grab and never overlaps another
+Recall image capture. The unprivileged manager helper loads that temporary PNG
+once, crops every display, downsizes the longest edge to at most 1,280 pixels and
+writes quality-70 JPEG previews through private temporary files. Summary parsing
+and decoded search images are bounded caches, and retention scans run at most
+every five minutes unless the retention setting changes.
 
 ## Debian package and update channel
 
