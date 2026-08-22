@@ -31,8 +31,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "2.4.0"
-assert metadata["version"] == 12
+assert metadata["version-name"] == "2.5.0"
+assert metadata["version"] == 13
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -59,12 +59,13 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="2.4.0"' in build_script
+assert 'version="2.5.0"' in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
 assert "tests/open-files-smoke.js" in build_script
 assert "tests/runtime-safety-smoke.js" in build_script
 assert "tests/window-safety-smoke.js" in build_script
+assert "tests/security-smoke.js" in build_script
 assert "tests/test_portable.py" in build_script
 assert "ROADMAP.md" in build_script
 
@@ -123,7 +124,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "2.4.0"' in app_source
+assert 'CURRENT_VERSION = "2.5.0"' in app_source
 assert 'self.settings.value("recall_enabled", False, type=bool)' in (
     root / "portable" / "sessionsifu_portable" / "ui.py"
 ).read_text()
@@ -165,6 +166,9 @@ assert "!this._settings.get_boolean('recall-enabled') ||" not in extension_entry
 assert "self.snapshot_intervals = [30, 60, 300, 600, 900, 1800]" in app_source
 assert "raw.githubusercontent.com/tpluharik/SessionSifu" in app_source
 assert "Downloaded update failed SHA-256 verification" in app_source
+assert "Update manifest signature verification failed" in app_source
+assert "UPDATE_SIGNING_PUBLIC_KEY" in app_source
+assert "harden_local_storage()" in app_source
 assert "install_user_payload" in app_source
 assert '["dpkg-deb", "--extract"' in app_source
 assert "launch_default_for_uri" not in app_source
@@ -189,6 +193,12 @@ assert "mayRestoreApplications" in source_text
 assert "restorePreviousDelay = this._settings.get_int('restore-previous-delay') * 1000" in source_text
 assert "_sessionApplicationKey" in source_text
 assert "Turn Off SessionSifu" in source_text
+assert "bash -c" not in source_text
+assert "launch-app.sh" not in source_text
+assert "new RegExp(keyword)" not in source_text
+assert "spawnDirectArgv" in source_text
+assert "GLib.chmod(sessionFile.get_path(), 0o600)" in source_text
+assert "Refusing symbolic-link session file" in source_text
 assert "['gnome-extensions', 'disable', 'sessionsifu@local']" in source_text
 
 portable = root / "portable" / "sessionsifu_portable"

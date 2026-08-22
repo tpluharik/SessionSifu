@@ -388,6 +388,13 @@ export const RecallRecorder = class {
                 this._log.info(
                     `Recall exclusions changed; removed ${removed} existing screenshot previews`);
             }),
+            this._settings.connect('changed::recall-capture-screenshots', () => {
+                if (this._settings.get_boolean('recall-capture-screenshots'))
+                    return;
+                this._screenshotGeneration++;
+                const removed = deleteRecallScreenshots();
+                this._log.info(`Recall screenshots disabled; removed ${removed} previews`);
+            }),
         ];
         this._reschedule();
     }
@@ -445,9 +452,9 @@ export const RecallRecorder = class {
                 `Recall metadata saved in ${Math.round((GLib.get_monotonic_time() - startedUs) / 1000)} ms`);
             if (this._settings.get_boolean('recall-capture-screenshots')) {
                 const screenshotGeneration = this._screenshotGeneration;
+                const screenshotExclusions = this._settings.get_strv('recall-excluded-apps');
                 if (Main.sessionMode.isLocked ||
-                    _excludedApplicationVisible(
-                        this._settings.get_strv('recall-excluded-apps'))) {
+                    _excludedApplicationVisible(screenshotExclusions)) {
                     this._log.info(
                         'Skipped Recall screenshot because the session is locked or an excluded app is visible');
                 } else if (this._screenshotSaving) {
@@ -455,7 +462,8 @@ export const RecallRecorder = class {
                         'Skipped Recall screenshot because the previous preview is still encoding');
                 } else
                     this._captureScreenshotForEntry(
-                        name, screenshotGeneration, Main.layoutManager.monitors
+                        name, screenshotGeneration, screenshotExclusions,
+                        Main.layoutManager.monitors
                             .slice(0, MAX_DISPLAYS)
                             .map((monitor, index) => ({
                                 index,
@@ -476,15 +484,21 @@ export const RecallRecorder = class {
         }
     }
 
-    async _captureScreenshotForEntry(name, screenshotGeneration, displays) {
+    async _captureScreenshotForEntry(name, screenshotGeneration, exclusions, displays) {
         this._screenshotSaving = true;
         try {
             if (!displays.length)
                 throw new Error('No active displays are available for Recall preview capture');
             const rawPath = _rawScreenshotPath(name);
             await _captureScreenshot(rawPath);
+            if (this._destroyed || screenshotGeneration !== this._screenshotGeneration ||
+                Main.sessionMode.isLocked || _excludedApplicationVisible(exclusions)) {
+                _removeScreenshots(name);
+                return;
+            }
             await _compressScreenshot(rawPath, name, displays);
-            if (this._destroyed || screenshotGeneration !== this._screenshotGeneration)
+            if (this._destroyed || screenshotGeneration !== this._screenshotGeneration ||
+                Main.sessionMode.isLocked || _excludedApplicationVisible(exclusions))
                 _removeScreenshots(name);
             _invalidateSummary(name);
         } catch (error) {

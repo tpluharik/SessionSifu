@@ -58,8 +58,10 @@ Move slow process and window inspection off UI/compositor threads, add bounded
 parallelism and fuzz the JSON/update parsers. Introduce platform sandbox and
 permission audits plus automated long-running capture/restore stress tests.
 
-The 22 August 2026 [security audit](docs/SECURITY_AUDIT.md) turns this item into
-an ordered hardening program:
+The 22 August 2026 [security audit](docs/SECURITY_AUDIT.md) produced the ordered
+hardening program below. Version 2.5.0 completes items 1, 2, 4, 5 and 6, adds
+rate limiting/log reduction for item 7, and pins action/direct dependency inputs
+for item 3:
 
 1. remove shell interpretation from GNOME restore and distrust imported session
    launch data;
@@ -71,8 +73,9 @@ an ordered hardening program:
 7. reduce same-user D-Bus and diagnostic-log exposure; and
 8. add parser fuzzing plus adversarial GNOME, Windows and macOS restore tests.
 
-Each item needs a regression test and a released fixed version; documentation
-alone does not close an audit finding.
+Remaining work is fully hashed transitive platform locks, SBOM/provenance,
+interactive authorization for destructive same-user calls, sanitized diagnostic
+export and sustained live-platform fuzz/stress testing.
 
 ## 10. Encrypted export and optional user-controlled sync
 

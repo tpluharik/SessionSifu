@@ -40,9 +40,10 @@ supported security branches.
 - A restorable session is active configuration, not a passive interchange
   document. Restore only sessions created by a trusted SessionSifu installation;
   do not restore downloaded or shared JSON files.
-- The current updater restricts downloads to this repository and verifies size
-  and SHA-256. The manifest and package are not yet independently signed. See
-  the [security audit](docs/SECURITY_AUDIT.md) for the resulting trust model.
+- Version 2.5+ verifies an Ed25519-signed, expiring manifest with an application-
+  embedded public key before trusting version, URL, size or SHA-256. Versions
+  2.4 and older require one manual upgrade to enter the signed channel.
+- Session state is stored in owner-only directories/files on POSIX systems.
 
 The same-user boundary is not a defence against malware already running as the
 user. The project still uses private files, bounded parsing, symlink checks,

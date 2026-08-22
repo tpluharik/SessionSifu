@@ -429,8 +429,9 @@ export const CloseSession = class {
 
             for (const id in closeWindowsRulesObjKeyword) {
                 const rules = closeWindowsRulesObjKeyword[id];
-                const {id_, enabled, value, keyword, compareWith, method} = rules;
-                if (!enabled || !value) continue;
+                const {enabled, value, keyword, compareWith, method} = rules ?? {};
+                if (!enabled || !value || typeof keyword !== 'string' || keyword.length > 256)
+                    continue;
 
                 if (compareWith === 'app_name') {
                     let compareWithValue = app.get_name();
@@ -440,7 +441,14 @@ export const CloseSession = class {
                     }
                 } else {
                     for (const window of app.get_windows()) {
-                        let compareWithValue = Function.callFunc(window, Meta.Window.prototype[`get_${compareWith}`]);
+                        const getters = {
+                            title: () => window.get_title(),
+                            wm_class: () => window.get_wm_class(),
+                            wm_class_instance: () => window.get_wm_class_instance(),
+                        };
+                        if (!(compareWith in getters))
+                            continue;
+                        const compareWithValue = getters[compareWith]();
                         matched = this._ruleMatched(compareWithValue, method, keyword);
                         if (matched) {
                             runningAppsClosingByKeywordRules.push([app, rules]);
@@ -459,15 +467,16 @@ export const CloseSession = class {
     }
 
     _ruleMatched(compareWithValue, method, keyword) {
-        let matched = false;
-        if (method === 'regex') {
-            matched = new RegExp(keyword).test(compareWithValue);
-        } else if (method === 'equals') {
-            matched = keyword === compareWithValue;
-        } else {
-            matched = Function.callFunc(compareWithValue, String.prototype[method], keyword);
+        if (typeof compareWithValue !== 'string' || compareWithValue.length > 4096 ||
+            typeof keyword !== 'string' || keyword.length > 256)
+            return false;
+        switch (method) {
+        case 'equals': return compareWithValue === keyword;
+        case 'includes': return compareWithValue.includes(keyword);
+        case 'startsWith': return compareWithValue.startsWith(keyword);
+        case 'endsWith': return compareWithValue.endsWith(keyword);
+        default: return false;
         }
-        return matched;
     }
 
     _activateAndFocusWindow(app) {

@@ -1,7 +1,11 @@
 {
   "version": "@VERSION@",
+  "channel": "stable",
+  "issued_at": "@ISSUED_AT@",
+  "expires_at": "@EXPIRES_AT@",
+  "minimum_version": "2.5.0",
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "Adds compressed per-display Recall previews and keyword-matched application crops while moving image processing outside GNOME Shell."
+  "notes": "Security release: shell-free restore, signed updates, private storage, Recall race protection and bounded matching."
 }

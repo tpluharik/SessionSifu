@@ -8,7 +8,7 @@ SessionSifu saves and reconstructs desktop layouts. It records running
 applications, documents and windows, then can relaunch applications and rebuild
 the supported parts of their layout.
 
-Version 2.4.0 retains the full Ubuntu 26.04/GNOME Shell 50 integration and adds
+Version 2.5.0 retains the full Ubuntu 26.04/GNOME Shell 50 integration and adds
 portable editions for Windows, macOS, KDE Plasma 6 and other GNOME/Linux
 desktops. The project is open source under GPL-3.0.
 
@@ -101,17 +101,17 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_2.4.0_all.deb` from the `updates/` directory, or build it
+Download `sessionsifu_2.5.0_all.deb` from the `updates/` directory, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_2.4.0_all.deb
+sudo apt install ./sessionsifu_2.5.0_all.deb
 ```
 
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_2.4.0_all.deb
+sudo apt install ./dist/sessionsifu_2.5.0_all.deb
 ```
 
 After installation:
@@ -127,10 +127,10 @@ After installation:
 
 Tagged releases attach these self-contained artifacts:
 
-- `SessionSifu-2.4.0-windows-x64.zip`;
-- `SessionSifu-2.4.0-macos-arm64.zip`;
-- `SessionSifu-2.4.0-macos-x64.zip`; and
-- `SessionSifu-2.4.0-linux-x64.tar.gz`.
+- `SessionSifu-2.5.0-windows-x64.zip`;
+- `SessionSifu-2.5.0-macos-arm64.zip`;
+- `SessionSifu-2.5.0-macos-x64.zip`; and
+- `SessionSifu-2.5.0-linux-x64.tar.gz`.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -232,13 +232,15 @@ Windows, macOS, KDE or Linux adapter at runtime and can run without GNOME.
 Session files are active restore configuration: they contain executable and
 argument information as well as document paths. Restore only sessions created
 by your trusted local SessionSifu installation. Do not download, exchange or
-restore JSON session files from another person. A security review found that
-the current GNOME fallback can interpret shell syntax from a tampered session;
-this is tracked as high-priority finding SS-2026-001.
+restore JSON session files from another person. Version 2.5 launches fallback
+commands directly from a bounded argument array and never passes saved session
+text through a shell, but restore still intentionally launches the recorded
+executable.
 
-The in-app updater verifies repository origin, size and SHA-256, but version
-2.4 does not yet verify an independent publisher signature. The current
-limitations, threat model, scanner results and prioritized remediation plan are
+The in-app updater verifies an Ed25519 signature using a public key embedded in
+the application, then validates channel, validity window, minimum/current
+version, repository origin, size and SHA-256. Users upgrading from 2.4 or older
+must install 2.5 manually once. The threat model and remediation record are
 published in the [security audit](docs/SECURITY_AUDIT.md). Report suspected
 vulnerabilities privately through the [security policy](SECURITY.md).
 
@@ -262,11 +264,10 @@ Downloaded update packages are cached under
 `~/.cache/sessionsifu/updates/`. Checking for updates contacts GitHub; session
 files are never uploaded by SessionSifu.
 
-SessionSifu does not encrypt these files. Full GNOME session storage in version
-2.4 also does not yet enforce private modes consistently on previously created
-content; remediation is tracked as SS-2026-005. Treat the account and device as
-the security boundary, enable device encryption, and do not place the data
-directory in a broadly shared or synchronized location.
+SessionSifu does not encrypt these files. Version 2.5 migrates owned,
+non-symlinked GNOME storage to `0700` directories and `0600` files. Treat the
+account and device as the security boundary, enable device encryption, and do
+not place the data directory in a broadly shared or synchronized location.
 
 Portable session files remain local as well:
 
@@ -321,7 +322,7 @@ retaining their searchable metadata. Pixels captured before a new exclusion
 cannot be reliably redacted after the fact.
 
 Recall capture is designed to stay out of the desktop's critical path. Version
-2.4.0 performs one asynchronous Shell grab, then uses a separate unprivileged
+2.5.0 performs one asynchronous Shell grab, then uses a separate unprivileged
 process to crop displays, cap the longest edge at 1,280 pixels and encode JPEGs
 at quality 70. Metadata writes start immediately and history summaries are
 cached. If preview encoding is still busy at the next capture, SessionSifu
@@ -354,16 +355,19 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_2.4.0_all.deb
-updates/sessionsifu_2.4.0_all.deb
+dist/sessionsifu_2.5.0_all.deb
+updates/sessionsifu_2.5.0_all.deb
 updates/latest.json
+updates/latest.json.sig
 ```
 
-The update package and manifest are committed together so the manifest digest
-always identifies the exact downloadable package.
+The update package, manifest and Ed25519 signature are committed together. A
+release build signs only when `SESSIONSIFU_UPDATE_SIGNING_KEY` points to the
+offline private key; contributor builds never need that key.
 
 For development and release details, see [CONTRIBUTING.md](CONTRIBUTING.md).
 For component boundaries, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Maintainers must follow the [release signing and recovery guide](docs/RELEASE_SECURITY.md).
 
 Portable core tests can be run without a graphical desktop:
 
@@ -373,7 +377,7 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v2.4.0` tag publishes the artifacts and `SHA256SUMS` as a GitHub
+A pushed `v2.5.0` tag publishes the artifacts and `SHA256SUMS` as a GitHub
 Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
@@ -400,7 +404,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Security audit and remediation plan](docs/SECURITY_AUDIT.md)
 - [Privacy and local-data guide](docs/PRIVACY.md)
 
-The current 2.4.0 release establishes the shared platform architecture while
+The current 2.5.0 release establishes the shared platform architecture while
 preserving the mature GNOME 50 backend. Compatibility claims are added only
 after hands-on testing; reports from configurations not listed in the table are
 useful, but are treated as best-effort until support is documented here.

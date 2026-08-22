@@ -31,9 +31,6 @@ export const sessions_backup_folder_name = 'backups';
 const sessions_backup_path = GLib.build_filenamev([sessions_path, sessions_backup_folder_name]);
 
 export let desktop_template_path = null;
-export let desktop_template_path_restore_at_autostart = null;
-export let desktop_template_path_restore_previous_at_autostart = null;
-export let desktop_template_launch_app_shell_script = null;
 
 export const desktop_file_store_path_base = GLib.build_filenamev([data_dir, '/applications']);
 export const desktop_file_store_path = `${desktop_file_store_path_base}/__sessionsifu`;
@@ -59,9 +56,6 @@ export function init(extensionObject) {
     current_extension_dir = extensionObject.dir;
     current_extension_path = extensionObject.path;
     desktop_template_path = GLib.build_filenamev([extensionObject.path, '/template/template.desktop']);
-    desktop_template_path_restore_at_autostart = GLib.build_filenamev([extensionObject.path, '/template/_sessionsifu-restore-session.desktop']);
-    desktop_template_path_restore_previous_at_autostart = GLib.build_filenamev([extensionObject.path, '/template/_sessionsifu-restore-previous.desktop']);
-    desktop_template_launch_app_shell_script = GLib.build_filenamev([extensionObject.path, '/template/launch-app.sh']);
     desktop_template_path_ydotool_uinput_rules = GLib.build_filenamev([extensionObject.path, '/template/60-sessionsifu-ydotool-uinput.rules']);
 
 }
@@ -324,10 +318,6 @@ export function isDirectory(sessionName) {
     }
 
     return false;
-}
-
-export function loadAutostartDesktopTemplate() {
-    return loadTemplate(desktop_template_path_restore_at_autostart);
 }
 
 export function loadDesktopTemplate(cancellable = null) {

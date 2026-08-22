@@ -108,6 +108,7 @@ const AutostartService = GObject.registerClass(
             this._autostartDialog = null;
             this._restorePreviousSourceId = 0;
             this._idleIdOpenRestoreSessionDialog = 0;
+            this._lastOperationUs = new Map();
 
             this._settings = PrefsUtils.getSettings();
             this._sessionName = this._settings.get_string(Constants.PREFS_SETTING_AUTORESTORE_SESSIONS);
@@ -116,7 +117,7 @@ const AutostartService = GObject.registerClass(
         }
 
         Ping() {
-            return 'SessionSifu 2.4.0 is ready';
+            return 'SessionSifu 2.5.0 is ready';
         }
 
         _validSessionName(sessionName) {
@@ -125,7 +126,18 @@ const AutostartService = GObject.registerClass(
                 sessionName !== FileUtils.sessions_backup_folder_name;
         }
 
+        _allowOperation(name, minimumIntervalMs) {
+            const now = GLib.get_monotonic_time();
+            const previous = this._lastOperationUs.get(name) ?? 0;
+            if (now - previous < minimumIntervalMs * 1000)
+                return false;
+            this._lastOperationUs.set(name, now);
+            return true;
+        }
+
         SaveSession(sessionName) {
+            if (!this._allowOperation('save', 1000))
+                return 'ERROR: Save request rate limit exceeded';
             if (!this._validSessionName(sessionName))
                 return 'ERROR: Session name must be 1-64 safe characters';
 
@@ -135,6 +147,8 @@ const AutostartService = GObject.registerClass(
         }
 
         RestoreSession(sessionName) {
+            if (!this._allowOperation('restore', 3000))
+                return 'ERROR: Restore request rate limit exceeded';
             if (!this._validSessionName(sessionName))
                 return 'ERROR: Invalid session name';
 
@@ -150,6 +164,8 @@ const AutostartService = GObject.registerClass(
         }
 
         DeleteSession(sessionName) {
+            if (!this._allowOperation('delete-session', 1000))
+                return 'ERROR: Delete request rate limit exceeded';
             if (!this._validSessionName(sessionName))
                 return 'ERROR: Invalid session name';
 
@@ -192,11 +208,15 @@ const AutostartService = GObject.registerClass(
         }
 
         SaveHistoryNow() {
+            if (!this._allowOperation('save-history', 1000))
+                return 'ERROR: Snapshot request rate limit exceeded';
             this._continuousSaver.saveNow(true).catch(error => this._log.error(error));
             return 'Saving an automatic snapshot now';
         }
 
         RestoreHistory(snapshotName) {
+            if (!this._allowOperation('restore-history', 3000))
+                return 'ERROR: Restore request rate limit exceeded';
             const path = ContinuousSaver.snapshotPath(snapshotName);
             if (!path || !GLib.file_test(path, GLib.FileTest.EXISTS))
                 return 'ERROR: Automatic snapshot does not exist';
@@ -214,6 +234,8 @@ const AutostartService = GObject.registerClass(
         }
 
         CaptureRecallNow() {
+            if (!this._allowOperation('capture-recall', 1000))
+                return 'ERROR: Recall capture rate limit exceeded';
             if (!this._settings.get_boolean('recall-enabled'))
                 return 'ERROR: Privacy Recall is disabled';
             this._recallRecorder.saveNow().catch(error => this._log.error(error));
@@ -221,6 +243,8 @@ const AutostartService = GObject.registerClass(
         }
 
         DeleteRecall() {
+            if (!this._allowOperation('delete-recall', 3000))
+                return 'ERROR: Recall delete rate limit exceeded';
             const removed = RecallRecorder.deleteRecall();
             return `Deleted ${removed} Privacy Recall entries`;
         }

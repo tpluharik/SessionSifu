@@ -5,6 +5,35 @@ import GLib from 'gi://GLib';
 
 import * as Log from './log.js';
 
+const MAX_RESTORE_ARGUMENTS = 64;
+const MAX_RESTORE_ARGUMENT_BYTES = 4096;
+
+export function spawnDirectArgv(savedArgv) {
+    if (!Array.isArray(savedArgv) || savedArgv.length < 1 ||
+        savedArgv.length > MAX_RESTORE_ARGUMENTS)
+        throw new Error('Saved command has an invalid argument count');
+
+    const argv = savedArgv.map(argument => {
+        if (typeof argument !== 'string' || argument.length < 1 ||
+            new TextEncoder().encode(argument).length > MAX_RESTORE_ARGUMENT_BYTES ||
+            /[\0\r\n]/.test(argument))
+            throw new Error('Saved command contains an invalid argument');
+        return argument;
+    });
+    const executable = GLib.path_is_absolute(argv[0])
+        ? argv[0]
+        : GLib.find_program_in_path(argv[0]);
+    if (!executable || !GLib.file_test(executable, GLib.FileTest.IS_EXECUTABLE))
+        throw new Error('Saved executable is not available');
+    argv[0] = executable;
+
+    const process = Gio.Subprocess.new(argv, Gio.SubprocessFlags.NONE);
+    const identifier = Number(process.get_identifier());
+    if (!Number.isSafeInteger(identifier) || identifier <= 0)
+        throw new Error('Could not identify the launched process');
+    return [process, identifier, argv.join('\0')];
+}
+
 
 export async function getProcessInfo(apps /*ShellApp*/, ignoreWindowsCb) {
     try {

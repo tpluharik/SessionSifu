@@ -14,9 +14,9 @@ directory.
 
 A session file crosses from data into application-launch configuration during
 restore. It must therefore be treated as trusted active configuration, not as a
-safe interchange format. The current GNOME fallback reconstructs some stored
-commands through a shell and must be replaced with direct argument-vector
-launching; see SS-2026-001 in the [security audit](SECURITY_AUDIT.md).
+safe interchange format. Version 2.5 validates argument count, byte length,
+control characters and executable availability, then calls `Gio.Subprocess`
+directly. Saved text is never reconstructed as shell syntax.
 
 The session D-Bus is a same-user interface rather than an authorization
 boundary. Any process permitted to use that bus and name can request operations.
@@ -91,9 +91,10 @@ manager.
 configures GSettings and calls the extension over D-Bus. It does not duplicate
 Mutter window-management logic.
 
-The manager checks the repository update manifest in a background thread,
-downloads a newer package to the user's cache and verifies its origin, size and
-SHA-256 digest. It uses `dpkg-deb --extract` only as an archive reader, validates
+The manager verifies the update manifest's Ed25519 signature against an embedded
+public key. It rejects wrong channels, expiry, rollbacks and incompatible
+minimum versions, then downloads the package and verifies origin, size and
+SHA-256. It uses `dpkg-deb --extract` only as an archive reader, validates
 the expected payload, then atomically installs the manager, desktop files, icon,
 extension bundle and extension below the user's XDG directories and
 `~/.local/bin`. It never invokes `apt`, `dpkg -i`, PackageKit or Ubuntu Software.
@@ -158,11 +159,10 @@ Named and automatic session files are JSON. They are kept below the XDG user
 configuration directory, normally `~/.config/sessionsifu/`. Update packages use
 the XDG cache directory, normally `~/.cache/sessionsifu/updates/`.
 
-Recall already enforces `0700` directories and `0600` files. The inherited
-GNOME session writer currently creates other directories/files with broader
-modes and relies on a non-traversable parent. That is not the target security
-design: SS-2026-005 requires an ownership-checked migration to `0700`/`0600`
-throughout SessionSifu storage.
+All POSIX SessionSifu state uses `0700` directories and `0600` files. The GTK
+manager performs a bounded startup migration only below an owned, non-symlinked
+configuration root; the Shell writer also enforces private modes after each
+atomic save and backup.
 
 Automatic snapshot filenames use UTC timestamps in the form
 `auto-YYYYMMDD-HHMMSS.json`. Only filenames matching that pattern can be listed
@@ -179,10 +179,12 @@ Session JSON can contain an `open_files` array on each saved window object. This
 is best-effort metadata rather than a promise that every application's internal
 document state can be observed.
 
-Privacy Recall data is separate from named/restorable sessions. Version 2.4 can
+Privacy Recall data is separate from named/restorable sessions. Version 2.5 can
 store one bounded JPEG preview per display on the full GNOME integration only,
 behind a second opt-in. Capture is skipped on the lock screen and whenever an
-excluded application is visible. Preview files use mode 0600 and are removed
+excluded application is visible. Both conditions are checked before capture,
+after the asynchronous grab and after compression; a generation change discards
+the preview. Preview files use mode 0600 and are removed
 with their metadata. Search remains metadata-based and does not perform OCR;
 when a keyword matches an app, title or opted-in file, GTK crops that window's
 geometry from the corresponding display preview in memory. Portable editions
@@ -207,17 +209,17 @@ compiled schema, extension bundle, documentation and package metadata. It copies
 the result into `updates/` and generates `updates/latest.json` from the final
 package size and SHA-256 digest.
 
-The manifest and package live on the same `main` revision. The updater accepts
+The signed manifest and package live on the same `main` revision. The updater accepts
 only HTTPS package URLs under `tpluharik/SessionSifu` on
 `raw.githubusercontent.com`. The Debian package remains necessary for initial
 dependency installation; later application updates are unprivileged and local
 to the user.
 
-SHA-256 currently protects integrity only relative to that manifest. Because
-the package and digest share one unsigned mutable channel, neither proves an
-independent publisher identity. SS-2026-002 specifies signed, expiring,
-rollback-resistant metadata and immutable release assets as the required
-replacement.
+`latest.json.sig` authenticates the exact manifest bytes with a dedicated
+Ed25519 release key whose public half is embedded in the manager and published
+with the package. The manifest binds stable channel, issue/expiry time, minimum
+and target versions, URL, size and SHA-256. The private key remains outside the
+repository and CI. SHA-256 remains a second integrity layer.
 
 ## Multi-platform release pipeline
 
@@ -232,5 +234,6 @@ creates one GitHub Release. Signing, Apple notarization and artifact attestation
 are deliberately tracked as roadmap work rather than implied by the pipeline.
 
 Workflow permissions are read-only except for the tag publisher. Action
-references and Python build dependencies are not yet immutable; pinning full
-action SHAs and hashed dependency locks is tracked as SS-2026-003.
+references are pinned to reviewed full commit SHAs and direct Python build
+inputs are exact-version pinned. Fully hashed per-platform transitive locks,
+SBOMs and provenance attestations remain roadmap work.

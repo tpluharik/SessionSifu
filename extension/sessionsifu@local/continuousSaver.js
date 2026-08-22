@@ -127,7 +127,7 @@ export const ContinuousSaver = class {
             const path = snapshotPath(snapshot.name);
             try {
                 Gio.File.new_for_path(path).delete(null);
-                this._log.info(`Removed old automatic snapshot ${path}`);
+                this._log.info('Removed one old automatic snapshot');
             } catch (error) {
                 this._log.error(error);
             }

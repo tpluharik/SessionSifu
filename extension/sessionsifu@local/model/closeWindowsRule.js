@@ -35,7 +35,7 @@ export const CloseWindowsRuleByKeyword = class extends CloseWindowsRuleBase {
     keyword; // string. Can be any string
     compareWith; // string. title, wm_class, wm_class_instance, app_name...
     // enableRegex; // int. 0, 1
-    method; // string. endsWith, includes, startsWith, equals, regex.
+    method; // string. endsWith, includes, startsWith, equals.
 
     static new(param) {
         return Object.assign(new CloseWindowsRule.CloseWindowsRuleByKeyword(), param);

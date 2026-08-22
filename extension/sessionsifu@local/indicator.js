@@ -633,7 +633,7 @@ class AwsIndicator extends PanelMenu.Button {
             searchText = searchText.toLowerCase().trim();
             for (const menuItem of menuItems) {
                 const sessionName = menuItem._filename.toLowerCase();
-                menuItem.actor.visible = new RegExp(searchText).test(sessionName);
+                menuItem.actor.visible = sessionName.includes(searchText);
             }
         }
     }

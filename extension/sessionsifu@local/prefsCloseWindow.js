@@ -106,7 +106,14 @@ export const UICloseWindows = GObject.registerClass(
             const newRules = JSON.parse(this._settings.get_string(settingName));
             let datalist = [];
             for (const key in newRules) {
-                const data = Object.assign(new obj(), newRules[key])
+                const data = new obj();
+                for (const field of [
+                    'id', 'name', 'compareWith', 'method', 'enabled',
+                    'enableWhenCloseWindows', 'enableWhenLogout',
+                ]) {
+                    if (Object.hasOwn(newRules[key], field))
+                        data[field] = newRules[key][field];
+                }
                 datalist.push(data);
             }
             columnView.updateView(datalist);
@@ -960,8 +967,7 @@ const RuleRowByKeyword = GObject.registerClass({
             ['Equals', 'equals'],
             ['Includes', 'includes'],
             ['Starts with', 'startsWith'],
-            ['Ends with', 'endsWith'],
-            ['RegExp', 'regex']
+            ['Ends with', 'endsWith']
         ];
         return this._newDropDown(comboBoxValues, this._ruleDetail.method);
     }

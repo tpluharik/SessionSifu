@@ -2,14 +2,15 @@
 
 ## Executive summary
 
-This review covered the SessionSifu 2.4.0 source tree corresponding to remote
-commit `05d7ee1` and the equivalent local source tree. It found no embedded
+This review originally covered the SessionSifu 2.4.0 source tree corresponding
+to remote commit `05d7ee1`. Remediation was implemented and re-reviewed for
+version 2.5.0. It found no embedded
 secrets and no known vulnerabilities in the resolved Python runtime, GUI, build
 or packaging dependencies. The package builds successfully, portable tests
 pass, update parsing is bounded, Recall storage has explicit opt-ins, and the
 release workflow uses read-only permissions except for the tag-only publisher.
 
-The review also found two high-priority trust problems:
+The original review found two high-priority trust problems:
 
 1. GNOME's legacy fallback restore path reconstructs saved arguments as a shell
    command. A tampered local session can execute shell syntax when restored.
@@ -17,9 +18,13 @@ The review also found two high-priority trust problems:
    mutable repository channel as the package. This detects corruption but does
    not provide an independent authenticity guarantee.
 
-Four medium and two low-priority hardening findings are documented below. No
-claim is made that these findings are exhaustive, and no open finding should be
-interpreted as already fixed.
+Version 2.5.0 removes the shell path, introduces independently signed update
+metadata, private storage migration, race-aware screenshot deletion, bounded
+literal Shell matching, D-Bus rate limits and lower-detail normal logs. Release
+actions and direct build dependencies are pinned. Fully hashed transitive
+platform locks, SBOM/provenance, interactive D-Bus authorization and sanitized
+diagnostic export remain defence-in-depth roadmap work. No claim is made that
+this review is exhaustive.
 
 ## Scope and method
 
@@ -64,7 +69,7 @@ Severity describes impact and realistic prerequisites for this project:
 ### SS-2026-001 — Shell interpretation of saved GNOME commands
 
 **Severity:** High  
-**Status:** Open  
+**Status:** Fixed in 2.5.0
 **Affected code:** `extension/sessionsifu@local/restoreSession.js` and
 `template/launch-app.sh`
 
@@ -91,7 +96,7 @@ executable allow-list/confirmation and restore preview on every platform.
 ### SS-2026-002 — Update checksum has no independent signature
 
 **Severity:** High  
-**Status:** Open  
+**Status:** Fixed in 2.5.0
 **Affected code:** updater in `app/sessionsifu`, `updates/latest.json`
 
 The updater correctly restricts HTTPS URLs to this repository, bounds response
@@ -113,7 +118,7 @@ integrity check.
 ### SS-2026-003 — Mutable release inputs
 
 **Severity:** Medium  
-**Status:** Open  
+**Status:** Partially remediated in 2.5.0; hashed transitive locks remain open
 **Affected code:** `.github/workflows/release.yml`, `portable/pyproject.toml`
 
 Eight workflow steps reference moving major-version tags such as
@@ -139,7 +144,7 @@ References: [GitHub secure use](https://docs.github.com/en/actions/reference/sec
 ### SS-2026-004 — Screenshot exclusion time-of-check gap
 
 **Severity:** Medium  
-**Status:** Open  
+**Status:** Fixed in 2.5.0
 **Affected code:** `extension/sessionsifu@local/recallRecorder.js`
 
 Recall skips image capture when an excluded application is visible before the
@@ -161,7 +166,7 @@ incognito detector.
 ### SS-2026-005 — GNOME session metadata is not consistently private
 
 **Severity:** Medium  
-**Status:** Open  
+**Status:** Fixed in 2.5.0
 **Affected code:** `extension/sessionsifu@local/saveSession.js`
 
 Named, history and continuously observed session directories are created with
@@ -181,7 +186,7 @@ permissive umask.
 ### SS-2026-006 — User regex can block GNOME Shell
 
 **Severity:** Medium  
-**Status:** Open  
+**Status:** Fixed in 2.5.0
 **Affected code:** `extension/sessionsifu@local/closeSession.js`
 
 Close-window keyword rules compile and execute an unrestricted user-provided
@@ -199,7 +204,7 @@ rule, and add pathological-pattern performance tests.
 ### SS-2026-007 — Broad same-user D-Bus control surface
 
 **Severity:** Low  
-**Status:** Accepted boundary; hardening open  
+**Status:** Accepted boundary; rate limiting added in 2.5.0
 **Affected code:** `extension/sessionsifu@local/ui/autostart.js`
 
 Any process able to access the user's session bus and SessionSifu name can call
@@ -216,7 +221,7 @@ the manager/top-bar UI. Keep parameter validation at every D-Bus entry point.
 ### SS-2026-008 — Diagnostic logs contain desktop metadata
 
 **Severity:** Low  
-**Status:** Open  
+**Status:** Mitigated in 2.5.0; sanitized export remains open
 **Affected code:** GNOME extension logging and restore diagnostics
 
 Normal and failure logs can include application names, window titles, command
@@ -230,6 +235,14 @@ diagnostic export. Documentation must continue to warn users not to publish raw
 session files or journals.
 
 ## Scanner results and triage
+
+The 2.5.0 remediation rerun produced 12 low-only Bandit warnings (generic direct
+subprocess use), no high/medium Bandit result, no secret candidates, and no known
+vulnerability in the pinned core or complete direct GUI/build requirement set.
+Semgrep reduced to reviewed generic warnings for deliberately private `0700`
+directories and dynamic `urllib` calls whose constants/manifest URLs are
+repository- and HTTPS-confined. The previous mutable-action, regex and settings
+mass-assignment results no longer reproduce.
 
 - **Bandit:** 12 low-confidence-context subprocess/import warnings; all Python
   process calls use argument arrays and `shell=False`. The stored-argument trust
@@ -262,17 +275,21 @@ session files or journals.
 - The workflow declares read-only contents permission globally and grants write
   only to the tag release job.
 
-## Remediation order
+## Remediation record
 
-1. Remove shell-based restore and add malicious-session regression tests.
-2. Change all session storage to private modes and migrate existing files.
-3. Pin CI actions/dependencies and produce SBOM/provenance.
-4. Design and deploy signed, rollback-resistant update metadata.
-5. Close the Recall exclusion race and add privacy stress tests.
-6. Remove or isolate unbounded regex matching from GNOME Shell.
-7. Reduce D-Bus and diagnostic-log exposure.
-8. Re-run static/dependency/secret scans plus live GNOME, Windows and macOS
-   adversarial tests; record fixed versions beside each finding.
+1. Shell-based restore was deleted; malicious metacharacters remain opaque argv.
+2. Storage uses `0700`/`0600` with bounded ownership/symlink-aware migration.
+3. Action SHAs and direct dependencies are pinned; transitive hashed locks,
+   SBOM and provenance remain planned.
+4. Ed25519-signed, expiring and rollback-resistant metadata is deployed for
+   2.5.0+; older clients require one manual transition.
+5. Recall checks exclusion, lock and capture generation across every async stage.
+6. Regex and dynamic method/field dispatch were replaced by bounded allow-lists.
+7. State-changing D-Bus calls are rate-limited and normal launch/save logs no
+   longer include command strings, window titles or absolute session paths.
+8. Static, unit, updater-signature, storage-mode and package tests are rerun for
+   every build. Live cross-platform compositor fuzzing remains a release process
+   rather than a claim made by this source-only audit.
 
 Closing a finding requires a focused code change, regression test, manual
 platform validation where applicable, and release note. Documentation-only

@@ -21,6 +21,14 @@ import * as StringUtils from './utils/stringUtils.js';
 import { shellVersion } from './constants.js';
 import * as OpenFiles from './openFiles.js';
 
+function ensurePrivateConfigRoot() {
+    if (GLib.file_test(FileUtils.config_path_base, GLib.FileTest.IS_SYMLINK))
+        throw new Error('Refusing symbolic-link SessionSifu storage');
+    if (GLib.mkdir_with_parents(FileUtils.config_path_base, 0o700) !== 0)
+        throw new Error('Could not create private SessionSifu storage');
+    GLib.chmod(FileUtils.config_path_base, 0o700);
+}
+
 
 export const SaveSession = class {
 
@@ -402,7 +410,7 @@ export const SaveSession = class {
                 if (status === 0 && stdout) {
                     cmdStr = `${stdout.split(':')[1].trim()}/${cmdStr}`
                 } else {
-                    this._log.error(new Error(`Failed to query the working directory according to ${metaWindow.get_pid()}, and the current command line is ${cmdStr}. stderr: ${stderr}`));
+                    this._log.error(new Error('Failed to query an application working directory'));
                 }
 
             }
@@ -437,15 +445,18 @@ export const SaveSession = class {
         const sessions_path = FileUtils.get_sessions_path();
         const session_file_path = GLib.build_filenamev([sessions_path, sessionName]);
         const session_file = Gio.File.new_for_path(session_file_path);
+        ensurePrivateConfigRoot();
+        if (GLib.file_test(session_file_path, GLib.FileTest.IS_SYMLINK))
+            return Promise.reject(new Error('Refusing symbolic-link session file'));
         // Backup first if exists
         if (GLib.file_test(session_file_path, GLib.FileTest.EXISTS)) {
             this._log.debug(`Backing up existing session ${sessionName}`);
 
             const session_file_backup_path = FileUtils.get_sessions_backups_path();
             const session_file_backup = GLib.build_filenamev([session_file_backup_path, sessionName + '.backup-' + new Date().getTime()]);
-            if (GLib.mkdir_with_parents(session_file_backup_path, 0o744) !== 0) {
-                const errMsg = `Cannot save session: ${session_file_path}`;
-                const reason = `Failed to create backups folder: ${session_file_backup_path}`;
+            if (GLib.mkdir_with_parents(session_file_backup_path, 0o700) !== 0) {
+                const errMsg = 'Cannot save session';
+                const reason = 'Failed to create the private backup folder';
                 return Promise.reject(new CommonError.CommonError(errMsg, {desc: reason}));
             }
 
@@ -462,14 +473,15 @@ export const SaveSession = class {
                         try {
                             success = session_file.copy_finish(asyncResult);
                             if (success) {
+                                GLib.chmod(session_file_backup, 0o600);
                                 resolve(success);
                                 return;
                             }
                         } catch (e) {
                             causedBy = e;
                         }
-                        const errMsg = `Cannot save session: ${session_file_path}`;
-                        const reason = `Failed to backup ${session_file_path} to ${session_file_backup}`;
+                        const errMsg = 'Cannot save session';
+                        const reason = 'Failed to create a private session backup';
                         reject(new CommonError.CommonError(errMsg, {desc: reason, cause: causedBy}));
                     }
                 );
@@ -490,16 +502,21 @@ export const SaveSession = class {
         const sessions_path = FileUtils.get_sessions_path(baseDir);
         const session_file_path = GLib.build_filenamev([sessions_path, sessionConfig.session_name]);
         const sessionFile = Gio.File.new_for_path(session_file_path);
+        ensurePrivateConfigRoot();
+        if (GLib.file_test(session_file_path, GLib.FileTest.IS_SYMLINK))
+            return Promise.reject(new Error('Refusing symbolic-link session file'));
 
         // https://gjs.guide/guides/gio/file-operations.html#saving-content
         // https://github.com/ewlsh/unix-permissions-cheat-sheet/blob/master/README.md#octal-notation
         // https://askubuntu.com/questions/472812/why-is-777-assigned-to-chmod-to-permit-everything-on-a-file
         // 0o stands for octal
-        // 0o744 => rwx r-- r--
+        // Session state can include titles, paths and launch arguments. Keep it private.
         const sessionFolder = sessionFile.get_parent().get_path();
-        if (GLib.mkdir_with_parents(sessionFolder, 0o744) !== 0) {
-            const errMsg = `Cannot save session: ${sessionFile.get_path()}`;
-            const reason = `Failed to create session folder: ${sessionFolder}`;
+        if (GLib.file_test(sessionFolder, GLib.FileTest.IS_SYMLINK))
+            return Promise.reject(new Error('Refusing symbolic-link session folder'));
+        if (GLib.mkdir_with_parents(sessionFolder, 0o700) !== 0) {
+            const errMsg = 'Cannot save session';
+            const reason = 'Failed to create the private session folder';
             return Promise.reject(new CommonError.CommonError(errMsg, {desc: reason}));
         }
 
@@ -524,8 +541,10 @@ export const SaveSession = class {
                     try {
                         success = sessionFile.replace_contents_finish(asyncResult);
                         if (success) {
-                            const savedMsg = `Session ${sessionConfig.session_name} saved to ${sessionFile.get_path()}!`;
-                            Log.Log.getDefault().info(`${savedMsg}`);
+                            GLib.chmod(sessionFolder, 0o700);
+                            GLib.chmod(sessionFile.get_path(), 0o600);
+                            const savedMsg = `Session ${sessionConfig.session_name} saved`;
+                            Log.Log.getDefault().info(savedMsg);
                             if (this._notifyUser && this._settings.get_boolean('enable-save-session-notification')) {
                                 Main.notify(`SessionSifu`, savedMsg);
                             }
@@ -535,8 +554,8 @@ export const SaveSession = class {
                     } catch (e) {
                         causedBy = e;
                     }
-                    const errMsg = `Cannot save session: ${sessionFile.get_path()}`;
-                    const reason = `Failed to save session to ${sessionFile.get_path()}!`;
+                    const errMsg = 'Cannot save session';
+                    const reason = 'Failed to write the private session file';
                     reject(new CommonError.CommonError(errMsg, {desc: reason, cause: causedBy}));
                 });
         });

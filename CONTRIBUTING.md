@@ -66,6 +66,10 @@ python3 tests/test_portable.py
 python3 -m compileall -q portable/sessionsifu_portable packaging/build-portable.py
 ```
 
+The exact direct release inputs are mirrored in
+`portable/security-audit-requirements.txt` for `pip-audit`. Update it in the same
+change as `portable/pyproject.toml`; transitive hash locks remain roadmap work.
+
 For GNOME Shell changes, also verify extension enable/disable, the top-bar menu,
 manual save and restore, logout/login activation and repeated restoration on a
 real GNOME 50 session. Changes that touch Mutter operations must remain safe
@@ -76,13 +80,15 @@ when a target window closes midway through an asynchronous callback.
 1. Update the application version, extension metadata, D-Bus ping, Debian
    control metadata, build script, tests, README, NOTICE and changelog.
 2. Update the release note in `packaging/latest.json.in`.
-3. Run `./packaging/build-deb.sh` exactly once after the final source change.
-4. Confirm that `updates/latest.json` contains the size and SHA-256 digest of
-   the generated package.
-5. Commit the source, manifest and matching `updates/*.deb` together.
+3. Run the final build with `SESSIONSIFU_UPDATE_SIGNING_KEY` pointing to the
+   offline Ed25519 private key; contributor/test builds omit it.
+4. Verify `updates/latest.json.sig` with the published public key and confirm
+   the manifest version, expiry, size and SHA-256.
+5. Commit source, matching package, manifest and signature together.
 
 Do not edit `updates/latest.json` by hand; the build generates it from the
-package bytes.
+package bytes. Follow [docs/RELEASE_SECURITY.md](docs/RELEASE_SECURITY.md) for
+key storage, rotation and compromise recovery.
 
 ## Compatibility changes
 

@@ -1,0 +1,9 @@
+# Exact direct inputs mirrored from pyproject.toml for reproducible audits.
+psutil==7.2.2
+PySide6==6.11.2
+dbus-next==0.2.3; sys_platform == "linux"
+pyobjc-framework-Cocoa==12.2.2; sys_platform == "darwin"
+PyInstaller==6.22.2
+Pillow==12.3.0
+setuptools==84.0.0
+wheel==0.48.0

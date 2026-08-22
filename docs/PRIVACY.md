@@ -16,12 +16,12 @@ tools may independently make their own network requests.
 | Privacy Recall metadata | Sanitized app identity, title, time and layout; document paths only with a separate opt-in | Off | User setting, bounded to 500 entries/30 days |
 | Recall previews | Compressed display images on full GNOME integration | Off, separate opt-in | Deleted with entry; changing exclusions purges existing previews |
 | Update cache | Downloaded Debian package | Created after update download | Until replaced or manually cleared |
-| Logs | Operational messages; some current messages may contain desktop metadata | System journal | Operating-system journal policy |
+| Logs | Structural operational messages; failures may identify an application | System journal | Operating-system journal policy |
 
-Session and Recall data are not encrypted by SessionSifu. File permissions are
-the current protection on Linux; device encryption and a locked user account
-provide additional protection while the computer is off. Open finding
-SS-2026-005 tracks stricter modes for all non-Recall session files.
+Session and Recall data are not encrypted by SessionSifu. On POSIX systems,
+version 2.5 migrates owned SessionSifu directories to `0700` and regular files
+to `0600` without following symlinks. Device encryption and a locked user
+account provide additional protection while the computer is off.
 
 ## Storage locations
 
@@ -50,16 +50,15 @@ Recall is designed for data minimization, not invisible monitoring:
 - application exclusions apply during capture and search;
 - file paths are removed unless separately enabled;
 - screenshots are skipped while locked or when an excluded application is
-  detected;
+  detected before capture, after capture or after compression;
 - screenshot previews stay local, are compressed and are never used for OCR in
-  version 2.4;
+  version 2.5;
 - searches use metadata only and do not upload queries.
 
 Exclusions are best effort. They match observable application identity, not
 individual password fields, private tabs or sensitive regions inside an allowed
-application. A timing gap in version 2.4 screenshot exclusions is documented as
-SS-2026-004. Until it is fixed, do not enable screenshots on a desktop where an
-excluded application may appear unexpectedly.
+application. Rapid transitions are rechecked throughout capture and discarded,
+but screenshots should remain off where display-wide capture is unsuitable.
 
 ## Deletion
 

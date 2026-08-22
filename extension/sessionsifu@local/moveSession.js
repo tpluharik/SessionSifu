@@ -63,11 +63,11 @@ export const MoveSession = class {
         const sessions_path = FileUtils.get_sessions_path();
         const session_file_path = GLib.build_filenamev([sessions_path, sessionName]);
         if (!GLib.file_test(session_file_path, GLib.FileTest.EXISTS)) {
-            logError(new Error(`Session file not found: ${session_file_path}`));
+            logError(new Error('Session file not found'));
             return;
         }
 
-        this._log.info(`Moving windows by saved session located in ${session_file_path}`);
+        this._log.info('Applying saved window layout');
         const session_file = Gio.File.new_for_path(session_file_path);
         let [success, contents] = session_file.load_contents(null);
         if (success) {
@@ -75,7 +75,7 @@ export const MoveSession = class {
 
             const session_config_objects = session_config.x_session_config_objects;
             if (!session_config_objects) {
-                logError(new Error(`Session details not found: ${session_file_path}`));
+                logError(new Error('Saved window details not found'));
                 return;
             }
 

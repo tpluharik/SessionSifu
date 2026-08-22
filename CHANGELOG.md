@@ -2,6 +2,21 @@
 
 All notable SessionSifu changes are documented here.
 
+## 2.5.0
+
+- Removed shell interpretation from GNOME fallback restore. Saved applications
+  now launch only through a bounded, validated argument array.
+- Added Ed25519-signed, expiring stable update manifests with an embedded public
+  key, rollback protection, repository confinement and size/SHA-256 checks.
+- Migrated SessionSifu configuration directories to `0700` and files to `0600`.
+- Closed Recall screenshot exclusion/lock timing gaps and purge previews when
+  screenshot capture is disabled.
+- Removed unbounded regular expressions and dynamic matching calls from GNOME
+  Shell, and rate-limited state-changing D-Bus operations.
+- Pinned GitHub Actions to immutable commits and portable build inputs to exact
+  versions; expanded security and permission regression checks.
+- Reduced sensitive restore/save logging and updated all security documentation.
+
 ## 2.4.0
 
 - Replaced the single full-size Recall PNG with one bounded JPEG preview per

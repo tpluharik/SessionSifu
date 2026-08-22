@@ -11,6 +11,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -18,7 +19,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import gi
@@ -30,7 +31,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "2.4.0"
+CURRENT_VERSION = "2.5.0"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -47,8 +48,10 @@ NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$")
 UPDATE_MANIFEST_URL = (
     "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/latest.json"
 )
+UPDATE_SIGNATURE_URL = f"{UPDATE_MANIFEST_URL}.sig"
 UPDATE_REPOSITORY_PREFIX = "/tpluharik/SessionSifu/"
 MAX_MANIFEST_BYTES = 64 * 1024
+MAX_SIGNATURE_BYTES = 512
 MAX_UPDATE_BYTES = 50 * 1024 * 1024
 MAX_RECALL_SCREENSHOT_BYTES = 8 * 1024 * 1024
 MAX_RECALL_SOURCE_BYTES = 64 * 1024 * 1024
@@ -58,6 +61,43 @@ RECALL_IMAGE_RE = re.compile(
     re.IGNORECASE,
 )
 RECALL_STEM_RE = re.compile(r"^recall-\d{8}-\d{6}-\d{3}$")
+UPDATE_SIGNING_PUBLIC_KEY = b"""-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAEnakL3ds5kGLSASytcdZ2mTmBY7A1R298zO/L5843gY=
+-----END PUBLIC KEY-----
+"""
+
+
+def harden_local_storage() -> None:
+    """Migrate private SessionSifu state to owner-only permissions safely."""
+    root = Path(GLib.get_user_config_dir()) / "sessionsifu"
+    try:
+        if not root.exists():
+            return
+        root_stat = root.lstat()
+        if stat.S_ISLNK(root_stat.st_mode) or root_stat.st_uid != os.getuid():
+            raise ValueError("Refusing unowned or symbolic-link SessionSifu storage")
+        visited = 0
+        for current, directories, files in os.walk(root, followlinks=False):
+            current_path = Path(current)
+            os.chmod(current_path, 0o700, follow_symlinks=False)
+            for name in list(directories):
+                candidate = current_path / name
+                visited += 1
+                candidate_stat = candidate.lstat()
+                if (visited > 20_000):
+                    raise ValueError("SessionSifu storage contains too many entries")
+                if stat.S_ISLNK(candidate_stat.st_mode) or candidate_stat.st_uid != os.getuid():
+                    directories.remove(name)
+            for name in files:
+                candidate = current_path / name
+                visited += 1
+                candidate_stat = candidate.lstat()
+                if visited > 20_000:
+                    raise ValueError("SessionSifu storage contains too many entries")
+                if stat.S_ISREG(candidate_stat.st_mode) and candidate_stat.st_uid == os.getuid():
+                    os.chmod(candidate, 0o600, follow_symlinks=False)
+    except (OSError, ValueError) as error:
+        print(f"sessionsifu: storage hardening warning: {error}", file=sys.stderr)
 
 
 def recall_screenshot_path(value: object) -> Path | None:
@@ -324,13 +364,60 @@ def parse_update_manifest(contents: bytes | str) -> dict:
     size = int(manifest["size"])
     if size <= 0 or size > MAX_UPDATE_BYTES:
         raise ValueError("Update package size is outside the allowed range")
+    if manifest.get("channel") != "stable":
+        raise ValueError("Update manifest has an invalid channel")
+    issued_at = datetime.fromisoformat(str(manifest["issued_at"]).replace("Z", "+00:00"))
+    expires_at = datetime.fromisoformat(str(manifest["expires_at"]).replace("Z", "+00:00"))
+    now = datetime.now(timezone.utc)
+    if issued_at.tzinfo is None or expires_at.tzinfo is None:
+        raise ValueError("Update manifest timestamps must include a timezone")
+    if issued_at > now + timedelta(hours=24) or expires_at <= now:
+        raise ValueError("Update manifest is not currently valid")
+    minimum_version = str(manifest["minimum_version"])
+    version_tuple(minimum_version)
+    if version_tuple(CURRENT_VERSION) < version_tuple(minimum_version):
+        raise ValueError("This SessionSifu version cannot safely apply the update")
+    if version_tuple(manifest["version"]) < version_tuple(CURRENT_VERSION):
+        raise ValueError("Update manifest attempts a version rollback")
     return {
         "version": manifest["version"],
         "package_url": manifest["package_url"],
         "sha256": manifest["sha256"],
         "size": size,
         "notes": str(manifest.get("notes", "")),
+        "channel": "stable",
+        "issued_at": issued_at.isoformat(),
+        "expires_at": expires_at.isoformat(),
+        "minimum_version": minimum_version,
     }
+
+
+def verify_update_manifest(contents: bytes, signature: bytes) -> None:
+    if not contents or len(contents) > MAX_MANIFEST_BYTES:
+        raise ValueError("Update manifest is outside the size limit")
+    if not signature or len(signature) > MAX_SIGNATURE_BYTES:
+        raise ValueError("Update signature is outside the size limit")
+    with tempfile.TemporaryDirectory(prefix="sessionsifu-verify-") as directory:
+        private_dir = Path(directory)
+        private_dir.chmod(0o700)
+        manifest_path = private_dir / "latest.json"
+        signature_path = private_dir / "latest.json.sig"
+        public_key_path = private_dir / "public.pem"
+        manifest_path.write_bytes(contents)
+        signature_path.write_bytes(signature)
+        public_key_path.write_bytes(UPDATE_SIGNING_PUBLIC_KEY)
+        result = subprocess.run(
+            [
+                "openssl", "pkeyutl", "-verify", "-pubin", "-inkey",
+                str(public_key_path), "-rawin", "-in", str(manifest_path),
+                "-sigfile", str(signature_path),
+            ],
+            check=False,
+            capture_output=True,
+            timeout=10,
+        )
+    if result.returncode != 0:
+        raise ValueError("Update manifest signature verification failed")
 
 
 def fetch_update_manifest(timeout: int = 8) -> dict:
@@ -342,6 +429,13 @@ def fetch_update_manifest(timeout: int = 8) -> dict:
         contents = response.read(MAX_MANIFEST_BYTES + 1)
     if len(contents) > MAX_MANIFEST_BYTES:
         raise ValueError("Update manifest is too large")
+    signature_request = urllib.request.Request(
+        UPDATE_SIGNATURE_URL,
+        headers={"User-Agent": f"SessionSifu/{CURRENT_VERSION}"},
+    )
+    with urllib.request.urlopen(signature_request, timeout=timeout) as response:
+        signature = response.read(MAX_SIGNATURE_BYTES + 1)
+    verify_update_manifest(contents, signature)
     return parse_update_manifest(contents)
 
 
@@ -1806,6 +1900,7 @@ def main() -> int:
             args.compress_recall_preview[1],
             args.display_layout,
         )
+    harden_local_storage()
     if args.autostart:
         return autostart()
     if args.save:
