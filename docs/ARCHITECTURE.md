@@ -162,6 +162,12 @@ metadata-only pending cross-platform security review.
 Changing the exclusion list purges existing screenshot previews while preserving
 metadata because previously captured pixels cannot be retroactively redacted.
 
+Recall's hot path uses compact atomic asynchronous writes. Open-file discovery is
+bounded and avoids redundant target probes; paths are validated before restore.
+PNG encoding runs after metadata completion and never overlaps another Recall PNG
+capture. Summary parsing is cached, and retention scans run at most every five
+minutes unless the retention setting changes.
+
 ## Debian package and update channel
 
 `packaging/build-deb.sh` assembles the manager, desktop files, extension,

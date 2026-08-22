@@ -28,8 +28,6 @@ export const SaveSession = class {
         this._notifyUser = notifyUser;
         this._log = new Log.Log();
 
-        this._saveSessionIdleId = null;
-
         this._windowTracker = Shell.WindowTracker.get_default();
         this._subprocessLauncher = new Gio.SubprocessLauncher({
             flags: (Gio.SubprocessFlags.STDOUT_PIPE |
@@ -125,7 +123,7 @@ export const SaveSession = class {
                 return false;
             sessionConfig.recall_schema = 1;
             sessionConfig.recall_include_file_paths = Boolean(includeFilePaths);
-            return await this._saveSessionConfigAsync(sessionConfig, baseDir);
+            return await this._saveSessionConfigAsync(sessionConfig, baseDir, null, true);
         } catch (error) {
             this._log.error(error);
             return false;
@@ -240,11 +238,10 @@ export const SaveSession = class {
         sessionConfig.session_name = sessionName ? sessionName : FileUtils.default_sessionName;
         sessionConfig.session_create_time = new Date().toLocaleString();
         sessionConfig.active_workspace_index = global.workspace_manager.get_active_workspace_index();
+        const processInfoMap = await _getProcessInfoPromise;
 
         for (const runningShellApp of runningShellApps) {
             let { metaWindows, ignoredWindowsMap } = this._doIgnoreWindows(runningShellApp);
-
-            const processInfoMap = await _getProcessInfoPromise;
 
             for (const metaWindow of metaWindows) {
                 try {
@@ -470,7 +467,12 @@ export const SaveSession = class {
         }
     }
 
-    _saveSessionConfigAsync(sessionConfig, baseDir = null, cancellable = null) {
+    _saveSessionConfigAsync(
+        sessionConfig,
+        baseDir = null,
+        cancellable = null,
+        compact = false
+    ) {
         if (cancellable && cancellable.is_cancelled()) {
             return Promise.resolve(false);
         }
@@ -491,47 +493,43 @@ export const SaveSession = class {
             return Promise.reject(new CommonError.CommonError(errMsg, {desc: reason}));
         }
 
-        const sessionConfigJson = JSON.stringify(sessionConfig, null, 4);
+        const sessionConfigJson = JSON.stringify(sessionConfig, null, compact ? 0 : 4);
+        const sessionConfigBytes = new TextEncoder().encode(sessionConfigJson);
 
         this._log.debug(`Saving session ${sessionConfig.session_name} to local file`);
 
         return new Promise((resolve, reject) => {
-            this._saveSessionIdleId = GLib.idle_add(GLib.PRIORITY_LOW, () => {
-                // Use replace_contents_bytes_async instead of replace_contents_async, see:
-                // https://gitlab.gnome.org/GNOME/gjs/-/blob/gnome-42/modules/core/overrides/Gio.js#L513
-                // https://gitlab.gnome.org/GNOME/gjs/-/issues/192
-                sessionFile.replace_contents_bytes_async(
-                    new TextEncoder().encode(sessionConfigJson),
-                    null,
-                    false,
-                    Gio.FileCreateFlags.REPLACE_DESTINATION,
-                    cancellable,
-                    (file, asyncResult) => {
-                        let success = false;
-                        let causedBy = null;
-                        try {
-                            success = sessionFile.replace_contents_finish(asyncResult);
-                            if (success) {
-                                const savedMsg = `Session ${sessionConfig.session_name} saved to ${sessionFile.get_path()}!`;
-                                Log.Log.getDefault().info(`${savedMsg}`);
-                                if (this._notifyUser && this._settings.get_boolean('enable-save-session-notification')) {
-                                    Main.notify(`SessionSifu`, savedMsg);
-                                }
-                                resolve(success);
-                                // TODO Notification
-                                return;
+            // GIO already performs this replacement asynchronously. Starting it
+            // immediately avoids starving Recall writes behind a busy Shell idle
+            // queue while keeping the atomic replacement semantics.
+            sessionFile.replace_contents_bytes_async(
+                sessionConfigBytes,
+                null,
+                false,
+                Gio.FileCreateFlags.REPLACE_DESTINATION,
+                cancellable,
+                (file, asyncResult) => {
+                    let success = false;
+                    let causedBy = null;
+                    try {
+                        success = sessionFile.replace_contents_finish(asyncResult);
+                        if (success) {
+                            const savedMsg = `Session ${sessionConfig.session_name} saved to ${sessionFile.get_path()}!`;
+                            Log.Log.getDefault().info(`${savedMsg}`);
+                            if (this._notifyUser && this._settings.get_boolean('enable-save-session-notification')) {
+                                Main.notify(`SessionSifu`, savedMsg);
                             }
-                        } catch (e) {
-                            causedBy = e;
+                            resolve(success);
+                            return;
                         }
-                        const errMsg = `Cannot save session: ${sessionFile.get_path()}`;
-                        const reason = `Failed to save session to ${sessionFile.get_path()}!`;
-                        reject(new CommonError.CommonError(errMsg, {desc: reason, cause: causedBy}));
-                    });
+                    } catch (e) {
+                        causedBy = e;
+                    }
+                    const errMsg = `Cannot save session: ${sessionFile.get_path()}`;
+                    const reason = `Failed to save session to ${sessionFile.get_path()}!`;
+                    reject(new CommonError.CommonError(errMsg, {desc: reason, cause: causedBy}));
                 });
-                this._saveSessionIdleId = null;
-                return GLib.SOURCE_REMOVE;
-            });
+        });
     }
 
     _setFieldsFromProcess(processInfoArray, sessionConfigObject, includeOpenFiles = true) {
@@ -574,11 +572,6 @@ export const SaveSession = class {
             });
             this._sourceIds = null;
         }
-        if (this._saveSessionIdleId) {
-            GLib.Source.remove(this._saveSessionIdleId);
-            this._saveSessionIdleId = null;
-        }
-
     }
 
 }

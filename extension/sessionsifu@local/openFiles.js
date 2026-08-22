@@ -7,8 +7,8 @@ import * as Log from './utils/log.js';
 
 
 export const OPEN_FILE_LIMIT = 32;
-export const OPEN_FD_SCAN_LIMIT = 512;
-export const RECENT_FILE_SCAN_LIMIT = 2048;
+export const OPEN_FD_SCAN_LIMIT = 128;
+export const RECENT_FILE_SCAN_LIMIT = 512;
 
 export function appInfoSupportsDocumentFiles(appInfo) {
     try {
@@ -91,8 +91,10 @@ export function listOpenFiles(pid) {
             (info = enumerator.next_file(null))) {
             inspected++;
             const target = info.get_symlink_target();
-            if (!isCandidatePath(target) || seen.has(target) ||
-                !isReadableRegularFile(target))
+            // The descriptor already proves that the process has this path open.
+            // Avoid a second, potentially remote filesystem probe in GNOME Shell;
+            // restore-time validation still rejects paths that are no longer files.
+            if (!isCandidatePath(target) || seen.has(target))
                 continue;
             seen.add(target);
             paths.push(target);
@@ -153,7 +155,9 @@ function loadRecentFiles() {
         try {
             const file = Gio.File.new_for_uri(uri);
             const filePath = file.get_path();
-            if (!isCandidatePath(filePath, true) || !isReadableRegularFile(filePath))
+            // recently-used.xbel can contain slow or disconnected remote paths.
+            // Keep this scan metadata-only and validate the selected path at restore.
+            if (!isCandidatePath(filePath, true))
                 continue;
             result.push({
                 path: filePath,

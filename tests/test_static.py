@@ -31,8 +31,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "2.3.0"
-assert metadata["version"] == 8
+assert metadata["version-name"] == "2.3.1"
+assert metadata["version"] == 9
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -59,7 +59,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="2.3.0"' in build_script
+assert 'version="2.3.1"' in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
 assert "tests/open-files-smoke.js" in build_script
@@ -110,6 +110,8 @@ assert "changed::recall-search-shortcut'" in source_text
 assert "new Shell.Screenshot" in source_text
 assert "screenshot.screenshot(false, stream" in source_text
 assert "_excludedApplicationVisible" in source_text
+assert "PRUNE_INTERVAL_US" in source_text
+assert "_screenshotSaving" in source_text
 assert "--recall-search" in source_text
 assert "GLib.chmod(path, 0o600)" in source_text
 assert "sessionsifu-symbolic.svg" in source_text
@@ -117,7 +119,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "2.3.0"' in app_source
+assert 'CURRENT_VERSION = "2.3.1"' in app_source
 assert 'self.settings.value("recall_enabled", False, type=bool)' in (
     root / "portable" / "sessionsifu_portable" / "ui.py"
 ).read_text()
@@ -125,6 +127,14 @@ assert "class RecallSearchWindow" in app_source
 assert "Gtk.FlowBox" in app_source
 assert "recall_screenshot_path" in app_source
 assert "sync_gnome_recall_shortcut" in app_source
+save_source = (extension / "saveSession.js").read_text()
+assert "compact ? 0 : 4" in save_source
+assert "replace_contents_bytes_async" in save_source
+assert "this._saveSessionIdleId" not in save_source
+open_files_source = (extension / "openFiles.js").read_text()
+assert "OPEN_FD_SCAN_LIMIT = 128" in open_files_source
+assert "RECENT_FILE_SCAN_LIMIT = 512" in open_files_source
+assert "isReadableRegularFile(target)" not in open_files_source
 portable_ui = (root / "portable" / "sessionsifu_portable" / "ui.py").read_text()
 assert "class RecallSearchDialog" in portable_ui
 assert "RecallHotkey" in portable_ui

@@ -36,6 +36,11 @@ start a new login session before testing snapshots.
 
 ## Privacy Recall is empty
 
+Recall metadata should complete quickly even when open-file capture is enabled.
+Optional PNG encoding continues separately; under sustained load SessionSifu may
+skip a preview while retaining the corresponding searchable metadata snapshot.
+This is expected overload protection, not lost history.
+
 Privacy Recall is intentionally disabled by default. Enable it explicitly in
 the manager, confirm the top-bar or tray control reports **Active**, then use
 **Capture Now**. Check that the application is not matched by an exclusion.

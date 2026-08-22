@@ -18,9 +18,9 @@ if (OpenFiles.isCandidatePath(`${home}/Documents/report.odt (deleted)`))
     throw new Error('A deleted file was accepted as restorable');
 if (OpenFiles.OPEN_FILE_LIMIT !== 32)
     throw new Error('Unexpected open-file safety limit');
-if (OpenFiles.OPEN_FD_SCAN_LIMIT !== 512)
+if (OpenFiles.OPEN_FD_SCAN_LIMIT !== 128)
     throw new Error('Unexpected descriptor scan safety limit');
-if (OpenFiles.RECENT_FILE_SCAN_LIMIT !== 2048)
+if (OpenFiles.RECENT_FILE_SCAN_LIMIT !== 512)
     throw new Error('Unexpected recent-file safety limit');
 const appInfo = (contentTypes, supportsFiles = false, supportsUris = true) => ({
     supports_files: () => supportsFiles,
@@ -50,3 +50,17 @@ const recent = OpenFiles.recentFileForWindow([
 ], 'report.odt — Document Editor');
 if (recent !== '/new/report.odt')
     throw new Error('The most recent exact window-title match was not selected');
+
+const [, statBytes] = GLib.file_get_contents('/proc/self/stat');
+const selfPid = Number(new TextDecoder().decode(statBytes).split(' ', 1)[0]);
+const startedUs = GLib.get_monotonic_time();
+const resolver = new OpenFiles.OpenFileResolver();
+const resolved = resolver.resolve(
+    selfPid,
+    [],
+    'SessionSifu performance sentinel with no expected recent-document match');
+const elapsedMs = (GLib.get_monotonic_time() - startedUs) / 1000;
+if (resolved.length > OpenFiles.OPEN_FILE_LIMIT)
+    throw new Error('Open-file discovery exceeded its result bound');
+if (elapsedMs > 2000)
+    throw new Error(`Open-file discovery exceeded its latency budget: ${elapsedMs} ms`);

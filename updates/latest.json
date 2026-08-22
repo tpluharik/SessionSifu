@@ -1,7 +1,7 @@
 {
-  "version": "2.3.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.3.0_all.deb",
-  "sha256": "7dc357052a8b8167c0ddb3d355ca762c062cdf55908528cfc8f2dffcfda6d976",
-  "size": 246966,
-  "notes": "Uses Ubuntu's native Custom Shortcuts service, adds top-bar/tray activation and introduces an optional searchable screenshot-card browser for GNOME Recall."
+  "version": "2.3.1",
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.3.1_all.deb",
+  "sha256": "688fa92b4d3a3d2914724b04cf8090cf04b850cf73ff27cf725af006f3d3c330",
+  "size": 248676,
+  "notes": "Speeds up Privacy Recall with bounded file discovery, immediate asynchronous metadata writes, non-overlapping background screenshot previews and cached history summaries."
 }

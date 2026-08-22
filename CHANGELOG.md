@@ -2,6 +2,19 @@
 
 All notable SessionSifu changes are documented here.
 
+## 2.3.1
+
+- Made Recall metadata writes start immediately through GIO's asynchronous
+  atomic-replacement API instead of waiting for a low-priority Shell idle slot.
+- Reduced open-file discovery to bounded scans and removed redundant synchronous
+  filesystem probes across hundreds of descriptors and recent-document entries.
+- Made screenshot preview encoding independent from metadata completion, with
+  overlap protection that drops a preview rather than delaying later snapshots.
+- Cached sanitized Recall summaries and throttled retention pruning to avoid
+  repeatedly reading and scanning the complete history during normal capture.
+- Kept restore-time file validation, exclusion enforcement, private permissions
+  and local-only screenshot handling unchanged.
+
 ## 2.3.0
 
 - Replaced the unreliable Ubuntu extension-only Recall accelerator with a

@@ -15,6 +15,8 @@ export const RECALL_PATTERN = /^recall-\d{8}-\d{6}-\d{3}\.json$/;
 export const RECALL_LIMIT = 500;
 const MAX_RECALL_BYTES = 2 * 1024 * 1024;
 const MAX_SCREENSHOT_BYTES = 64 * 1024 * 1024;
+const PRUNE_INTERVAL_US = 5 * 60 * 1000 * 1000;
+const _summaryCache = new Map();
 
 export function recallName(now = new Date()) {
     const iso = now.toISOString();
@@ -84,6 +86,10 @@ function _removeScreenshot(name) {
     }
 }
 
+function _invalidateSummary(name) {
+    _summaryCache.delete(GLib.build_filenamev([FileUtils.recall_path, name]));
+}
+
 function _excludedApplicationVisible(excludedApps = []) {
     const exclusions = _exclusions(excludedApps);
     const tracker = Shell.WindowTracker.get_default();
@@ -146,6 +152,12 @@ function _captureScreenshot(path) {
 function _summary(entry, excludedApps = []) {
     if (entry.size <= 0 || entry.size > MAX_RECALL_BYTES)
         return null;
+    const exclusions = _exclusions(excludedApps);
+    const exclusionsKey = exclusions.join('\n');
+    const cached = _summaryCache.get(entry.path);
+    if (cached?.modified === entry.modified && cached?.size === entry.size &&
+        cached?.exclusionsKey === exclusionsKey)
+        return cached.summary;
     try {
         const file = Gio.File.new_for_path(entry.path);
         const [ok, contents] = file.load_contents(null);
@@ -158,7 +170,6 @@ function _summary(entry, excludedApps = []) {
         const titles = [];
         const files = [];
         let includedWindows = 0;
-        const exclusions = _exclusions(excludedApps);
         for (const window of payload.x_session_config_objects.slice(0, 512)) {
             const identity = [window.app_name, window.desktop_file_id, window.wm_class]
                 .map(value => String(value ?? '').toLowerCase())
@@ -178,9 +189,16 @@ function _summary(entry, excludedApps = []) {
                     files.push(value);
             }
         }
-        if (!includedWindows)
+        if (!includedWindows) {
+            _summaryCache.set(entry.path, {
+                modified: entry.modified,
+                size: entry.size,
+                exclusionsKey,
+                summary: null,
+            });
             return null;
-        return {
+        }
+        const summary = {
             name: entry.name,
             modified: entry.modified,
             captured_at: String(payload.session_create_time ?? ''),
@@ -191,7 +209,15 @@ function _summary(entry, excludedApps = []) {
                 ? _screenshotPath(entry.name)
                 : '',
         };
+        _summaryCache.set(entry.path, {
+            modified: entry.modified,
+            size: entry.size,
+            exclusionsKey,
+            summary,
+        });
+        return summary;
     } catch (error) {
+        _summaryCache.delete(entry.path);
         Log.Log.getDefault().error(error, `Could not read Privacy Recall entry ${entry.path}`);
         return null;
     }
@@ -220,6 +246,7 @@ export function deleteRecall() {
         try {
             Gio.File.new_for_path(entry.path).delete(null);
             _removeScreenshot(entry.name);
+            _summaryCache.delete(entry.path);
             removed++;
         } catch (error) {
             Log.Log.getDefault().error(error, `Could not delete Privacy Recall entry ${entry.path}`);
@@ -236,6 +263,7 @@ export function deleteRecallScreenshots() {
             continue;
         try {
             Gio.File.new_for_path(path).delete(null);
+            _summaryCache.delete(entry.path);
             removed++;
         } catch (error) {
             Log.Log.getDefault().error(
@@ -252,11 +280,14 @@ export const RecallRecorder = class {
         this._initialTimeoutId = 0;
         this._periodicTimeoutId = 0;
         this._saving = false;
+        this._screenshotSaving = false;
         this._screenshotGeneration = 0;
+        this._lastPruneUs = 0;
+        this._destroyed = false;
         this._settingsIds = [
             this._settings.connect('changed::recall-enabled', () => this._reschedule()),
             this._settings.connect('changed::recall-interval', () => this._reschedule()),
-            this._settings.connect('changed::recall-retention-hours', () => this._prune()),
+            this._settings.connect('changed::recall-retention-hours', () => this._prune(true)),
             this._settings.connect('changed::recall-excluded-apps', () => {
                 this._screenshotGeneration++;
                 const removed = deleteRecallScreenshots();
@@ -302,6 +333,7 @@ export const RecallRecorder = class {
         if (this._saving || !this._settings.get_boolean('recall-enabled'))
             return false;
         this._saving = true;
+        const startedUs = GLib.get_monotonic_time();
         try {
             _ensurePrivateDirectory();
             const name = recallName();
@@ -315,6 +347,8 @@ export const RecallRecorder = class {
                 return false;
             const path = GLib.build_filenamev([FileUtils.recall_path, name]);
             GLib.chmod(path, 0o600);
+            this._log.debug(
+                `Recall metadata saved in ${Math.round((GLib.get_monotonic_time() - startedUs) / 1000)} ms`);
             if (this._settings.get_boolean('recall-capture-screenshots')) {
                 const screenshotGeneration = this._screenshotGeneration;
                 if (Main.sessionMode.isLocked ||
@@ -322,15 +356,11 @@ export const RecallRecorder = class {
                         this._settings.get_strv('recall-excluded-apps'))) {
                     this._log.info(
                         'Skipped Recall screenshot because the session is locked or an excluded app is visible');
-                } else {
-                    try {
-                        await _captureScreenshot(_screenshotPath(name));
-                        if (screenshotGeneration !== this._screenshotGeneration)
-                            _removeScreenshot(name);
-                    } catch (error) {
-                        this._log.error(error, 'Could not capture Recall screenshot preview');
-                    }
-                }
+                } else if (this._screenshotSaving) {
+                    this._log.info(
+                        'Skipped Recall screenshot because the previous preview is still encoding');
+                } else
+                    this._captureScreenshotForEntry(name, screenshotGeneration);
             }
             this._prune();
             return true;
@@ -342,7 +372,26 @@ export const RecallRecorder = class {
         }
     }
 
-    _prune() {
+    async _captureScreenshotForEntry(name, screenshotGeneration) {
+        this._screenshotSaving = true;
+        try {
+            await _captureScreenshot(_screenshotPath(name));
+            if (this._destroyed || screenshotGeneration !== this._screenshotGeneration)
+                _removeScreenshot(name);
+            _invalidateSummary(name);
+        } catch (error) {
+            this._log.error(error, 'Could not capture Recall screenshot preview');
+        } finally {
+            this._screenshotSaving = false;
+        }
+    }
+
+    _prune(force = false) {
+        const nowUs = GLib.get_monotonic_time();
+        if (!force && this._lastPruneUs &&
+            nowUs - this._lastPruneUs < PRUNE_INTERVAL_US)
+            return;
+        this._lastPruneUs = nowUs;
         const retention = Math.max(
             1, Math.min(720, this._settings.get_int('recall-retention-hours')));
         const cutoff = Math.floor(Date.now() / 1000) - retention * 60 * 60;
@@ -352,6 +401,7 @@ export const RecallRecorder = class {
             try {
                 Gio.File.new_for_path(entry.path).delete(null);
                 _removeScreenshot(entry.name);
+                _summaryCache.delete(entry.path);
             } catch (error) {
                 this._log.error(error, `Could not prune Privacy Recall entry ${entry.path}`);
             }
@@ -359,6 +409,8 @@ export const RecallRecorder = class {
     }
 
     destroy() {
+        this._destroyed = true;
+        this._screenshotGeneration++;
         this._removeTimers();
         for (const id of this._settingsIds)
             this._settings.disconnect(id);
