@@ -10,6 +10,7 @@ import * as FileUtils from './utils/fileUtils.js';
 import * as Log from './utils/log.js';
 import * as SaveSession from './saveSession.js';
 import {recallActivity} from './recallActivity.js';
+import {recallExclusions, screenshotBlockingExclusions} from './recallPrivacy.js';
 
 
 export const RECALL_PATTERN = /^recall-\d{8}-\d{6}-\d{3}\.json$/;
@@ -67,12 +68,6 @@ function _entryFiles() {
     return entries;
 }
 
-function _exclusions(values = []) {
-    return [...new Set(['sessionsifu', ...values]
-        .map(value => String(value).trim().toLowerCase().slice(0, 256))
-        .filter(value => value))];
-}
-
 function _screenshotPath(name) {
     return GLib.build_filenamev([
         FileUtils.recall_path, name.replace(/\.json$/, '.png')]);
@@ -109,7 +104,9 @@ function _invalidateSummary(name) {
 }
 
 function _excludedApplicationVisible(excludedApps = []) {
-    const exclusions = _exclusions(excludedApps);
+    const exclusions = screenshotBlockingExclusions(excludedApps);
+    if (!exclusions.length)
+        return false;
     const tracker = Shell.WindowTracker.get_default();
     for (const actor of global.get_window_actors()) {
         const window = actor.meta_window;
@@ -199,7 +196,7 @@ function _compressScreenshot(rawPath, name, displays) {
 function _summary(entry, excludedApps = []) {
     if (entry.size <= 0 || entry.size > MAX_RECALL_BYTES)
         return null;
-    const exclusions = _exclusions(excludedApps);
+    const exclusions = recallExclusions(excludedApps);
     const exclusionsKey = exclusions.join('\n');
     const cached = _summaryCache.get(entry.path);
     if (cached?.modified === entry.modified && cached?.size === entry.size &&

@@ -31,7 +31,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "2.5.1"
+CURRENT_VERSION = "2.5.2"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -227,7 +227,7 @@ def recall_preview(
     )
     placeholder.add_css_class("dim-label")
     placeholder.append(Gtk.Image(icon_name="image-missing-symbolic", pixel_size=42))
-    placeholder.append(Gtk.Label(label="Metadata-only snapshot"))
+    placeholder.append(Gtk.Label(label="Preview skipped or unavailable"))
     return placeholder
 
 
@@ -1210,7 +1210,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         self.recall_screenshots_switch = Adw.SwitchRow(
             title="Capture screenshot previews",
             subtitle=(
-                "Separate opt-in; skipped whenever an excluded application is visible"
+                "Separate opt-in; user privacy exclusions can skip previews"
             ),
         )
         self.recall_screenshots_switch.set_active(

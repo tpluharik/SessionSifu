@@ -1,11 +1,11 @@
 {
-  "version": "2.5.1",
+  "version": "2.5.2",
   "channel": "stable",
-  "issued_at": "2026-08-22T17:32:47Z",
-  "expires_at": "2026-10-06T17:32:47Z",
+  "issued_at": "2026-08-22T19:27:22Z",
+  "expires_at": "2026-10-06T19:27:22Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.5.1_all.deb",
-  "sha256": "e511f00e64c9993e9eacf136044c5cf2752e73f6140de7021a67954707c26d31",
-  "size": 266638,
-  "notes": "Privacy Recall now shows a live recording badge on the GNOME top bar and portable tray while a snapshot is being saved."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.5.2_all.deb",
+  "sha256": "47601f89e393a11842ea6b45685cde861e6a2b381ab2258d16f04e98f8bdcb32",
+  "size": 267600,
+  "notes": "Fixes Recall previews being discarded whenever SessionSifu's own manager or search window is visible, while preserving user privacy exclusions."
 }

@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "Privacy Recall now shows a live recording badge on the GNOME top bar and portable tray while a snapshot is being saved."
+  "notes": "Fixes Recall previews being discarded whenever SessionSifu's own manager or search window is visible, while preserving user privacy exclusions."
 }

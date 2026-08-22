@@ -2,6 +2,18 @@
 
 All notable SessionSifu changes are documented here.
 
+## 2.5.2
+
+- Fixed Recall previews being discarded whenever SessionSifu's manager or
+  search window was visible. The built-in self-exclusion now suppresses only
+  SessionSifu metadata, rather than the complete screenshot capture.
+- Preserved fail-closed screenshot blocking for user-configured privacy
+  exclusions such as messaging or password-manager applications.
+- Reworded empty preview cards and screenshot settings to distinguish skipped
+  or unavailable previews from intentional metadata-only capture.
+- Added a standalone exclusion-policy regression test and updated privacy
+  documentation.
+
 ## 2.5.1
 
 - Added a live recording badge to the GNOME top-bar icon while Privacy Recall
