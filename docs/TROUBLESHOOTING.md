@@ -36,6 +36,12 @@ start a new login session before testing snapshots.
 
 ## Privacy Recall is empty
 
+If **Capture Now** reports that `CaptureRecallNow` is unknown after an upgrade,
+the application and the copy still loaded by GNOME Shell are different versions.
+SessionSifu 2.3.3 and later reload the extension automatically when capture is
+requested; the Integration row also exposes **Reload Integration**. Log out and
+back in only if GNOME cannot complete that live reload.
+
 Recall metadata should complete quickly even when open-file capture is enabled.
 Optional PNG encoding continues separately; under sustained load SessionSifu may
 skip a preview while retaining the corresponding searchable metadata snapshot.

@@ -2,6 +2,16 @@
 
 All notable SessionSifu changes are documented here.
 
+## 2.3.3
+
+- Fixed Recall **Capture Now** after an in-app or package upgrade by detecting
+  the stale live D-Bus API, safely cycling only the SessionSifu extension and
+  retrying capture after the current integration reconnects.
+- Added a clear **Reload Integration** state instead of exposing the raw D-Bus
+  `UnknownMethod` error when GNOME Shell still has older extension code loaded.
+- Kept logout/login as a fallback only when GNOME rejects or cannot complete the
+  live extension reload.
+
 ## 2.3.2
 
 - Kept logging safe before GNOME preferences are initialized, so the real

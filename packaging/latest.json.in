@@ -3,5 +3,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "Speeds up Privacy Recall with bounded file discovery, immediate asynchronous metadata writes, non-overlapping background screenshot previews and cached history summaries."
+  "notes": "Fixes Recall Capture Now after upgrades by safely reloading a stale GNOME integration, while retaining the bounded asynchronous snapshot pipeline."
 }

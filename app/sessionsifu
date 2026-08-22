@@ -28,7 +28,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "2.3.2"
+CURRENT_VERSION = "2.3.3"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -518,6 +518,60 @@ def extension_needs_update() -> bool:
         return True
 
 
+def live_extension_current(timeout: int = 700) -> bool:
+    """Return whether GNOME Shell is running this manager's extension API."""
+    try:
+        return call("Ping", timeout=timeout) == f"SessionSifu {CURRENT_VERSION} is ready"
+    except GLib.Error:
+        return False
+
+
+def reload_extension() -> tuple[bool, str]:
+    """Reload the user extension without restarting the Wayland session."""
+    try:
+        disabled = subprocess.run(
+            ["gnome-extensions", "disable", UUID],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        schedule_extension_enable()
+        return False, f"Could not stop the old GNOME integration: {error}"
+    if disabled.returncode != 0:
+        message = (disabled.stderr or disabled.stdout).strip()
+        schedule_extension_enable()
+        return False, message or "Could not stop the old GNOME integration. Log out and back in once."
+
+    # GNOME Shell applies extension state changes asynchronously. Giving the
+    # disable request a short head start avoids racing the following enable.
+    time.sleep(0.25)
+    try:
+        enabled = subprocess.run(
+            ["gnome-extensions", "enable", UUID],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        schedule_extension_enable()
+        return False, f"Could not reload GNOME integration: {error}"
+    if enabled.returncode != 0:
+        message = (enabled.stderr or enabled.stdout).strip()
+        schedule_extension_enable()
+        return False, message or "Could not reload GNOME integration. Log out and back in once."
+
+    for _attempt in range(10):
+        if live_extension_current(400):
+            return True, "GNOME integration reloaded and connected."
+        time.sleep(0.15)
+
+    schedule_extension_enable()
+    return False, "GNOME accepted the reload but has not connected yet. Log out and back in once if it does not appear."
+
+
 def enable_extension() -> tuple[bool, str]:
     state, state_message = extension_state()
     installed = False
@@ -540,9 +594,20 @@ def enable_extension() -> tuple[bool, str]:
             message = (completed.stderr or completed.stdout).strip()
             return False, message or "Could not install the GNOME Shell extension."
         installed = True
-        if updating:
-            schedule_extension_enable()
-            return True, "GNOME integration updated. Log out and back in once to load it."
+        if updating and state == "enabled":
+            reloaded, message = reload_extension()
+            return reloaded, (
+                "GNOME integration updated and reloaded."
+                if reloaded else message
+            )
+
+    # Re-running `gnome-extensions enable` does not reload an already enabled
+    # extension. Explicitly cycle it when the on-disk version and live D-Bus API
+    # disagree, which is the normal state immediately after an upgrade.
+    if state == "enabled" and not installed:
+        if live_extension_current():
+            return True, "Extension is already enabled and connected."
+        return reload_extension()
 
     completed = subprocess.run(
         ["gnome-extensions", "enable", UUID],
@@ -991,7 +1056,13 @@ class ManagerWindow(Adw.ApplicationWindow):
             self._message(result)
             return result
         except GLib.Error as error:
-            self._message(f"SessionSifu extension is unavailable: {error.message}")
+            if "UnknownMethod" in error.message:
+                self._message(
+                    "GNOME Shell is still running an older SessionSifu integration. "
+                    "Use Reload Integration, or log out and back in once."
+                )
+            else:
+                self._message(f"SessionSifu extension is unavailable: {error.message}")
             return None
 
     def _enable_extension(self, _button) -> None:
@@ -1213,6 +1284,13 @@ class ManagerWindow(Adw.ApplicationWindow):
         if not self.recall_switch.get_active():
             self._message("Privacy Recall is disabled.")
             return
+        if not live_extension_current():
+            ok, message = enable_extension()
+            if not ok or not live_extension_current():
+                self._message(message)
+                self.refresh()
+                return
+            self._message("GNOME integration reloaded; capturing the Recall snapshot now.")
         self._call("CaptureRecallNow")
         GLib.timeout_add(1400, self._refresh_once)
 
@@ -1374,7 +1452,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         integration_update = extension_needs_update()
         self.status_row.set_subtitle(
             "Update GNOME integration, then log out and back in" if integration_update else
-            "Integration updated; log out and back in to load it" if live and not integration_current else
+            "An older integration is running; reload it to activate capture" if live and not integration_current else
             "Enabled and connected" if live else
             "Enabled; starting GNOME integration" if state == "enabled" else
             "Installed but not enabled" if state == "disabled" else
@@ -1390,6 +1468,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         )
         self.enable_button.set_label(
             "Update Integration" if integration_update else
+            "Reload Integration" if live and not integration_current else
             "Install & Enable" if state == "missing" else "Enable"
         )
         self.enable_button.set_sensitive(state != "unavailable")

@@ -173,4 +173,22 @@ with tempfile.NamedTemporaryFile(suffix=".shell-extension.zip") as bundle:
         "gnome-extensions", "enable", "sessionsifu@local"
     ]
 
+stopped = subprocess.CompletedProcess([], 0, "", "")
+started = subprocess.CompletedProcess([], 0, "", "")
+with mock.patch.object(module, "extension_state", return_value=("enabled", "")):
+    with mock.patch.object(module, "extension_needs_update", return_value=False):
+        with mock.patch.object(
+            module, "live_extension_current", side_effect=[False, True]
+        ):
+            with mock.patch.object(
+                module.subprocess, "run", side_effect=[stopped, started]
+            ) as run:
+                ok, message = module.enable_extension()
+assert ok is True
+assert message == "GNOME integration reloaded and connected."
+assert [item.args[0] for item in run.call_args_list] == [
+    ["gnome-extensions", "disable", "sessionsifu@local"],
+    ["gnome-extensions", "enable", "sessionsifu@local"],
+]
+
 print("settings schema lookup test passed")
