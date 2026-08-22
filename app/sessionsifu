@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -27,12 +28,19 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "2.2.1"
+CURRENT_VERSION = "2.3.0"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
 DBUS_PATH = "/org/gnome/Shell/Extensions/SessionSifu"
 DBUS_IFACE = "org.gnome.Shell.Extensions.SessionSifu.Control"
+MEDIA_KEYS_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys"
+CUSTOM_KEYBINDING_SCHEMA = (
+    "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding"
+)
+RECALL_SHORTCUT_PATH = (
+    "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/sessionsifu-recall/"
+)
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$")
 UPDATE_MANIFEST_URL = (
     "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/latest.json"
@@ -40,6 +48,47 @@ UPDATE_MANIFEST_URL = (
 UPDATE_REPOSITORY_PREFIX = "/tpluharik/SessionSifu/"
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_UPDATE_BYTES = 50 * 1024 * 1024
+MAX_RECALL_SCREENSHOT_BYTES = 64 * 1024 * 1024
+
+
+def recall_screenshot_path(value: object) -> Path | None:
+    """Accept only private PNG previews from SessionSifu's Recall directory."""
+    if not value:
+        return None
+    recall_dir = Path(GLib.get_user_config_dir()).resolve() / "sessionsifu" / "recall"
+    candidate = Path(str(value))
+    try:
+        if candidate.is_symlink() or not candidate.is_file():
+            return None
+        resolved = candidate.resolve(strict=True)
+        if resolved.parent != recall_dir or resolved.suffix.casefold() != ".png":
+            return None
+        if resolved.stat().st_size <= 0 or resolved.stat().st_size > MAX_RECALL_SCREENSHOT_BYTES:
+            return None
+        return resolved
+    except OSError:
+        return None
+
+
+def recall_preview(item: dict, width: int = 300, height: int = 170) -> Gtk.Widget:
+    path = recall_screenshot_path(item.get("screenshot"))
+    if path is not None:
+        picture = Gtk.Picture.new_for_filename(str(path))
+        picture.set_content_fit(Gtk.ContentFit.COVER)
+        picture.set_can_shrink(True)
+        picture.set_size_request(width, height)
+        return picture
+    placeholder = Gtk.Box(
+        orientation=Gtk.Orientation.VERTICAL,
+        halign=Gtk.Align.CENTER,
+        valign=Gtk.Align.CENTER,
+        width_request=width,
+        height_request=height,
+    )
+    placeholder.add_css_class("dim-label")
+    placeholder.append(Gtk.Image(icon_name="image-missing-symbolic", pixel_size=42))
+    placeholder.append(Gtk.Label(label="Metadata-only snapshot"))
+    return placeholder
 
 
 def version_tuple(version: str) -> tuple[int, int, int]:
@@ -333,6 +382,45 @@ def settings() -> Gio.Settings:
     return Gio.Settings.new_full(_schema(), None, None)
 
 
+def sync_gnome_recall_shortcut(config: Gio.Settings) -> bool:
+    """Install the accelerator through GNOME's native Custom Shortcuts service."""
+    try:
+        accelerators = config.get_strv("recall-search-shortcut")
+        accelerator = next(
+            (value for value in accelerators if value and value != "disabled"), ""
+        )
+        enabled = config.get_boolean("recall-search-shortcut-enabled") and bool(
+            accelerator
+        )
+        media_keys = Gio.Settings.new(MEDIA_KEYS_SCHEMA)
+        paths = list(media_keys.get_strv("custom-keybindings"))
+        shortcut = Gio.Settings.new_with_path(
+            CUSTOM_KEYBINDING_SCHEMA, RECALL_SHORTCUT_PATH
+        )
+        if enabled:
+            if RECALL_SHORTCUT_PATH not in paths:
+                media_keys.set_strv(
+                    "custom-keybindings", [*paths, RECALL_SHORTCUT_PATH]
+                )
+            shortcut.set_string("name", "SessionSifu Recall Search")
+            shortcut.set_string(
+                "command", f"{shlex.quote(str(Path(__file__).resolve()))} --recall-search"
+            )
+            shortcut.set_string("binding", accelerator)
+        else:
+            if RECALL_SHORTCUT_PATH in paths:
+                media_keys.set_strv(
+                    "custom-keybindings",
+                    [path for path in paths if path != RECALL_SHORTCUT_PATH],
+                )
+            shortcut.set_string("binding", "")
+            shortcut.set_string("command", "")
+        Gio.Settings.sync()
+        return enabled
+    except (GLib.Error, RuntimeError):
+        return False
+
+
 def shell_settings() -> Gio.Settings:
     return Gio.Settings.new("org.gnome.shell")
 
@@ -475,13 +563,13 @@ class RecallSearchWindow(Adw.ApplicationWindow):
     """Compact, keyboard-oriented search surface for Privacy Recall."""
 
     def __init__(self, app: Adw.Application):
-        super().__init__(application=app, title="Search Privacy Recall")
-        self.set_default_size(680, 460)
+        super().__init__(application=app, title="Browse Recall Snapshots")
+        self.set_default_size(820, 620)
         self._settings = settings()
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
         header.set_title_widget(Adw.WindowTitle(
-            title="Search Privacy Recall", subtitle="Local metadata timeline"
+            title="Browse Recall Snapshots", subtitle="Private local visual timeline"
         ))
         toolbar.add_top_bar(header)
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -490,14 +578,21 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         content.set_margin_start(18)
         content.set_margin_end(18)
         self.notice = Gtk.Label(
-            label="Excluded applications are redacted from results, including older entries.",
+            label=(
+                "Search uses application, title and opted-in file metadata—not OCR. "
+                "Screenshot capture is skipped while an excluded application is visible."
+            ),
             xalign=0,
             wrap=True,
         )
         content.append(self.notice)
         search_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.query = Gtk.SearchEntry(hexpand=True, placeholder_text="Application, window title or opted-in file path")
+        self.query = Gtk.SearchEntry(
+            hexpand=True,
+            placeholder_text="Search snapshots by application, window title or opted-in file path",
+        )
         self.query.connect("activate", self._search)
+        self.query.connect("search-changed", self._search)
         search_row.append(self.query)
         search_button = Gtk.Button(label="Search")
         search_button.add_css_class("suggested-action")
@@ -505,8 +600,14 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         search_row.append(search_button)
         content.append(search_row)
         scroller = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
-        self.results = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
-        self.results.add_css_class("boxed-list")
+        self.results = Gtk.FlowBox(
+            selection_mode=Gtk.SelectionMode.NONE,
+            homogeneous=True,
+            max_children_per_line=2,
+            min_children_per_line=1,
+            column_spacing=12,
+            row_spacing=12,
+        )
         scroller.set_child(self.results)
         content.append(scroller)
         toolbar.set_content(content)
@@ -528,16 +629,30 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             modified = datetime.fromtimestamp(item.get("modified", 0)).strftime("%Y-%m-%d %H:%M:%S")
             apps = ", ".join(item.get("apps", [])[:4]) or "Unknown application"
             titles = " · ".join(item.get("titles", [])[:3])
-            row = Adw.ActionRow(
-                title=f"{modified} — {apps}",
-                subtitle=titles or "No window title was exposed",
+            row = Gtk.Box(
+                orientation=Gtk.Orientation.VERTICAL,
+                spacing=8,
+                margin_top=10,
+                margin_bottom=10,
+                margin_start=10,
+                margin_end=10,
             )
-            self.results.append(row)
+            row.add_css_class("card")
+            row.append(recall_preview(item))
+            title = Gtk.Label(label=f"{modified} — {apps}", xalign=0, wrap=True)
+            title.add_css_class("heading")
+            row.append(title)
+            details = Gtk.Label(
+                label=titles or "No window title was exposed", xalign=0, wrap=True
+            )
+            details.add_css_class("dim-label")
+            row.append(details)
+            self.results.insert(row, -1)
             self._rows.append(row)
         self.notice.set_label(
-            f"{len(entries)} matching entries. Excluded applications are redacted from all results."
+            f"{len(entries)} matching snapshots. Search is metadata-based; previews remain local."
             if entries
-            else "No matching non-excluded Recall entries. Capture may be paused."
+            else "No matching Recall snapshots. Capture may be paused or previews may be disabled."
         )
 
     def present_search(self) -> None:
@@ -551,6 +666,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         super().__init__(application=app, title="SessionSifu")
         self.set_default_size(760, 680)
         self._settings = settings()
+        sync_gnome_recall_shortcut(self._settings)
 
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
@@ -676,8 +792,8 @@ class ManagerWindow(Adw.ApplicationWindow):
         recall_group = Adw.PreferencesGroup(
             title="Experimental Privacy Recall",
             description=(
-                "Disabled by default. Records searchable app and window metadata locally; "
-                "this version never captures screenshots or uploads activity."
+                "Disabled by default. Records a searchable local timeline and never uploads activity. "
+                "Screenshot previews require the separate opt-in below."
             ),
         )
         self.recall_switch = Adw.SwitchRow(
@@ -724,6 +840,20 @@ class ManagerWindow(Adw.ApplicationWindow):
         self.recall_files_switch.connect("notify::active", self._toggle_recall_files)
         recall_group.add(self.recall_files_switch)
 
+        self.recall_screenshots_switch = Adw.SwitchRow(
+            title="Capture screenshot previews",
+            subtitle=(
+                "Separate opt-in; skipped whenever an excluded application is visible"
+            ),
+        )
+        self.recall_screenshots_switch.set_active(
+            self._settings.get_boolean("recall-capture-screenshots")
+        )
+        self.recall_screenshots_switch.connect(
+            "notify::active", self._toggle_recall_screenshots
+        )
+        recall_group.add(self.recall_screenshots_switch)
+
         exclusions_row = Adw.ActionRow(
             title="Excluded applications",
             subtitle="Comma-separated app names or identifiers",
@@ -740,7 +870,7 @@ class ManagerWindow(Adw.ApplicationWindow):
 
         self.recall_shortcut_switch = Adw.SwitchRow(
             title="Global Recall search shortcut",
-            subtitle="Opens search even while new Recall capture is paused",
+            subtitle="Registered through Ubuntu/GNOME Custom Shortcuts and works while capture is paused",
         )
         self.recall_shortcut_switch.set_active(
             self._settings.get_boolean("recall-search-shortcut-enabled")
@@ -769,8 +899,10 @@ class ManagerWindow(Adw.ApplicationWindow):
         recall_group.add(self.recall_shortcut_row)
 
         capture_recall_row = Adw.ActionRow(
-            title="Capture current activity metadata",
-            subtitle="No screenshot, clipboard, keystroke, shell history or network data is recorded",
+            title="Capture current Recall snapshot",
+            subtitle=(
+                "Captures metadata and, when explicitly enabled, a private local desktop preview"
+            ),
         )
         self.recall_capture_button = Gtk.Button(label="Capture Now", valign=Gtk.Align.CENTER)
         self.recall_capture_button.connect("clicked", self._capture_recall)
@@ -780,8 +912,10 @@ class ManagerWindow(Adw.ApplicationWindow):
         self._update_recall_controls()
 
         recall_search_group = Adw.PreferencesGroup(
-            title="Privacy Recall history",
-            description="Search the locally stored activity timeline or delete it permanently.",
+            title="Recall snapshot browser",
+            description=(
+                "Search the local screenshot timeline by application, window title or opted-in file path."
+            ),
         )
         recall_search_row = Adw.ActionRow(title="Search")
         self.recall_search_entry = Gtk.Entry(
@@ -944,6 +1078,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         self.recall_interval_row.set_sensitive(enabled)
         self.recall_retention_row.set_sensitive(enabled)
         self.recall_files_switch.set_sensitive(enabled)
+        self.recall_screenshots_switch.set_sensitive(enabled)
         self.recall_exclusions_entry.set_sensitive(enabled)
         self.recall_capture_button.set_sensitive(enabled)
         self.recall_shortcut_switch.set_sensitive(True)
@@ -967,16 +1102,21 @@ class ManagerWindow(Adw.ApplicationWindow):
     def _toggle_recall_files(self, row, _param) -> None:
         self._settings.set_boolean("recall-include-file-paths", row.get_active())
 
+    def _toggle_recall_screenshots(self, row, _param) -> None:
+        self._settings.set_boolean("recall-capture-screenshots", row.get_active())
+
     def _toggle_recall_shortcut(self, row, _param) -> None:
         self._settings.set_boolean(
             "recall-search-shortcut-enabled", row.get_active()
         )
+        sync_gnome_recall_shortcut(self._settings)
         self._update_recall_controls()
 
     def _set_recall_shortcut(self, accelerator: str) -> None:
         self._settings.set_strv(
             "recall-search-shortcut", [accelerator] if accelerator else []
         )
+        sync_gnome_recall_shortcut(self._settings)
         self.recall_shortcut_label.set_accelerator(accelerator)
 
     def _capture_recall_shortcut(self, _button) -> None:
@@ -1300,6 +1440,7 @@ class ManagerWindow(Adw.ApplicationWindow):
                     title=f"{modified} — {apps}",
                     subtitle=titles or "No window title was exposed",
                 )
+                recall_row.add_prefix(recall_preview(item, width=144, height=82))
                 self.recall_results_group.add(recall_row)
                 self._recall_rows_widgets.append(recall_row)
 

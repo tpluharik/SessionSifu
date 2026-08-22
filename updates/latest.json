@@ -1,7 +1,7 @@
 {
-  "version": "2.2.1",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.2.1_all.deb",
-  "sha256": "40356627df0767e6bb1c1d75fca2afa53ca8d7b525cdc09daeefb2f59979393c",
-  "size": 243112,
-  "notes": "Fixes the Ubuntu Recall shortcut and adds immediately applied, customizable search shortcuts across GNOME, KDE, Windows, macOS and portable Linux."
+  "version": "2.3.0",
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.3.0_all.deb",
+  "sha256": "7dc357052a8b8167c0ddb3d355ca762c062cdf55908528cfc8f2dffcfda6d976",
+  "size": 246966,
+  "notes": "Uses Ubuntu's native Custom Shortcuts service, adds top-bar/tray activation and introduces an optional searchable screenshot-card browser for GNOME Recall."
 }

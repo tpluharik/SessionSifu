@@ -56,13 +56,16 @@ The shortcut is independent of Recall capture, so it can search existing
 history while capture is paused. Open SessionSifu, ensure **Global Recall
 search shortcut** is enabled, select **Change…**, press a combination not
 already reserved by Ubuntu or another extension, and use **Open Search** to
-verify the popup target. The new GNOME keybinding is applied immediately.
+verify the popup target. SessionSifu applies the setting immediately through
+GNOME's standard Custom Shortcuts service. You can also verify the
+**SessionSifu Recall Search** entry under Ubuntu **Settings → Keyboard → View
+and Customize Shortcuts → Custom Shortcuts**.
 
 On KDE/Wayland or general Linux, approve the XDG desktop-portal shortcut
 request. On macOS, allow SessionSifu under **Privacy & Security → Input
 Monitoring**. Windows reports a conflict when another program already owns the
 shortcut. Portable editions accept Ctrl/Alt/Shift/Super plus Space, A-Z or 0-9.
-The top-bar/tray **Search Privacy Recall…** action remains available as a
+The top-bar/tray **Browse Recall Snapshots…** action remains available as a
 fallback.
 
 ## A restored application does not reopen its document

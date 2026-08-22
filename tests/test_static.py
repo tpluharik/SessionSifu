@@ -31,8 +31,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "2.2.1"
-assert metadata["version"] == 7
+assert metadata["version-name"] == "2.3.0"
+assert metadata["version"] == 8
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -49,6 +49,7 @@ assert schema_keys["recall-enabled"].findtext("default") == "false"
 assert schema_keys["recall-interval"].findtext("default") == "300"
 assert schema_keys["recall-retention-hours"].findtext("default") == "24"
 assert schema_keys["recall-include-file-paths"].findtext("default") == "false"
+assert schema_keys["recall-capture-screenshots"].findtext("default") == "false"
 assert schema_keys["recall-search-shortcut-enabled"].findtext("default") == "true"
 assert "Control" in schema_keys["recall-search-shortcut"].findtext("default")
 
@@ -58,7 +59,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="2.2.1"' in build_script
+assert 'version="2.3.0"' in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
 assert "tests/open-files-smoke.js" in build_script
@@ -103,9 +104,12 @@ assert "Privacy Recall: Active — Pause" in source_text
 assert "get_boolean('show-indicator') ||" in source_text
 assert "saveRecallAsync" in source_text
 assert "listRecall(\n                query, this._settings.get_strv('recall-excluded-apps')" in source_text
-assert "Main.wm.addKeybinding" in source_text
+assert "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding" in source_text
+assert "sessionsifu-recall/" in source_text
 assert "changed::recall-search-shortcut'" in source_text
-assert "Shell.ActionMode.POPUP" in source_text
+assert "new Shell.Screenshot" in source_text
+assert "screenshot.screenshot(false, stream" in source_text
+assert "_excludedApplicationVisible" in source_text
 assert "--recall-search" in source_text
 assert "GLib.chmod(path, 0o600)" in source_text
 assert "sessionsifu-symbolic.svg" in source_text
@@ -113,11 +117,14 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "2.2.1"' in app_source
+assert 'CURRENT_VERSION = "2.3.0"' in app_source
 assert 'self.settings.value("recall_enabled", False, type=bool)' in (
     root / "portable" / "sessionsifu_portable" / "ui.py"
 ).read_text()
 assert "class RecallSearchWindow" in app_source
+assert "Gtk.FlowBox" in app_source
+assert "recall_screenshot_path" in app_source
+assert "sync_gnome_recall_shortcut" in app_source
 portable_ui = (root / "portable" / "sessionsifu_portable" / "ui.py").read_text()
 assert "class RecallSearchDialog" in portable_ui
 assert "RecallHotkey" in portable_ui

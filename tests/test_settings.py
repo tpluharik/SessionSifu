@@ -30,11 +30,20 @@ assert settings.get_boolean("recall-enabled") is False
 assert settings.get_int("recall-interval") == 300
 assert settings.get_int("recall-retention-hours") == 24
 assert settings.get_boolean("recall-include-file-paths") is False
+assert settings.get_boolean("recall-capture-screenshots") is False
 assert "SessionSifu" in settings.get_strv("recall-excluded-apps")
 assert settings.get_boolean("recall-search-shortcut-enabled") is True
 assert settings.get_strv("recall-search-shortcut") == ["<Control><Alt>space"]
 settings.set_strv("recall-search-shortcut", ["<Control><Shift>r"])
 assert settings.get_strv("recall-search-shortcut") == ["<Control><Shift>r"]
+assert module.sync_gnome_recall_shortcut(settings) is True
+media_keys = module.Gio.Settings.new(module.MEDIA_KEYS_SCHEMA)
+assert module.RECALL_SHORTCUT_PATH in media_keys.get_strv("custom-keybindings")
+native_shortcut = module.Gio.Settings.new_with_path(
+    module.CUSTOM_KEYBINDING_SCHEMA, module.RECALL_SHORTCUT_PATH
+)
+assert native_shortcut.get_string("binding") == "<Control><Shift>r"
+assert native_shortcut.get_string("command").endswith(" --recall-search")
 settings.set_strv("recall-search-shortcut", ["<Control><Alt>space"])
 settings.set_int("continuous-save-interval", 30)
 assert settings.get_int("continuous-save-interval") == 30

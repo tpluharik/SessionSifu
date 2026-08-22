@@ -343,7 +343,7 @@ class AwsIndicator extends PanelMenu.Button {
             }
         });
         this.menu.addMenuItem(this._recallMenuItem);
-        this.menu.addAction('Search Privacy Recall…', () => {
+        this.menu.addAction('Browse Recall Snapshots…', () => {
             try {
                 Gio.Subprocess.new(
                     [FileUtils.getManagerExecutable(), '--recall-search'],

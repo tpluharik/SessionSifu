@@ -3,5 +3,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "Fixes the Ubuntu Recall shortcut and adds immediately applied, customizable search shortcuts across GNOME, KDE, Windows, macOS and portable Linux."
+  "notes": "Uses Ubuntu's native Custom Shortcuts service, adds top-bar/tray activation and introduces an optional searchable screenshot-card browser for GNOME Recall."
 }

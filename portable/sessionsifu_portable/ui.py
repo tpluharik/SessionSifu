@@ -511,7 +511,7 @@ def run_gui(
     recall.setCheckable(True)
     recall.toggled.connect(window.recall_enabled.setChecked)
     search_recall = QAction(
-        f"Search Privacy Recall… ({window.shortcut_value()})", menu
+        f"Browse Recall snapshots… ({window.shortcut_value()})", menu
     )
     search_recall.triggered.connect(show_recall_search)
 
@@ -526,7 +526,7 @@ def run_gui(
         )
         local_shortcut.setKey(qt_shortcut(shortcut))
         recall_search.set_shortcut(shortcut)
-        search_recall.setText(f"Search Privacy Recall… ({shortcut})")
+        search_recall.setText(f"Browse Recall snapshots… ({shortcut})")
         native_hotkey.set_shortcut(shortcut)
         if shortcut_enabled:
             native_hotkey.start()

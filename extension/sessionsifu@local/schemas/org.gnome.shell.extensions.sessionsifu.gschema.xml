@@ -162,8 +162,8 @@
       <summary>Enable experimental local Privacy Recall</summary>
       <description>
         Record a searchable, sanitized timeline of observable application and
-        window metadata. The feature is disabled by default and does not take
-        screenshots or upload data.
+        window metadata. The feature is disabled by default and never uploads
+        data. Visual previews require a separate explicit opt-in.
       </description>
     </key>
 
@@ -183,6 +183,15 @@
       <default>false</default>
       <summary>Include open file paths in Privacy Recall</summary>
       <description>This separate opt-in is disabled even when Privacy Recall is enabled.</description>
+    </key>
+
+    <key name="recall-capture-screenshots" type="b">
+      <default>false</default>
+      <summary>Capture local screenshot previews for Privacy Recall</summary>
+      <description>
+        Separate opt-in for full-desktop PNG previews. Capture is skipped while
+        an excluded application is visible, and previews never leave this device.
+      </description>
     </key>
 
     <key name="recall-excluded-apps" type="as">

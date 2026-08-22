@@ -2,6 +2,25 @@
 
 All notable SessionSifu changes are documented here.
 
+## 2.3.0
+
+- Replaced the unreliable Ubuntu extension-only Recall accelerator with a
+  GNOME Custom Shortcut entry managed by both the app and the extension. The
+  configured accelerator now launches the search surface through GNOME's
+  standard media-keys service and remains customizable in SessionSifu.
+- Added an explicit **Browse Recall Snapshots…** action to the GNOME top-bar
+  and portable tray menus.
+- Added an optional, separately gated full-desktop PNG preview for GNOME Recall
+  entries. Screenshots remain off by default, use private file permissions and
+  are skipped while the session is locked or an excluded application is visible.
+- Rebuilt the GTK Recall popup as a searchable screenshot-card browser. Search
+  matches application names, window titles and separately opted-in file paths;
+  it does not perform OCR.
+- Added screenshot thumbnails to Recall results in the main manager and ensured
+  screenshot assets are pruned and deleted with their metadata entries.
+- Changing the excluded-app list now removes existing screenshot previews because
+  pixels captured before a new exclusion cannot be safely redacted afterward.
+
 ## 2.2.1
 
 - Fixed the GNOME/Ubuntu Recall search shortcut being silently unregistered

@@ -2,6 +2,9 @@
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import Shell from 'gi://Shell';
+
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import * as FileUtils from './utils/fileUtils.js';
 import * as Log from './utils/log.js';
@@ -11,6 +14,7 @@ import * as SaveSession from './saveSession.js';
 export const RECALL_PATTERN = /^recall-\d{8}-\d{6}-\d{3}\.json$/;
 export const RECALL_LIMIT = 500;
 const MAX_RECALL_BYTES = 2 * 1024 * 1024;
+const MAX_SCREENSHOT_BYTES = 64 * 1024 * 1024;
 
 export function recallName(now = new Date()) {
     const iso = now.toISOString();
@@ -65,6 +69,80 @@ function _exclusions(values = []) {
         .filter(value => value))];
 }
 
+function _screenshotPath(name) {
+    return GLib.build_filenamev([
+        FileUtils.recall_path, name.replace(/\.json$/, '.png')]);
+}
+
+function _removeScreenshot(name) {
+    const path = _screenshotPath(name);
+    try {
+        Gio.File.new_for_path(path).delete(null);
+    } catch (error) {
+        if (!error.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND))
+            Log.Log.getDefault().error(error, `Could not delete Recall screenshot ${path}`);
+    }
+}
+
+function _excludedApplicationVisible(excludedApps = []) {
+    const exclusions = _exclusions(excludedApps);
+    const tracker = Shell.WindowTracker.get_default();
+    for (const actor of global.get_window_actors()) {
+        const window = actor.meta_window;
+        if (!window || !window.showing_on_its_workspace?.())
+            continue;
+        const app = tracker.get_window_app(window);
+        const identity = [
+            app?.get_id?.(), app?.get_name?.(), window.get_wm_class?.(),
+            window.get_wm_class_instance?.(),
+        ].map(value => String(value ?? '').toLowerCase()).join('\n');
+        if (exclusions.some(value => identity.includes(value)))
+            return true;
+    }
+    return false;
+}
+
+function _captureScreenshot(path) {
+    return new Promise((resolve, reject) => {
+        let stream;
+        try {
+            stream = Gio.File.new_for_path(path).replace(
+                null, false, Gio.FileCreateFlags.PRIVATE, null);
+            const screenshot = new Shell.Screenshot();
+            screenshot.screenshot(false, stream, (source, result) => {
+                try {
+                    const [success] = source.screenshot_finish(result);
+                    stream.close(null);
+                    if (!success)
+                        throw new Error('GNOME Shell did not return a screenshot');
+                    const size = Gio.File.new_for_path(path).query_info(
+                        'standard::size', Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null)
+                        .get_size();
+                    if (size <= 0 || size > MAX_SCREENSHOT_BYTES)
+                        throw new Error(`Recall screenshot has an unsafe size: ${size}`);
+                    GLib.chmod(path, 0o600);
+                    resolve(path);
+                } catch (error) {
+                    try {
+                        stream.close(null);
+                    } catch (_) {
+                        // The callback may already have closed the stream.
+                    }
+                    _removeScreenshot(GLib.path_get_basename(path).replace(/\.png$/, '.json'));
+                    reject(error);
+                }
+            });
+        } catch (error) {
+            try {
+                stream?.close(null);
+            } catch (_) {
+                // Ignore cleanup failures while reporting the original error.
+            }
+            reject(error);
+        }
+    });
+}
+
 function _summary(entry, excludedApps = []) {
     if (entry.size <= 0 || entry.size > MAX_RECALL_BYTES)
         return null;
@@ -109,6 +187,9 @@ function _summary(entry, excludedApps = []) {
             apps,
             titles,
             files,
+            screenshot: GLib.file_test(_screenshotPath(entry.name), GLib.FileTest.IS_REGULAR)
+                ? _screenshotPath(entry.name)
+                : '',
         };
     } catch (error) {
         Log.Log.getDefault().error(error, `Could not read Privacy Recall entry ${entry.path}`);
@@ -138,9 +219,27 @@ export function deleteRecall() {
     for (const entry of _entryFiles()) {
         try {
             Gio.File.new_for_path(entry.path).delete(null);
+            _removeScreenshot(entry.name);
             removed++;
         } catch (error) {
             Log.Log.getDefault().error(error, `Could not delete Privacy Recall entry ${entry.path}`);
+        }
+    }
+    return removed;
+}
+
+export function deleteRecallScreenshots() {
+    let removed = 0;
+    for (const entry of _entryFiles()) {
+        const path = _screenshotPath(entry.name);
+        if (!GLib.file_test(path, GLib.FileTest.IS_REGULAR))
+            continue;
+        try {
+            Gio.File.new_for_path(path).delete(null);
+            removed++;
+        } catch (error) {
+            Log.Log.getDefault().error(
+                error, `Could not delete Privacy Recall screenshot ${path}`);
         }
     }
     return removed;
@@ -153,10 +252,17 @@ export const RecallRecorder = class {
         this._initialTimeoutId = 0;
         this._periodicTimeoutId = 0;
         this._saving = false;
+        this._screenshotGeneration = 0;
         this._settingsIds = [
             this._settings.connect('changed::recall-enabled', () => this._reschedule()),
             this._settings.connect('changed::recall-interval', () => this._reschedule()),
             this._settings.connect('changed::recall-retention-hours', () => this._prune()),
+            this._settings.connect('changed::recall-excluded-apps', () => {
+                this._screenshotGeneration++;
+                const removed = deleteRecallScreenshots();
+                this._log.info(
+                    `Recall exclusions changed; removed ${removed} existing screenshot previews`);
+            }),
         ];
         this._reschedule();
     }
@@ -209,6 +315,23 @@ export const RecallRecorder = class {
                 return false;
             const path = GLib.build_filenamev([FileUtils.recall_path, name]);
             GLib.chmod(path, 0o600);
+            if (this._settings.get_boolean('recall-capture-screenshots')) {
+                const screenshotGeneration = this._screenshotGeneration;
+                if (Main.sessionMode.isLocked ||
+                    _excludedApplicationVisible(
+                        this._settings.get_strv('recall-excluded-apps'))) {
+                    this._log.info(
+                        'Skipped Recall screenshot because the session is locked or an excluded app is visible');
+                } else {
+                    try {
+                        await _captureScreenshot(_screenshotPath(name));
+                        if (screenshotGeneration !== this._screenshotGeneration)
+                            _removeScreenshot(name);
+                    } catch (error) {
+                        this._log.error(error, 'Could not capture Recall screenshot preview');
+                    }
+                }
+            }
             this._prune();
             return true;
         } catch (error) {
@@ -228,6 +351,7 @@ export const RecallRecorder = class {
                 continue;
             try {
                 Gio.File.new_for_path(entry.path).delete(null);
+                _removeScreenshot(entry.name);
             } catch (error) {
                 this._log.error(error, `Could not prune Privacy Recall entry ${entry.path}`);
             }

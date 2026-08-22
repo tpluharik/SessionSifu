@@ -53,9 +53,11 @@ files use mode 0600 below a mode-0700 directory on POSIX systems.
 Application exclusions are also re-evaluated while reading every entry. This
 query-time filter removes the matching application's identity, title and file
 paths before search text or result rows are constructed, so editing exclusions
-redacts existing history immediately. The GNOME Shell keybinding is registered
-only while Recall and its shortcut option are enabled; it launches the separate
-GTK Recall search application without reading arbitrary keyboard input.
+redacts existing history immediately. The Ubuntu/GNOME shortcut is installed
+as a dedicated GNOME Custom Shortcut while its option is enabled. Both the app
+and extension synchronize the same owned settings path, so it launches the GTK
+snapshot browser without relying on an extension-only grab or reading arbitrary
+keyboard input.
 
 The extension exports `org.gnome.Shell.Extensions.SessionSifu.Control` on the
 session D-Bus. The interface supports health checks, named-session operations,
@@ -150,10 +152,15 @@ Session JSON can contain an `open_files` array on each saved window object. This
 is best-effort metadata rather than a promise that every application's internal
 document state can be observed.
 
-Privacy Recall data is separate from named/restorable sessions. Version 2.2
-does not take screenshots or perform OCR. This prevents a high-risk visual
-archive from being created before OS credential-store encryption, reliable
-private-context exclusions and cross-platform security review are available.
+Privacy Recall data is separate from named/restorable sessions. Version 2.3 can
+store full-desktop PNG previews on the full GNOME integration only, behind a
+second opt-in. Capture is skipped on the lock screen and whenever an excluded
+application is visible; PNGs use mode 0600 and are removed with their metadata.
+Search remains metadata-based and does not perform OCR. Portable editions stay
+metadata-only pending cross-platform security review.
+
+Changing the exclusion list purges existing screenshot previews while preserving
+metadata because previously captured pixels cannot be retroactively redacted.
 
 ## Debian package and update channel
 

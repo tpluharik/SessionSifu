@@ -1,8 +1,7 @@
 'use strict';
 
 import Gio from 'gi://Gio';
-import Meta from 'gi://Meta';
-import Shell from 'gi://Shell';
+import GLib from 'gi://GLib';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
@@ -26,6 +25,12 @@ let _autostartServiceProvider;
 let _openWindowsTracker;
 let _autoclose;
 let _windowPickerServiceProvider;
+
+const MEDIA_KEYS_SCHEMA = 'org.gnome.settings-daemon.plugins.media-keys';
+const CUSTOM_KEYBINDING_SCHEMA =
+    'org.gnome.settings-daemon.plugins.media-keys.custom-keybinding';
+const RECALL_SHORTCUT_PATH =
+    '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/sessionsifu-recall/';
 
 export default class SessionSifuExtension extends Extension {
 
@@ -91,35 +96,42 @@ export default class SessionSifuExtension extends Extension {
 
     _syncRecallShortcut() {
         this._removeRecallShortcut();
-        if (!this._settings.get_boolean('recall-search-shortcut-enabled') ||
-            this._settings.get_strv('recall-search-shortcut').every(value => !value))
+        const accelerator = this._settings.get_strv('recall-search-shortcut')
+            .find(value => value && value !== 'disabled');
+        if (!this._settings.get_boolean('recall-search-shortcut-enabled') || !accelerator)
             return;
         try {
-            Main.wm.addKeybinding(
-                'recall-search-shortcut',
-                this._settings,
-                Meta.KeyBindingFlags.NONE,
-                Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW | Shell.ActionMode.POPUP,
-                () => {
-                    try {
-                        Gio.Subprocess.new(
-                            [FileUtils.getManagerExecutable(), '--recall-search'],
-                            Gio.SubprocessFlags.NONE);
-                    } catch (error) {
-                        Log.Log.getDefault().error(error, 'Could not open Privacy Recall search');
-                    }
-                });
+            const mediaKeys = Gio.Settings.new(MEDIA_KEYS_SCHEMA);
+            const paths = mediaKeys.get_strv('custom-keybindings');
+            if (!paths.includes(RECALL_SHORTCUT_PATH))
+                mediaKeys.set_strv('custom-keybindings', [...paths, RECALL_SHORTCUT_PATH]);
+
+            const shortcut = Gio.Settings.new_with_path(
+                CUSTOM_KEYBINDING_SCHEMA, RECALL_SHORTCUT_PATH);
+            shortcut.set_string('name', 'SessionSifu Recall Search');
+            shortcut.set_string(
+                'command', `${GLib.shell_quote(FileUtils.getManagerExecutable())} --recall-search`);
+            shortcut.set_string('binding', accelerator);
             this._recallShortcutRegistered = true;
+            Log.Log.getDefault().info(
+                `Registered GNOME Recall shortcut ${accelerator} at ${RECALL_SHORTCUT_PATH}`);
         } catch (error) {
             Log.Log.getDefault().error(error, 'Could not register Privacy Recall shortcut');
         }
     }
 
     _removeRecallShortcut() {
-        if (!this._recallShortcutRegistered)
-            return;
         try {
-            Main.wm.removeKeybinding('recall-search-shortcut');
+            const mediaKeys = Gio.Settings.new(MEDIA_KEYS_SCHEMA);
+            const paths = mediaKeys.get_strv('custom-keybindings');
+            if (paths.includes(RECALL_SHORTCUT_PATH))
+                mediaKeys.set_strv(
+                    'custom-keybindings', paths.filter(path => path !== RECALL_SHORTCUT_PATH));
+
+            const shortcut = Gio.Settings.new_with_path(
+                CUSTOM_KEYBINDING_SCHEMA, RECALL_SHORTCUT_PATH);
+            shortcut.set_string('binding', '');
+            shortcut.set_string('command', '');
         } catch (error) {
             Log.Log.getDefault().error(error, 'Could not remove Privacy Recall shortcut');
         }
