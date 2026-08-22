@@ -108,6 +108,35 @@ and clear user consent. Update URLs must remain HTTPS URLs inside the official
 SessionSifu GitHub repository, and package size and digest validation must not
 be bypassed.
 
+Read [SECURITY.md](SECURITY.md), the current
+[security audit](docs/SECURITY_AUDIT.md), and the
+[privacy data map](docs/PRIVACY.md) before changing capture, restore, updates,
+D-Bus, storage, logging or release automation. Security fixes should reference
+the applicable audit identifier and change its status only after regression and
+platform tests pass.
+
+Security-sensitive pull requests must also demonstrate that:
+
+- stored session strings never reach a shell or interpreter; launch APIs receive
+  a bounded argument vector and validated executable;
+- files stay inside an owned, non-symlinked SessionSifu root and private data is
+  created with user-only permissions;
+- JSON, D-Bus and settings inputs have type, size, collection and allow-list
+  validation at the runtime boundary, even if the UI already validates them;
+- screenshot exclusions and lock state are checked across asynchronous capture,
+  encoding and publication, with temporary files removed on a race;
+- network redirects, response sizes, versions and hashes fail closed, while
+  publisher signatures and rollback protection are not replaced by a checksum;
+- workflow actions use reviewed full commit SHAs and build dependencies use
+  reviewed exact versions/hashes;
+- logs and test fixtures do not contain real titles, paths, commands, tokens or
+  Recall pixels.
+
+Run Bandit/Semgrep or an equivalent static review, a dependency advisory scan,
+secret detection and the canonical build for security-related changes. Include
+tool versions and explain false-positive triage in the pull request rather than
+silencing findings without a comment.
+
 ## Review and maintenance
 
 Maintainers may request changes for compatibility, safety, privacy, packaging

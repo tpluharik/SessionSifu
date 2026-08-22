@@ -197,7 +197,7 @@ verifies:
 - a 50 MiB maximum download size; and
 - the package SHA-256 digest.
 
-The verified package is extracted—not registered with `apt` or installed with
+The checksum-verified package is extracted—not registered with `apt` or installed with
 `dpkg -i`—and its application, desktop entry, autostart entry, icon and GNOME
 extension are atomically installed below the current user's XDG directories and
 `~/.local/bin`. No root privileges or system package manager are used. A logout
@@ -227,6 +227,26 @@ The command-line client communicates with the GNOME Shell extension over the
 user's session D-Bus. The `sessionsifu-portable` client instead selects the
 Windows, macOS, KDE or Linux adapter at runtime and can run without GNOME.
 
+## Security
+
+Session files are active restore configuration: they contain executable and
+argument information as well as document paths. Restore only sessions created
+by your trusted local SessionSifu installation. Do not download, exchange or
+restore JSON session files from another person. A security review found that
+the current GNOME fallback can interpret shell syntax from a tampered session;
+this is tracked as high-priority finding SS-2026-001.
+
+The in-app updater verifies repository origin, size and SHA-256, but version
+2.4 does not yet verify an independent publisher signature. The current
+limitations, threat model, scanner results and prioritized remediation plan are
+published in the [security audit](docs/SECURITY_AUDIT.md). Report suspected
+vulnerabilities privately through the [security policy](SECURITY.md).
+
+Security-sensitive users should keep Recall screenshots disabled until they
+have reviewed the exclusion limitations, use full-disk encryption, keep their
+login session locked, and avoid publishing raw SessionSifu JSON or journal
+logs. See the complete [local-data and privacy guide](docs/PRIVACY.md).
+
 ## Data and privacy
 
 Session data stays on the local computer under `~/.config/sessionsifu/`:
@@ -241,6 +261,12 @@ Session data stays on the local computer under `~/.config/sessionsifu/`:
 Downloaded update packages are cached under
 `~/.cache/sessionsifu/updates/`. Checking for updates contacts GitHub; session
 files are never uploaded by SessionSifu.
+
+SessionSifu does not encrypt these files. Full GNOME session storage in version
+2.4 also does not yet enforce private modes consistently on previously created
+content; remediation is tracked as SS-2026-005. Treat the account and device as
+the security boundary, enable device encryption, and do not place the data
+directory in a broadly shared or synchronized location.
 
 Portable session files remain local as well:
 
@@ -370,6 +396,9 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Suggest a feature](https://github.com/tpluharik/SessionSifu/issues/new?template=feature_request.yml)
 - [Contribution guide](CONTRIBUTING.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
+- [Security policy and private reporting](SECURITY.md)
+- [Security audit and remediation plan](docs/SECURITY_AUDIT.md)
+- [Privacy and local-data guide](docs/PRIVACY.md)
 
 The current 2.4.0 release establishes the shared platform architecture while
 preserving the mature GNOME 50 backend. Compatibility claims are added only

@@ -58,6 +58,22 @@ Move slow process and window inspection off UI/compositor threads, add bounded
 parallelism and fuzz the JSON/update parsers. Introduce platform sandbox and
 permission audits plus automated long-running capture/restore stress tests.
 
+The 22 August 2026 [security audit](docs/SECURITY_AUDIT.md) turns this item into
+an ordered hardening program:
+
+1. remove shell interpretation from GNOME restore and distrust imported session
+   launch data;
+2. migrate all session storage to owned `0700` directories and `0600` files;
+3. pin release actions and build dependencies, then publish SBOM/provenance;
+4. verify updates with signed, expiring and rollback-resistant metadata;
+5. close asynchronous Recall exclusion/lock races before preview publication;
+6. replace compositor-thread regular expressions with bounded matching;
+7. reduce same-user D-Bus and diagnostic-log exposure; and
+8. add parser fuzzing plus adversarial GNOME, Windows and macOS restore tests.
+
+Each item needs a regression test and a released fixed version; documentation
+alone does not close an audit finding.
+
 ## 10. Encrypted export and optional user-controlled sync
 
 Support portable encrypted session archives for backup or transfer between the

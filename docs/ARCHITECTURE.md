@@ -3,6 +3,27 @@
 SessionSifu 2 has a full GNOME runtime, a portable runtime shared by Windows,
 macOS and Linux desktops, and platform-specific distribution layers.
 
+## Trust boundaries
+
+SessionSifu has no privileged service. The GNOME extension and both managers
+run as the logged-in user; the Debian maintainer scripts only compile installed
+schemas and refresh desktop metadata. The full integration trusts GNOME Shell,
+Mutter, the user's session D-Bus and files below the user's configuration root.
+Portable editions trust their platform window APIs and the current user's data
+directory.
+
+A session file crosses from data into application-launch configuration during
+restore. It must therefore be treated as trusted active configuration, not as a
+safe interchange format. The current GNOME fallback reconstructs some stored
+commands through a shell and must be replaced with direct argument-vector
+launching; see SS-2026-001 in the [security audit](SECURITY_AUDIT.md).
+
+The session D-Bus is a same-user interface rather than an authorization
+boundary. Any process permitted to use that bus and name can request operations.
+Recall opt-ins and file modes reduce accidental disclosure but do not defend
+against malware already executing as the same user. The complete data inventory
+is in [PRIVACY.md](PRIVACY.md).
+
 ## GNOME Shell extension
 
 `extension/sessionsifu@local/` runs inside GNOME Shell. It can inspect Shell and
@@ -137,6 +158,12 @@ Named and automatic session files are JSON. They are kept below the XDG user
 configuration directory, normally `~/.config/sessionsifu/`. Update packages use
 the XDG cache directory, normally `~/.cache/sessionsifu/updates/`.
 
+Recall already enforces `0700` directories and `0600` files. The inherited
+GNOME session writer currently creates other directories/files with broader
+modes and relies on a non-traversable parent. That is not the target security
+design: SS-2026-005 requires an ownership-checked migration to `0700`/`0600`
+throughout SessionSifu storage.
+
 Automatic snapshot filenames use UTC timestamps in the form
 `auto-YYYYMMDD-HHMMSS.json`. Only filenames matching that pattern can be listed
 or restored through the automatic-history D-Bus methods.
@@ -186,6 +213,12 @@ only HTTPS package URLs under `tpluharik/SessionSifu` on
 dependency installation; later application updates are unprivileged and local
 to the user.
 
+SHA-256 currently protects integrity only relative to that manifest. Because
+the package and digest share one unsigned mutable channel, neither proves an
+independent publisher identity. SS-2026-002 specifies signed, expiring,
+rollback-resistant metadata and immutable release assets as the required
+replacement.
+
 ## Multi-platform release pipeline
 
 `.github/workflows/release.yml` runs the portable model/storage tests on Ubuntu
@@ -193,7 +226,11 @@ to the user.
 creates Windows x64, macOS arm64/x64 and Linux x64 desktop bundles. A separate
 Ubuntu job runs the full GNOME validation and Debian build.
 
-Pushes and pull requests retain build artifacts for inspection. A verified
+Pushes and pull requests retain build artifacts for inspection. An existing
 `v*` tag additionally downloads all job artifacts, generates `SHA256SUMS` and
 creates one GitHub Release. Signing, Apple notarization and artifact attestation
 are deliberately tracked as roadmap work rather than implied by the pipeline.
+
+Workflow permissions are read-only except for the tag publisher. Action
+references and Python build dependencies are not yet immutable; pinning full
+action SHAs and hashed dependency locks is tracked as SS-2026-003.

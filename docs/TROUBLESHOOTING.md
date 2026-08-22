@@ -132,6 +132,31 @@ use the package manager to install it. Updated files are placed below
 `~/.local/bin`, `~/.local/share` and `~/.config/autostart`. Install the Debian
 package manually once if the initial runtime dependencies are not present.
 
+The checksum confirms that the package matches the downloaded manifest; it is
+not yet an independent publisher signature. Do not bypass a failed check or
+install a package from an unrecognized URL. See
+[SECURITY_AUDIT.md](SECURITY_AUDIT.md#ss-2026-002--update-checksum-has-no-independent-signature).
+
+## A session came from another computer or person
+
+Do not restore it. Session JSON contains executable and argument information and
+must be treated as active configuration. Version 2.4 has an open high-priority
+finding in the GNOME fallback restore path for shell interpretation of tampered
+commands. Use only sessions produced by the trusted local installation. If a
+foreign session was copied into `~/.config/sessionsifu/sessions/`, move it out
+without opening/restoring it and report unexpected behavior through
+[SECURITY.md](../SECURITY.md).
+
+## Check local data permissions
+
+Recall should use a mode-`0700` directory and mode-`0600` files. Other GNOME
+session data in version 2.4 may have broader inherited modes; this is tracked as
+SS-2026-005. Until the migration is implemented, keep the SessionSifu data below
+your private home configuration directory, do not expose it through a shared
+folder, and use device encryption. Avoid recursive permission commands: they
+can damage ownership or make data more accessible. See [PRIVACY.md](PRIVACY.md)
+for the complete storage map and deletion guidance.
+
 ## Diagnostic logs
 
 GNOME Shell extension messages are available in the user journal:
