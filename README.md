@@ -2,6 +2,14 @@
   <img src="branding/sessionsifu-logo.svg" alt="SessionSifu — desktop session restoration" width="620">
 </p>
 
+<p align="center">
+  <a href="https://github.com/sponsors/tpluharik"><img src="https://img.shields.io/badge/Sponsor-SessionSifu-EA4AAA?logo=githubsponsors&amp;logoColor=white" alt="Sponsor SessionSifu on GitHub"></a>
+</p>
+
+<p align="center">
+  If SessionSifu makes your desktop easier to live with, you can support its continued development through <a href="https://github.com/sponsors/tpluharik">GitHub Sponsors</a>.
+</p>
+
 # SessionSifu 2
 
 SessionSifu saves and reconstructs desktop layouts. It records running
