@@ -10,15 +10,16 @@
   If SessionSifu makes your desktop easier to live with, you can support its continued development through <a href="https://github.com/sponsors/tpluharik">GitHub Sponsors</a>.
 </p>
 
-# SessionSifu 2
+# SessionSifu 3
 
 SessionSifu saves and reconstructs desktop layouts. It records running
 applications, documents and windows, then can relaunch applications and rebuild
 the supported parts of their layout.
 
-Version 2.5.2 retains the full Ubuntu 26.04/GNOME Shell 50 integration and adds
-portable editions for Windows, macOS, KDE Plasma 6 and other GNOME/Linux
-desktops. The project is open source under GPL-3.0.
+Version 3.0 retains the full Ubuntu 26.04/GNOME Shell 50 integration and adds an
+encrypted, OCR-capable visual activity timeline across GNOME, Windows, macOS,
+KDE Plasma 6 and other Linux desktops. The project is open source under
+GPL-3.0.
 
 ## Features
 
@@ -43,10 +44,11 @@ desktops. The project is open source under GPL-3.0.
 - KDE Plasma 6 Wayland support through `kdotool`, with X11 fallback.
 - A common, validated JSON session format across portable platforms.
 - Automated multi-platform builds and tagged GitHub Releases.
-- Experimental **Privacy Recall**, a disabled-by-default searchable timeline of
-  sanitized application and window metadata with exclusions, bounded local
-  retention and separately opted-in compressed display/app previews on full
-  GNOME integration.
+- **Privacy Recall**, a disabled-by-default encrypted visual timeline with
+  compressed previews, on-device OCR, ranked text/related matches, exact file
+  reopening, granular deletion, timed pauses, app/site filters, storage quotas
+  and capture diagnostics. Screenshots, OCR and related-match ranking remain
+  separate opt-ins.
 - A live recording badge on the GNOME top-bar or portable tray icon while a
   Privacy Recall snapshot is being written.
 
@@ -111,17 +113,17 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_2.5.2_all.deb` from the `updates/` directory, or build it
+Download `sessionsifu_3.0.0_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_2.5.2_all.deb
+sudo apt install ./sessionsifu_3.0.0_all.deb
 ```
 
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_2.5.2_all.deb
+sudo apt install ./dist/sessionsifu_3.0.0_all.deb
 ```
 
 After installation:
@@ -137,10 +139,10 @@ After installation:
 
 Tagged releases attach these self-contained artifacts:
 
-- `SessionSifu-2.5.2-windows-x64.zip`;
-- `SessionSifu-2.5.2-macos-arm64.zip`;
-- `SessionSifu-2.5.2-macos-x64.zip`; and
-- `SessionSifu-2.5.2-linux-x64.tar.gz`.
+- `SessionSifu-3.0.0-windows-x64.zip`;
+- `SessionSifu-3.0.0-macos-arm64.zip`;
+- `SessionSifu-3.0.0-macos-x64.zip`; and
+- `SessionSifu-3.0.0-linux-x64.tar.gz`.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -274,7 +276,7 @@ Downloaded update packages are cached under
 `~/.cache/sessionsifu/updates/`. Checking for updates contacts GitHub; session
 files are never uploaded by SessionSifu.
 
-SessionSifu does not encrypt these files. Version 2.5 migrates owned,
+Named and automatic session files are not application-encrypted. Version 2.5 migrates owned,
 non-symlinked GNOME storage to `0700` directories and `0600` files. Treat the
 account and device as the security boundary, enable device encryption, and do
 not place the data directory in a broadly shared or synchronized location.
@@ -285,7 +287,7 @@ Portable session files remain local as well:
 - macOS: `~/Library/Application Support/SessionSifu`;
 - Linux: `${XDG_CONFIG_HOME:-~/.config}/sessionsifu-portable`.
 
-### Experimental Privacy Recall
+### Privacy Recall
 
 Privacy Recall is a feature flag and is **off by default** on every platform.
 Nothing is recorded and no Recall storage directory is created until the user
@@ -294,16 +296,15 @@ portable tray menu displays an active/pause control. While a capture is
 actually being saved, the icon gains a temporary recording badge and its menu
 status changes to **Privacy Recall: Saving…**.
 
-Version 2.3 records sanitized observable metadata: application identity,
-window title, time, workspace/monitor and geometry. Full paths of open files
-and GNOME screenshot previews are separate opt-ins. It does not capture the
+Version 3.0 records sanitized observable metadata: application identity,
+window title, time, workspace/monitor and geometry. Full paths of open files,
+screenshots, OCR and related-match ranking are separate opt-ins. It does not capture the
 clipboard, keystrokes, microphone, shell history, browser history or private
 application memory.
-Users can exclude applications by name or identifier, choose a retention period
-from one hour to seven days, search the local timeline and permanently delete
-all entries from the manager. Exclusions are enforced both during capture and
-during every search, so adding an exclusion immediately redacts that app's
-identity, titles and opted-in file paths from older results.
+Users can exclude applications and observable website domains, choose retention
+and encrypted storage limits, pause for a duration, search by timeline/app/date,
+and delete one item, an app, a website, a time range or all history. Application
+exclusions remain enforced during capture and search.
 
 The customizable `Ctrl+Alt+Space` default opens a separate, compact search
 popup. It remains available for existing history while capture is paused and
@@ -313,25 +314,30 @@ match, and KDE/Wayland or general Linux requests user approval through the XDG
 GlobalShortcuts portal. SessionSifu does not log arbitrary keystrokes. A
 **Browse Recall Snapshots…** top-bar/tray action is available on every edition.
 
-Recall entries are bounded, written atomically, and stored with user-only
-permissions where the platform supports POSIX modes:
+Recall records, OCR and previews are AES-256-GCM encrypted, bounded and written
+atomically. GNOME prefers the operating-system credential store for the vault
+key. A clearly reported `0600` fallback key is used only when no credential
+backend is available. Search builds its SQLite FTS5 index in memory, so no
+plaintext persistent search database is created:
 
 - GNOME full integration: `~/.config/sessionsifu/recall/`;
 - portable editions: the platform-specific SessionSifu data directory listed
   above, under `recall/`.
 
-SessionSifu never uploads Recall data. Full GNOME integration can optionally
-store a private, downscaled JPEG preview for each connected display. Preview
+SessionSifu never uploads Recall data. Every edition can optionally store a
+private, downscaled JPEG preview; GNOME records each connected display. Preview
 capture is off by default and is skipped while the session is locked or an
 excluded application is visible. The search browser shows all display previews
 for timeline browsing; after an app, title or opted-in file keyword matches, it
 crops the relevant application windows from their display preview in memory.
-No duplicate per-application images are stored. Search uses sanitized metadata,
-not OCR or semantic indexing. Portable editions remain metadata-only.
+No duplicate per-application images are stored, and unchanged GNOME frames are
+deduplicated. Optional local OCR feeds ranked Text, OCR, File, Application and
+Related result classes. Related ranking is deliberately lightweight and local;
+it does not contact a model service.
 
-Changing the excluded-app list deletes existing screenshot previews while
-retaining their searchable metadata. Pixels captured before a new exclusion
-cannot be reliably redacted after the fact.
+Changing the excluded-app or observable website list deletes affected encrypted
+records, including their searchable text and screenshot previews. Pixels
+captured before a new exclusion cannot be reliably redacted after the fact.
 
 SessionSifu excludes its own windows from searchable Recall metadata to avoid
 recursive results. That built-in self-exclusion does not prevent display
@@ -339,7 +345,7 @@ previews while the manager or Recall browser is visible; user-added privacy
 exclusions continue to block the complete preview capture.
 
 Recall capture is designed to stay out of the desktop's critical path. Version
-2.5.2 performs one asynchronous Shell grab, then uses a separate unprivileged
+3.0 performs one asynchronous Shell grab, then uses a separate unprivileged
 process to crop displays, cap the longest edge at 1,280 pixels and encode JPEGs
 at quality 70. Metadata writes start immediately and history summaries are
 cached. If preview encoding is still busy at the next capture, SessionSifu
@@ -372,8 +378,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_2.5.2_all.deb
-updates/sessionsifu_2.5.2_all.deb
+dist/sessionsifu_3.0.0_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -394,7 +399,7 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v2.5.2` tag publishes the artifacts and `SHA256SUMS` as a GitHub
+A pushed `v3.0.0` tag publishes the artifacts and `SHA256SUMS` as a GitHub
 Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
@@ -421,7 +426,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Security audit and remediation plan](docs/SECURITY_AUDIT.md)
 - [Privacy and local-data guide](docs/PRIVACY.md)
 
-The current 2.5.2 release establishes the shared platform architecture while
+The current 3.0.0 release establishes the encrypted visual Recall architecture while
 preserving the mature GNOME 50 backend. Compatibility claims are added only
 after hands-on testing; reports from configurations not listed in the table are
 useful, but are treated as best-effort until support is documented here.

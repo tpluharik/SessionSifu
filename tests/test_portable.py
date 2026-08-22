@@ -83,7 +83,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "2.5.2")
+        self.assertEqual(VERSION, "3.0.0")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -158,8 +158,10 @@ class PortableTests(unittest.TestCase):
                 excluded_apps=["private-browser"],
                 include_file_paths=False,
             )
-            payload = json.loads(path.read_text())
-            self.assertEqual(payload["recall_schema"], 1)
+            with self.assertRaises(UnicodeDecodeError):
+                path.read_text()
+            payload = store._load(path)
+            self.assertEqual(payload["recall_schema"], 3)
             self.assertEqual(len(payload["windows"]), 1)
             self.assertNotIn("executable", payload["windows"][0])
             self.assertNotIn("command", payload["windows"][0])
@@ -180,7 +182,7 @@ class PortableTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             store = RecallStore(Path(directory))
             path = store.save(FakeAdapter().capture(), include_file_paths=True)
-            payload = json.loads(path.read_text())
+            payload = store._load(path)
             self.assertEqual(payload["windows"][0]["open_files"], ["/home/test/Notes.txt"])
             self.assertEqual(store.search("Notes.txt")[0]["files"], ["/home/test/Notes.txt"])
             self.assertEqual(store.clear(), 1)
@@ -192,10 +194,42 @@ class PortableTests(unittest.TestCase):
             controller = SessionController(adapter, SessionStore(Path(directory)))
             path = controller.save_recall(include_file_paths=False)
             self.assertFalse(adapter.last_include_files)
-            self.assertNotIn("open_files", json.loads(path.read_text())["windows"][0])
+            self.assertNotIn("open_files", controller.recall_store._load(path)["windows"][0])
 
             controller.save_recall(include_file_paths=True)
             self.assertTrue(adapter.last_include_files)
+
+    def test_privacy_recall_encrypts_preview_and_supports_granular_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RecallStore(Path(directory))
+            preview = b"not-a-real-jpeg-but-encrypted-preview-data"
+            path = store.save(FakeAdapter().capture(), preview=preview)
+            self.assertNotIn(b"Notes", path.read_bytes())
+            self.assertEqual(store.preview_bytes(path.name), preview)
+            self.assertEqual(store.delete(record=path.name), 1)
+            self.assertEqual(store.search(), [])
+
+    def test_privacy_recall_filters_sensitive_text_and_excluded_websites(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RecallStore(Path(directory))
+            session = FakeAdapter().capture()
+            session.windows[0].title = "Account 4111 1111 1111 1111"
+            with self.assertRaises(RuntimeError):
+                store.save(session)
+            session.windows[0].title = "https://secure.bank.example/account"
+            with self.assertRaises(RuntimeError):
+                store.save(session, excluded_websites=["bank.example"])
+            self.assertEqual(store.search(), [])
+
+    def test_privacy_recall_related_search_and_website_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RecallStore(Path(directory))
+            session = FakeAdapter().capture()
+            session.windows[0].title = "Project planning https://docs.example/roadmap"
+            store.save(session)
+            self.assertEqual(len(store.search("project planning", semantic=True)), 1)
+            self.assertEqual(store.delete(website="docs.example"), 1)
+            self.assertEqual(store.search(), [])
 
     def test_privacy_recall_search_redacts_apps_from_existing_entries(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

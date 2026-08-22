@@ -2,6 +2,31 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.0.0
+
+- Rebuilt Privacy Recall as an AES-256-GCM encrypted vault. GNOME prefers the
+  operating-system credential store and reports when it must use the private
+  fallback key. Portable builds use the Windows Credential Locker, macOS
+  Keychain, Secret Service/KWallet where available, then the same private-key
+  fallback without abandoning an existing vault.
+- Added an ephemeral SQLite FTS5 search index, optional on-device Tesseract OCR,
+  ranked Text/OCR/File/Application/Related matches and encrypted previews.
+- Added a scrub-able visual timeline, application/date filters, full snapshot
+  viewing, copy-text/copy-image actions and exact file/observable-URL reopening.
+- Added deletion by snapshot, application, website, time boundary or complete
+  history, plus encrypted storage quotas and unchanged-frame deduplication.
+- Added timed pauses for 15 minutes, one hour, until tomorrow or indefinitely
+  in the GNOME top-bar and portable tray paths.
+- Added application and observable-domain exclusions, default-on sensitive-text
+  filtering and capture diagnostics with duration, preview count, OCR size,
+  vault size, encryption backend and skip reason.
+- Moved finalization, OCR, encryption, FTS and preview decoding outside GNOME
+  Shell so capture failures cannot destabilize the compositor.
+- Added Qt display preview capture for Windows, macOS, KDE and portable GNOME,
+  subject to each operating system's screen-recording permission.
+- Added encrypted-vault, preview, exclusion, deletion, quota and migration
+  regression tests and updated release dependencies and documentation.
+
 ## 2.5.2
 
 - Fixed Recall previews being discarded whenever SessionSifu's manager or

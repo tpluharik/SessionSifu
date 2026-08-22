@@ -22,6 +22,12 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+for _module_dir in (Path(__file__).resolve().parent, Path("/usr/lib/sessionsifu")):
+    if str(_module_dir) not in sys.path:
+        sys.path.insert(0, str(_module_dir))
+
+from recall_engine import RecallPolicy, RecallVault  # noqa: E402
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -31,7 +37,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "2.5.2"
+CURRENT_VERSION = "3.0.0"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -65,6 +71,21 @@ UPDATE_SIGNING_PUBLIC_KEY = b"""-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAEnakL3ds5kGLSASytcdZ2mTmBY7A1R298zO/L5843gY=
 -----END PUBLIC KEY-----
 """
+
+
+def recall_vault() -> RecallVault:
+    return RecallVault(Path(GLib.get_user_config_dir()) / "sessionsifu" / "recall")
+
+
+def recall_policy(config: Gio.Settings) -> RecallPolicy:
+    return RecallPolicy(
+        ocr=config.get_boolean("recall-ocr-enabled"),
+        semantic=config.get_boolean("recall-semantic-search-enabled"),
+        sensitive_filter=config.get_boolean("recall-sensitive-filter"),
+        excluded_websites=tuple(config.get_strv("recall-excluded-websites")),
+        quota_mb=config.get_int("recall-storage-quota-mb"),
+        retention_hours=config.get_int("recall-retention-hours"),
+    )
 
 
 def harden_local_storage() -> None:
@@ -141,6 +162,16 @@ def _picture(path: Path, width: int, height: int, pixbuf=None) -> Gtk.Picture:
     return picture
 
 
+def _pixbuf_from_bytes(data: bytes) -> GdkPixbuf.Pixbuf | None:
+    try:
+        loader = GdkPixbuf.PixbufLoader.new()
+        loader.write(data)
+        loader.close()
+        return loader.get_pixbuf()
+    except GLib.Error:
+        return None
+
+
 def _matching_window_picture(
     item: dict, match: dict, width: int, height: int
 ) -> Gtk.Picture | None:
@@ -182,6 +213,14 @@ def recall_preview(
     show_all: bool = False,
 ) -> Gtk.Widget:
     pictures: list[Gtk.Picture] = []
+    if not item.get("_pixbufs") and str(item.get("name", "")).endswith(".ssrec"):
+        encrypted = []
+        for index in range(min(8 if show_all else 2, int(item.get("image_count") or 0))):
+            data = recall_vault().preview_bytes(str(item["name"]), index)
+            pixbuf = _pixbuf_from_bytes(data) if data else None
+            if pixbuf is not None:
+                encrypted.append(pixbuf)
+        item["_pixbufs"] = encrypted
     max_pictures = 8 if show_all else (1 if width < 220 else 2)
     candidate_count = min(
         max_pictures,
@@ -191,6 +230,8 @@ def recall_preview(
     rows = max(1, (candidate_count + columns - 1) // columns)
     picture_width = max(1, width // columns)
     picture_height = max(1, height // rows)
+    for pixbuf in item.get("_pixbufs", [])[:max_pictures]:
+        pictures.append(_picture(Path("encrypted-preview"), picture_width, picture_height, pixbuf))
     for match in item.get("matches", [])[:max_pictures]:
         picture = _matching_window_picture(
             item, match, picture_width, picture_height
@@ -927,12 +968,14 @@ def enable_extension() -> tuple[bool, str]:
 
 
 class RecallSearchWindow(Adw.ApplicationWindow):
-    """Compact, keyboard-oriented search surface for Privacy Recall."""
+    """Keyboard-oriented, encrypted visual Recall timeline."""
 
     def __init__(self, app: Adw.Application):
         super().__init__(application=app, title="Browse Recall Snapshots")
-        self.set_default_size(820, 620)
+        self.set_default_size(980, 720)
         self._settings = settings()
+        self._vault = recall_vault()
+        self._entries: list[dict] = []
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
         header.set_title_widget(Adw.WindowTitle(
@@ -944,19 +987,12 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         content.set_margin_bottom(18)
         content.set_margin_start(18)
         content.set_margin_end(18)
-        self.notice = Gtk.Label(
-            label=(
-                "Search uses application, title and opted-in file metadata—not OCR. "
-                "Screenshot capture is skipped while an excluded application is visible."
-            ),
-            xalign=0,
-            wrap=True,
-        )
+        self.notice = Gtk.Label(label="Encrypted local timeline", xalign=0, wrap=True)
         content.append(self.notice)
         search_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.query = Gtk.SearchEntry(
             hexpand=True,
-            placeholder_text="Search snapshots by application, window title or opted-in file path",
+            placeholder_text="Describe text, an application, file, website or visual clue",
         )
         self.query.connect("activate", self._search)
         self.query.connect("search-changed", self._search)
@@ -966,6 +1002,33 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         search_button.connect("clicked", self._search)
         search_row.append(search_button)
         content.append(search_row)
+
+        filters = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.app_filter = Gtk.ComboBoxText()
+        self.app_filter.append("", "All applications")
+        self.app_filter.set_active_id("")
+        self.app_filter.connect("changed", self._search)
+        filters.append(self.app_filter)
+        self.date_filter = Gtk.ComboBoxText()
+        for value, label in (("", "All dates"), ("today", "Today"), ("yesterday", "Yesterday"), ("week", "Last 7 days")):
+            self.date_filter.append(value, label)
+        self.date_filter.set_active_id("")
+        self.date_filter.connect("changed", self._search)
+        filters.append(self.date_filter)
+        show_all = Gtk.Button(label="Show all timeline")
+        show_all.connect("clicked", self._search)
+        filters.append(show_all)
+        content.append(filters)
+
+        timeline_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        timeline_box.append(Gtk.Label(label="Earlier"))
+        self.timeline = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 1, 1)
+        self.timeline.set_hexpand(True)
+        self.timeline.set_draw_value(False)
+        self.timeline.connect("value-changed", self._timeline_changed)
+        timeline_box.append(self.timeline)
+        timeline_box.append(Gtk.Label(label="Now"))
+        content.append(timeline_box)
         scroller = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
         self.results = Gtk.FlowBox(
             selection_mode=Gtk.SelectionMode.NONE,
@@ -982,17 +1045,70 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         self._rows: list[Gtk.Widget] = []
         self._search()
 
+    @staticmethod
+    def _pixbuf(data: bytes) -> GdkPixbuf.Pixbuf | None:
+        return _pixbuf_from_bytes(data)
+
+    def _prepare_previews(self, item: dict) -> None:
+        pixbufs = []
+        for index in range(min(8, int(item.get("image_count") or 0))):
+            data = self._vault.preview_bytes(item["name"], index)
+            pixbuf = self._pixbuf(data) if data else None
+            if pixbuf is not None:
+                pixbufs.append(pixbuf)
+        item["_pixbufs"] = pixbufs
+
+    def _selected_day(self) -> str:
+        selected = self.date_filter.get_active_id() or ""
+        now = datetime.now()
+        if selected == "today":
+            return now.strftime("%Y-%m-%d")
+        if selected == "yesterday":
+            return (now - timedelta(days=1)).strftime("%Y-%m-%d")
+        return ""
+
+    def _timeline_changed(self, scale) -> None:
+        if not self._entries:
+            return
+        index = max(0, min(len(self._entries) - 1, round(scale.get_value())))
+        self._render([self._entries[index]], timeline_selection=True)
+
     def _search(self, *_args) -> None:
+        policy = recall_policy(self._settings)
+        try:
+            self._vault.migrate_legacy(policy)
+            entries = self._vault.search(
+                self.query.get_text(),
+                app=self.app_filter.get_active_id() or "",
+                day=self._selected_day(),
+                semantic=policy.semantic,
+                excluded_apps=tuple(
+                    self._settings.get_strv("recall-excluded-apps")
+                ),
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            entries = []
+            self.notice.set_label(f"Recall vault unavailable: {error}")
+        if (self.date_filter.get_active_id() or "") == "week":
+            cutoff = time.time() - 7 * 86400
+            entries = [entry for entry in entries if float(entry.get("modified") or 0) >= cutoff]
+        self._entries = entries
+        self.timeline.set_range(0, max(1, len(entries) - 1))
+        self.timeline.set_value(max(0, len(entries) - 1))
+        known_apps = sorted({app for entry in entries for app in entry.get("apps", [])}, key=str.casefold)
+        active_app = self.app_filter.get_active_id() or ""
+        if self.app_filter.get_model().get_n_items() <= 1 and known_apps:
+            for app in known_apps:
+                self.app_filter.append(app, app)
+            self.app_filter.set_active_id(active_app)
+        self._render(entries)
+
+    def _render(self, entries: list[dict], timeline_selection: bool = False) -> None:
         for row in self._rows:
             self.results.remove(row)
         self._rows.clear()
-        try:
-            entries = json.loads(call(
-                "ListRecall", GLib.Variant("(s)", (self.query.get_text(),))
-            ))
-        except (GLib.Error, json.JSONDecodeError):
-            entries = []
         for item in entries:
+            self._prepare_previews(item)
             modified = datetime.fromtimestamp(item.get("modified", 0)).strftime("%Y-%m-%d %H:%M:%S")
             apps = ", ".join(item.get("apps", [])[:4]) or "Unknown application"
             titles = " · ".join(item.get("titles", [])[:3])
@@ -1009,18 +1125,121 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             title = Gtk.Label(label=f"{modified} — {apps}", xalign=0, wrap=True)
             title.add_css_class("heading")
             row.append(title)
+            match = Gtk.Label(
+                label=f"{item.get('match_type', 'Timeline')} match · encrypted locally",
+                xalign=0,
+            )
+            match.add_css_class("caption")
+            row.append(match)
             details = Gtk.Label(
-                label=titles or "No window title was exposed", xalign=0, wrap=True
+                label=item.get("ocr_excerpt") or titles or "No searchable text was exposed",
+                xalign=0,
+                wrap=True,
             )
             details.add_css_class("dim-label")
             row.append(details)
+            actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            if item.get("targets"):
+                open_button = Gtk.Button(label="Reopen")
+                open_button.add_css_class("suggested-action")
+                open_button.connect("clicked", self._open_item, item)
+                actions.append(open_button)
+            if item.get("image_count"):
+                view_button = Gtk.Button(label="View")
+                view_button.connect("clicked", self._view_item, item)
+                actions.append(view_button)
+                copy_image = Gtk.Button(label="Copy image")
+                copy_image.connect("clicked", self._copy_image, item)
+                actions.append(copy_image)
+            copy_button = Gtk.Button(label="Copy text")
+            copy_button.connect("clicked", self._copy_item, item)
+            actions.append(copy_button)
+            delete_button = Gtk.Button(label="Delete")
+            delete_button.add_css_class("destructive-action")
+            delete_button.connect("clicked", self._delete_item, item)
+            actions.append(delete_button)
+            if item.get("apps"):
+                delete_app = Gtk.Button(label=f"Delete all {item['apps'][0]}")
+                delete_app.connect("clicked", self._delete_app, item["apps"][0])
+                actions.append(delete_app)
+            if item.get("urls"):
+                domain = urllib.parse.urlparse(item["urls"][0]).hostname or item["urls"][0]
+                delete_site = Gtk.Button(label=f"Delete all {domain}")
+                delete_site.connect("clicked", self._delete_website, domain)
+                actions.append(delete_site)
+            delete_earlier = Gtk.Button(label="Delete earlier")
+            delete_earlier.connect("clicked", self._delete_earlier, float(item.get("modified") or 0))
+            actions.append(delete_earlier)
+            row.append(actions)
             self.results.insert(row, -1)
             self._rows.append(row)
+        status = self._vault.status()
         self.notice.set_label(
-            f"{len(entries)} matching snapshots. Search is metadata-based; previews remain local."
+            f"{len(entries)} snapshot{'s' if len(entries) != 1 else ''}"
+            f"{' selected on the timeline' if timeline_selection else ' matched'} · "
+            f"{status.get('vault_bytes', 0) / (1024 * 1024):.1f} MiB · "
+            f"encryption: {status.get('encryption', 'unavailable')}"
             if entries
-            else "No matching Recall snapshots. Capture may be paused or previews may be disabled."
+            else "No matching encrypted Recall snapshots. Check Capture diagnostics in SessionSifu."
         )
+
+    def _open_item(self, _button, item: dict) -> None:
+        target = next(iter(item.get("targets", [])), "")
+        if target:
+            Gio.AppInfo.launch_default_for_uri(target, None)
+
+    def _copy_item(self, _button, item: dict) -> None:
+        text = item.get("ocr_excerpt") or "\n".join(item.get("titles", []))
+        display = Gdk.Display.get_default()
+        if display and text:
+            display.get_clipboard().set_text(str(text))
+
+    def _delete_item(self, _button, item: dict) -> None:
+        self._vault.delete(record=item.get("name", ""))
+        self._search()
+
+    def _delete_app(self, _button, app: str) -> None:
+        self._vault.delete(app=app)
+        self._search()
+
+    def _delete_website(self, _button, website: str) -> None:
+        self._vault.delete(website=website)
+        self._search()
+
+    def _delete_earlier(self, _button, timestamp: float) -> None:
+        self._vault.delete(before=timestamp)
+        self._search()
+
+    def _copy_image(self, _button, item: dict) -> None:
+        data = self._vault.preview_bytes(item.get("name", ""), 0)
+        pixbuf = _pixbuf_from_bytes(data) if data else None
+        display = Gdk.Display.get_default()
+        if display and pixbuf is not None:
+            display.get_clipboard().set_texture(Gdk.Texture.new_for_pixbuf(pixbuf))
+
+    def _view_item(self, _button, item: dict) -> None:
+        data = self._vault.preview_bytes(item.get("name", ""), 0)
+        pixbuf = _pixbuf_from_bytes(data) if data else None
+        if pixbuf is None:
+            return
+        viewer = Adw.Window(
+            title="Recall Snapshot",
+            transient_for=self,
+            modal=True,
+            default_width=960,
+            default_height=640,
+        )
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        header = Adw.HeaderBar()
+        box.append(header)
+        picture = _picture(Path("encrypted-preview"), 900, 540, pixbuf)
+        picture.set_content_fit(Gtk.ContentFit.CONTAIN)
+        picture.set_hexpand(True)
+        picture.set_vexpand(True)
+        box.append(picture)
+        viewer.set_content(box)
+        self._recall_viewer = viewer
+        viewer.present()
 
     def present_search(self) -> None:
         self.present()
@@ -1157,7 +1376,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         content.append(snapshot_group)
 
         recall_group = Adw.PreferencesGroup(
-            title="Experimental Privacy Recall",
+            title="Privacy Recall",
             description=(
                 "Disabled by default. Records a searchable local timeline and never uploads activity. "
                 "Screenshot previews require the separate opt-in below."
@@ -1221,6 +1440,34 @@ class ManagerWindow(Adw.ApplicationWindow):
         )
         recall_group.add(self.recall_screenshots_switch)
 
+        self.recall_ocr_switch = Adw.SwitchRow(
+            title="Index screenshot text with local OCR",
+            subtitle="Separate opt-in; requires screenshot previews and never uploads text",
+        )
+        self.recall_ocr_switch.set_active(self._settings.get_boolean("recall-ocr-enabled"))
+        self.recall_ocr_switch.connect("notify::active", self._toggle_recall_ocr)
+        recall_group.add(self.recall_ocr_switch)
+
+        self.recall_semantic_switch = Adw.SwitchRow(
+            title="Related-match search",
+            subtitle="Separate opt-in for local natural-language ranking",
+        )
+        self.recall_semantic_switch.set_active(
+            self._settings.get_boolean("recall-semantic-search-enabled")
+        )
+        self.recall_semantic_switch.connect("notify::active", self._toggle_recall_semantic)
+        recall_group.add(self.recall_semantic_switch)
+
+        self.recall_sensitive_switch = Adw.SwitchRow(
+            title="Filter likely sensitive information",
+            subtitle="Enabled by default; discards captures containing passwords, payment cards or security codes",
+        )
+        self.recall_sensitive_switch.set_active(
+            self._settings.get_boolean("recall-sensitive-filter")
+        )
+        self.recall_sensitive_switch.connect("notify::active", self._toggle_recall_sensitive)
+        recall_group.add(self.recall_sensitive_switch)
+
         exclusions_row = Adw.ActionRow(
             title="Excluded applications",
             subtitle="Comma-separated app names or identifiers",
@@ -1232,8 +1479,58 @@ class ManagerWindow(Adw.ApplicationWindow):
             valign=Gtk.Align.CENTER,
         )
         self.recall_exclusions_entry.connect("changed", self._recall_exclusions_changed)
+        self.recall_exclusions_entry.connect("activate", self._purge_recall_app_exclusions)
+        self.recall_exclusions_entry.connect(
+            "notify::has-focus", self._purge_recall_app_exclusions
+        )
         exclusions_row.add_suffix(self.recall_exclusions_entry)
         recall_group.add(exclusions_row)
+
+        websites_row = Adw.ActionRow(
+            title="Excluded websites",
+            subtitle="Comma-separated domains; applied when the browser exposes a URL",
+        )
+        self.recall_websites_entry = Gtk.Entry(
+            text=", ".join(self._settings.get_strv("recall-excluded-websites")),
+            placeholder_text="bank.example, health.example",
+            hexpand=True,
+            valign=Gtk.Align.CENTER,
+        )
+        self.recall_websites_entry.connect("changed", self._recall_websites_changed)
+        self.recall_websites_entry.connect("activate", self._purge_recall_website_exclusions)
+        self.recall_websites_entry.connect(
+            "notify::has-focus", self._purge_recall_website_exclusions
+        )
+        websites_row.add_suffix(self.recall_websites_entry)
+        recall_group.add(websites_row)
+
+        self.recall_quota_values = [128, 512, 1024, 2048, 4096]
+        self.recall_quota_row = Adw.ComboRow(title="Encrypted storage quota")
+        self.recall_quota_row.set_model(Gtk.StringList.new(["128 MiB", "512 MiB", "1 GiB", "2 GiB", "4 GiB"]))
+        quota = self._settings.get_int("recall-storage-quota-mb")
+        self.recall_quota_row.set_selected(min(
+            range(len(self.recall_quota_values)),
+            key=lambda index: abs(self.recall_quota_values[index] - quota),
+        ))
+        self.recall_quota_row.connect("notify::selected", self._recall_quota_changed)
+        recall_group.add(self.recall_quota_row)
+
+        pause_row = Adw.ActionRow(
+            title="Pause capture",
+            subtitle="Search and deletion remain available while capture is paused",
+        )
+        for label, seconds in (("15 min", 900), ("1 hour", 3600), ("Until tomorrow", -2), ("Indefinitely", -1), ("Resume", 0)):
+            button = Gtk.Button(label=label, valign=Gtk.Align.CENTER)
+            button.connect("clicked", self._pause_recall, seconds)
+            pause_row.add_suffix(button)
+        recall_group.add(pause_row)
+
+        self.recall_diagnostics_row = Adw.ActionRow(title="Capture diagnostics")
+        diagnostics_button = Gtk.Button(label="Refresh", valign=Gtk.Align.CENTER)
+        diagnostics_button.connect("clicked", self._refresh_recall_diagnostics)
+        self.recall_diagnostics_row.add_suffix(diagnostics_button)
+        recall_group.add(self.recall_diagnostics_row)
+        self._refresh_recall_diagnostics()
 
         self.recall_shortcut_switch = Adw.SwitchRow(
             title="Global Recall search shortcut",
@@ -1452,7 +1749,12 @@ class ManagerWindow(Adw.ApplicationWindow):
         self.recall_retention_row.set_sensitive(enabled)
         self.recall_files_switch.set_sensitive(enabled)
         self.recall_screenshots_switch.set_sensitive(enabled)
+        self.recall_ocr_switch.set_sensitive(enabled and self.recall_screenshots_switch.get_active())
+        self.recall_semantic_switch.set_sensitive(True)
+        self.recall_sensitive_switch.set_sensitive(enabled)
         self.recall_exclusions_entry.set_sensitive(enabled)
+        self.recall_websites_entry.set_sensitive(enabled)
+        self.recall_quota_row.set_sensitive(enabled)
         self.recall_capture_button.set_sensitive(enabled)
         self.recall_shortcut_switch.set_sensitive(True)
         self.recall_shortcut_row.set_sensitive(
@@ -1477,6 +1779,18 @@ class ManagerWindow(Adw.ApplicationWindow):
 
     def _toggle_recall_screenshots(self, row, _param) -> None:
         self._settings.set_boolean("recall-capture-screenshots", row.get_active())
+        if not row.get_active() and self.recall_ocr_switch.get_active():
+            self.recall_ocr_switch.set_active(False)
+        self._update_recall_controls()
+
+    def _toggle_recall_ocr(self, row, _param) -> None:
+        self._settings.set_boolean("recall-ocr-enabled", row.get_active())
+
+    def _toggle_recall_semantic(self, row, _param) -> None:
+        self._settings.set_boolean("recall-semantic-search-enabled", row.get_active())
+
+    def _toggle_recall_sensitive(self, row, _param) -> None:
+        self._settings.set_boolean("recall-sensitive-filter", row.get_active())
 
     def _toggle_recall_shortcut(self, row, _param) -> None:
         self._settings.set_boolean(
@@ -1582,6 +1896,62 @@ class ManagerWindow(Adw.ApplicationWindow):
             values.insert(0, "SessionSifu")
         self._settings.set_strv("recall-excluded-apps", values)
 
+    def _purge_recall_app_exclusions(self, entry, _param=None) -> None:
+        if entry.get_has_focus() and _param is not None:
+            return
+        vault = recall_vault()
+        for value in self._settings.get_strv("recall-excluded-apps"):
+            if value.casefold() != "sessionsifu":
+                vault.delete(app=value)
+
+    def _recall_websites_changed(self, entry) -> None:
+        values = [
+            value.strip().casefold().lstrip(".")
+            for value in entry.get_text().split(",")
+            if value.strip()
+        ]
+        self._settings.set_strv("recall-excluded-websites", values[:128])
+
+    def _purge_recall_website_exclusions(self, entry, _param=None) -> None:
+        if entry.get_has_focus() and _param is not None:
+            return
+        vault = recall_vault()
+        for value in self._settings.get_strv("recall-excluded-websites"):
+            vault.delete(website=value)
+
+    def _recall_quota_changed(self, row, _param) -> None:
+        selected = row.get_selected()
+        if selected < len(self.recall_quota_values):
+            self._settings.set_int("recall-storage-quota-mb", self.recall_quota_values[selected])
+
+    def _pause_recall(self, _button, seconds: int) -> None:
+        now = int(time.time())
+        if seconds == -2:
+            tomorrow = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+            until = int(tomorrow.timestamp())
+        elif seconds < 0:
+            until = -1
+        elif seconds == 0:
+            until = 0
+        else:
+            until = now + seconds
+        self._settings.set_int64("recall-pause-until", until)
+        self._message("Privacy Recall resumed." if until == 0 else "Privacy Recall capture paused; existing history remains searchable.")
+        self._refresh_recall_diagnostics()
+
+    def _refresh_recall_diagnostics(self, *_args) -> None:
+        status = recall_vault().status()
+        state = str(status.get("state", "unknown"))
+        duration = status.get("duration_ms")
+        screenshots = status.get("screenshots", 0)
+        size = float(status.get("vault_bytes", 0)) / (1024 * 1024)
+        detail = f"{state} · {screenshots} preview(s) · {size:.1f} MiB · {status.get('encryption', 'unavailable')}"
+        if duration is not None:
+            detail += f" · {duration} ms"
+        if status.get("reason"):
+            detail += f" · {status['reason']}"
+        self.recall_diagnostics_row.set_subtitle(detail)
+
     def _capture_recall(self, _button) -> None:
         if not self.recall_switch.get_active():
             self._message("Privacy Recall is disabled.")
@@ -1601,10 +1971,17 @@ class ManagerWindow(Adw.ApplicationWindow):
 
     def _recall_rows(self) -> list[dict]:
         try:
-            return json.loads(call(
-                "ListRecall", GLib.Variant("(s)", (self.recall_search_entry.get_text(),))
-            ))
-        except (GLib.Error, json.JSONDecodeError):
+            vault = recall_vault()
+            policy = recall_policy(self._settings)
+            vault.migrate_legacy(policy)
+            return vault.search(
+                self.recall_search_entry.get_text(),
+                semantic=policy.semantic,
+                excluded_apps=tuple(
+                    self._settings.get_strv("recall-excluded-apps")
+                ),
+            )
+        except (OSError, RuntimeError, ValueError):
             return []
 
     def _delete_recall(self, _button) -> None:
@@ -1622,7 +1999,8 @@ class ManagerWindow(Adw.ApplicationWindow):
 
     def _delete_recall_response(self, _dialog, response: str) -> None:
         if response == "delete":
-            self._call("DeleteRecall")
+            recall_vault().delete()
+            self._call("DeleteRecall")  # remove any capture still awaiting finalization
             self.refresh()
 
     def _snapshot_interval_changed(self, row, _param) -> None:
@@ -1885,6 +2263,7 @@ def main() -> int:
     parser.add_argument("--restore", metavar="NAME")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--recall-search", action="store_true")
+    parser.add_argument("--finalize-recall", metavar="CAPTURE", help=argparse.SUPPRESS)
     parser.add_argument(
         "--compress-recall-preview",
         nargs=2,
@@ -1901,6 +2280,14 @@ def main() -> int:
             args.display_layout,
         )
     harden_local_storage()
+    if args.finalize_recall:
+        try:
+            result = recall_vault().finalize(Path(args.finalize_recall), recall_policy(settings()))
+            print(json.dumps(result, separators=(",", ":")))
+            return 0
+        except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+            print(f"sessionsifu: Recall finalization failed: {error}", file=sys.stderr)
+            return 1
     if args.autostart:
         return autostart()
     if args.save:

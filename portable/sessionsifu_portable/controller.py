@@ -52,25 +52,44 @@ class SessionController:
         *,
         retention_hours: int = 24,
         excluded_apps: list[str] | tuple[str, ...] = (),
+        excluded_websites: list[str] | tuple[str, ...] = (),
         include_file_paths: bool = False,
+        preview: bytes | None = None,
+        ocr_enabled: bool = False,
+        sensitive_filter: bool = True,
+        quota_mb: int = 512,
     ) -> Path:
         session = self.adapter.capture(include_files=include_file_paths)
         return self.recall_store.save(
             session,
             retention_hours=retention_hours,
             excluded_apps=excluded_apps,
+            excluded_websites=excluded_websites,
             include_file_paths=include_file_paths,
+            preview=preview,
+            ocr_enabled=ocr_enabled,
+            sensitive_filter=sensitive_filter,
+            quota_mb=quota_mb,
         )
 
     def search_recall(
         self,
         query: str = "",
         excluded_apps: list[str] | tuple[str, ...] = (),
+        *,
+        semantic: bool = False,
     ) -> list[dict[str, object]]:
-        return self.recall_store.search(query, excluded_apps=excluded_apps)
+        return self.recall_store.search(
+            query, excluded_apps=excluded_apps, semantic=semantic
+        )
 
     def clear_recall(self) -> int:
         return self.recall_store.clear()
+
+    def delete_recall(
+        self, *, record: str = "", app: str = "", website: str = ""
+    ) -> int:
+        return self.recall_store.delete(record=record, app=app, website=website)
 
     def diagnostics(self) -> dict[str, object]:
         return {

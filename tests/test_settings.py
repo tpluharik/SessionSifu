@@ -54,19 +54,19 @@ now = datetime.now(timezone.utc)
 manifest = module.parse_update_manifest(
     json.dumps(
         {
-            "version": "2.5.2",
+            "version": "3.0.0",
             "channel": "stable",
             "issued_at": (now - timedelta(minutes=1)).isoformat(),
             "expires_at": (now + timedelta(days=30)).isoformat(),
             "minimum_version": "2.5.0",
-            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.5.2_all.deb",
+            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.0.0_all.deb",
             "sha256": "a" * 64,
             "size": 12345,
             "notes": "Test update",
         }
     )
 )
-assert manifest["version"] == "2.5.2"
+assert manifest["version"] == "3.0.0"
 assert manifest["size"] == 12345
 
 if target.is_dir():
@@ -153,7 +153,7 @@ try:
     module.parse_update_manifest(
         json.dumps(
             {
-                "version": "2.5.2",
+                "version": "3.0.0",
                 "channel": "stable",
                 "issued_at": (now - timedelta(minutes=1)).isoformat(),
                 "expires_at": (now + timedelta(days=30)).isoformat(),

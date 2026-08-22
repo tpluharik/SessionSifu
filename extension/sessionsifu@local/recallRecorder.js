@@ -193,6 +193,35 @@ function _compressScreenshot(rawPath, name, displays) {
     });
 }
 
+function _finalizeCapture(name) {
+    recallActivity.begin();
+    try {
+        const path = GLib.build_filenamev([FileUtils.recall_path, name]);
+        const process = Gio.Subprocess.new([
+            FileUtils.getManagerExecutable(), '--finalize-recall', path,
+        ], Gio.SubprocessFlags.STDERR_PIPE);
+        process.communicate_utf8_async(null, null, (source, result) => {
+            try {
+                const [, , stderr] = source.communicate_utf8_finish(result);
+                if (!source.get_successful())
+                    throw new Error(stderr?.trim() || 'Recall vault finalization failed');
+            } catch (error) {
+                Log.Log.getDefault().error(error, 'Could not finalize encrypted Recall capture');
+                _removeFile(path);
+                _removeScreenshots(name);
+            } finally {
+                recallActivity.end();
+            }
+        });
+    } catch (error) {
+        Log.Log.getDefault().error(error, 'Could not start Recall vault finalization');
+        const path = GLib.build_filenamev([FileUtils.recall_path, name]);
+        _removeFile(path);
+        _removeScreenshots(name);
+        recallActivity.end();
+    }
+}
+
 function _summary(entry, excludedApps = []) {
     if (entry.size <= 0 || entry.size > MAX_RECALL_BYTES)
         return null;
@@ -379,6 +408,7 @@ export const RecallRecorder = class {
         this._settingsIds = [
             this._settings.connect('changed::recall-enabled', () => this._reschedule()),
             this._settings.connect('changed::recall-interval', () => this._reschedule()),
+            this._settings.connect('changed::recall-pause-until', () => this._reschedule()),
             this._settings.connect('changed::recall-retention-hours', () => this._prune(true)),
             this._settings.connect('changed::recall-excluded-apps', () => {
                 this._screenshotGeneration++;
@@ -410,6 +440,9 @@ export const RecallRecorder = class {
         this._removeTimers();
         if (!this._settings.get_boolean('recall-enabled'))
             return;
+        const pausedUntil = this._settings.get_int64('recall-pause-until');
+        if (pausedUntil < 0 || pausedUntil > Math.floor(Date.now() / 1000))
+            return;
         const interval = Math.max(60, this._settings.get_int('recall-interval'));
         this._initialTimeoutId = GLib.timeout_add_seconds(
             GLib.PRIORITY_LOW,
@@ -431,6 +464,11 @@ export const RecallRecorder = class {
     async saveNow() {
         if (this._saving || !this._settings.get_boolean('recall-enabled'))
             return false;
+        const pausedUntil = this._settings.get_int64('recall-pause-until');
+        if (pausedUntil < 0 || pausedUntil > Math.floor(Date.now() / 1000))
+            return false;
+        if (pausedUntil > 0)
+            this._settings.set_int64('recall-pause-until', 0);
         this._saving = true;
         recallActivity.begin();
         const startedUs = GLib.get_monotonic_time();
@@ -449,6 +487,7 @@ export const RecallRecorder = class {
             GLib.chmod(path, 0o600);
             this._log.debug(
                 `Recall metadata saved in ${Math.round((GLib.get_monotonic_time() - startedUs) / 1000)} ms`);
+            let finalizeWithScreenshot = false;
             if (this._settings.get_boolean('recall-capture-screenshots')) {
                 const screenshotGeneration = this._screenshotGeneration;
                 const screenshotExclusions = this._settings.get_strv('recall-excluded-apps');
@@ -459,7 +498,8 @@ export const RecallRecorder = class {
                 } else if (this._screenshotSaving) {
                     this._log.info(
                         'Skipped Recall screenshot because the previous preview is still encoding');
-                } else
+                } else {
+                    finalizeWithScreenshot = true;
                     this._captureScreenshotForEntry(
                         name, screenshotGeneration, screenshotExclusions,
                         Main.layoutManager.monitors
@@ -472,7 +512,10 @@ export const RecallRecorder = class {
                                 height: Math.trunc(monitor.height),
                             }))
                             .filter(monitor => monitor.width > 0 && monitor.height > 0));
+                }
             }
+            if (!finalizeWithScreenshot)
+                _finalizeCapture(name);
             this._prune();
             return true;
         } catch (error) {
@@ -506,6 +549,8 @@ export const RecallRecorder = class {
             _removeScreenshots(name);
             this._log.error(error, 'Could not capture Recall screenshot preview');
         } finally {
+            if (!this._destroyed)
+                _finalizeCapture(name);
             this._screenshotSaving = false;
             recallActivity.end();
         }

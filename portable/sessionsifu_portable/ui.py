@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QTimer, Qt
-from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QPainter, QShortcut
+from PySide6.QtCore import QByteArray, QBuffer, QIODevice, QSettings, QTimer, Qt, QUrl
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -36,6 +38,7 @@ from .shortcut import DEFAULT_SHORTCUT, normalize_shortcut
 INTERVALS = [30, 60, 300, 600, 900, 1800]
 RECALL_INTERVALS = [60, 300, 900, 1800]
 RECALL_RETENTION_HOURS = [1, 6, 24, 72, 168]
+RECALL_QUOTA_MB = [128, 512, 1024, 2048, 4096]
 
 
 def icon_path() -> Path:
@@ -109,7 +112,7 @@ class MainWindow(QMainWindow):
 
         recall_box = QWidget()
         recall_layout = QVBoxLayout(recall_box)
-        self.recall_enabled = QCheckBox("Enable experimental Privacy Recall")
+        self.recall_enabled = QCheckBox("Enable Privacy Recall")
         self.recall_enabled.setToolTip(
             "Disabled by default. Records searchable app/window metadata locally; no screenshots are taken."
         )
@@ -152,8 +155,23 @@ class MainWindow(QMainWindow):
         self.recall_exclusions = QLineEdit()
         self.recall_exclusions.setPlaceholderText("private-browser, password-manager")
         self.recall_exclusions.setText(str(self.settings.value("recall_excluded_apps", "")))
-        self.recall_exclusions.editingFinished.connect(self.recall_settings_changed)
+        self.recall_exclusions.editingFinished.connect(self.recall_privacy_exclusions_changed)
         recall_form.addRow("Excluded apps", self.recall_exclusions)
+
+        self.recall_websites = QLineEdit()
+        self.recall_websites.setPlaceholderText("bank.example, health.example")
+        self.recall_websites.setText(str(self.settings.value("recall_excluded_websites", "")))
+        self.recall_websites.editingFinished.connect(self.recall_privacy_exclusions_changed)
+        recall_form.addRow("Excluded websites", self.recall_websites)
+
+        self.recall_quota = QComboBox()
+        for megabytes in RECALL_QUOTA_MB:
+            label = f"{megabytes} MiB" if megabytes < 1024 else f"{megabytes // 1024} GiB"
+            self.recall_quota.addItem(label, megabytes)
+        configured_quota = int(self.settings.value("recall_quota_mb", 512))
+        self.recall_quota.setCurrentIndex(max(0, self.recall_quota.findData(configured_quota)))
+        self.recall_quota.currentIndexChanged.connect(self.recall_settings_changed)
+        recall_form.addRow("Encrypted storage quota", self.recall_quota)
         recall_layout.addLayout(recall_form)
 
         self.recall_shortcut = QCheckBox(
@@ -184,6 +202,33 @@ class MainWindow(QMainWindow):
         self.recall_files.toggled.connect(self.recall_settings_changed)
         recall_layout.addWidget(self.recall_files)
 
+        self.recall_screenshots = QCheckBox("Capture compressed display previews")
+        self.recall_screenshots.setChecked(
+            self.settings.value("recall_screenshots", False, type=bool)
+        )
+        self.recall_screenshots.toggled.connect(self.recall_settings_changed)
+        self.recall_screenshots.toggled.connect(self.update_recall_timer)
+        recall_layout.addWidget(self.recall_screenshots)
+
+        self.recall_ocr = QCheckBox("Index preview text with local OCR")
+        self.recall_ocr.setChecked(self.settings.value("recall_ocr", False, type=bool))
+        self.recall_ocr.toggled.connect(self.recall_settings_changed)
+        recall_layout.addWidget(self.recall_ocr)
+
+        self.recall_related = QCheckBox("Enable local related-match ranking")
+        self.recall_related.setChecked(
+            self.settings.value("recall_related_search", False, type=bool)
+        )
+        self.recall_related.toggled.connect(self.recall_settings_changed)
+        recall_layout.addWidget(self.recall_related)
+
+        self.recall_sensitive = QCheckBox("Filter likely sensitive information")
+        self.recall_sensitive.setChecked(
+            self.settings.value("recall_sensitive_filter", True, type=bool)
+        )
+        self.recall_sensitive.toggled.connect(self.recall_settings_changed)
+        recall_layout.addWidget(self.recall_sensitive)
+
         recall_controls = QHBoxLayout()
         self.recall_capture = QPushButton("Capture now")
         self.recall_capture.clicked.connect(self.save_recall)
@@ -198,7 +243,23 @@ class MainWindow(QMainWindow):
         recall_layout.addLayout(recall_controls)
 
         self.recall_results = QListWidget()
+        self.recall_results.setIconSize(QPixmap(240, 135).size())
+        self.recall_results.itemDoubleClicked.connect(self.open_recall_item)
         recall_layout.addWidget(self.recall_results, 1)
+        recall_item_actions = QHBoxLayout()
+        open_recall = QPushButton("Reopen selected")
+        open_recall.clicked.connect(self.open_recall_item)
+        delete_selected = QPushButton("Delete selected")
+        delete_selected.clicked.connect(self.delete_recall_item)
+        delete_app = QPushButton("Delete selected application")
+        delete_app.clicked.connect(self.delete_recall_app)
+        delete_website = QPushButton("Delete selected website")
+        delete_website.clicked.connect(self.delete_recall_website)
+        recall_item_actions.addWidget(open_recall)
+        recall_item_actions.addWidget(delete_selected)
+        recall_item_actions.addWidget(delete_app)
+        recall_item_actions.addWidget(delete_website)
+        recall_layout.addLayout(recall_item_actions)
         clear_recall = QPushButton("Delete all Recall history")
         clear_recall.clicked.connect(self.clear_recall)
         recall_layout.addWidget(clear_recall)
@@ -297,7 +358,22 @@ class MainWindow(QMainWindow):
     def recall_settings_changed(self, *_args) -> None:
         self.settings.setValue("recall_retention_hours", int(self.recall_retention.currentData()))
         self.settings.setValue("recall_excluded_apps", self.recall_exclusions.text().strip())
+        self.settings.setValue("recall_excluded_websites", self.recall_websites.text().strip())
+        self.settings.setValue("recall_quota_mb", int(self.recall_quota.currentData()))
         self.settings.setValue("recall_include_file_paths", self.recall_files.isChecked())
+        self.settings.setValue("recall_screenshots", self.recall_screenshots.isChecked())
+        self.settings.setValue("recall_ocr", self.recall_ocr.isChecked())
+        self.settings.setValue("recall_related_search", self.recall_related.isChecked())
+        self.settings.setValue("recall_sensitive_filter", self.recall_sensitive.isChecked())
+
+    def recall_privacy_exclusions_changed(self) -> None:
+        self.recall_settings_changed()
+        for value in self._excluded_apps():
+            if value.casefold() != "sessionsifu":
+                self.controller.delete_recall(app=value)
+        for value in self.recall_websites.text().split(","):
+            if value.strip():
+                self.controller.delete_recall(website=value.strip().casefold().lstrip("."))
 
     def toggle_recall_shortcut(self, enabled: bool) -> None:
         self.settings.setValue("recall_shortcut_enabled", enabled)
@@ -349,7 +425,13 @@ class MainWindow(QMainWindow):
         self.recall_interval.setEnabled(enabled)
         self.recall_retention.setEnabled(enabled)
         self.recall_exclusions.setEnabled(enabled)
+        self.recall_websites.setEnabled(enabled)
+        self.recall_quota.setEnabled(enabled)
         self.recall_files.setEnabled(enabled)
+        self.recall_screenshots.setEnabled(enabled)
+        self.recall_ocr.setEnabled(enabled and self.recall_screenshots.isChecked())
+        self.recall_related.setEnabled(enabled)
+        self.recall_sensitive.setEnabled(enabled)
         self.recall_capture.setEnabled(enabled)
         self.recall_shortcut.setEnabled(True)
         self.recall_shortcut_value.setEnabled(self.recall_shortcut.isChecked())
@@ -363,6 +445,13 @@ class MainWindow(QMainWindow):
             if not silent:
                 self.status.setText("Enable Privacy Recall before capturing activity metadata.")
             return
+        paused_until = int(self.settings.value("recall_pause_until", 0))
+        if paused_until < 0 or paused_until > int(time.time()):
+            if not silent:
+                self.status.setText("Privacy Recall capture is paused; existing history remains searchable.")
+            return
+        if paused_until > 0:
+            self.settings.setValue("recall_pause_until", 0)
         if self._recall_saving:
             return
         self.recall_settings_changed()
@@ -374,9 +463,18 @@ class MainWindow(QMainWindow):
                 lambda: self.controller.save_recall(
                     retention_hours=int(self.recall_retention.currentData()),
                     excluded_apps=self._excluded_apps(),
+                    excluded_websites=[
+                        value.strip().casefold().lstrip(".")
+                        for value in self.recall_websites.text().split(",")
+                        if value.strip()
+                    ],
                     include_file_paths=self.recall_files.isChecked(),
+                    preview=self._capture_recall_preview(),
+                    ocr_enabled=self.recall_ocr.isChecked(),
+                    sensitive_filter=self.recall_sensitive.isChecked(),
+                    quota_mb=int(self.recall_quota.currentData()),
                 ),
-                "Saved a private local Recall entry.",
+                "Saved an encrypted private Recall entry.",
                 silent=silent,
             )
         finally:
@@ -384,17 +482,84 @@ class MainWindow(QMainWindow):
             self._notify_recall_state()
             QApplication.processEvents()
 
+    def pause_recall(self, seconds: int) -> None:
+        if seconds < 0:
+            until = -1
+        elif seconds == 0:
+            until = 0
+        else:
+            until = int(time.time()) + seconds
+        self.settings.setValue("recall_pause_until", until)
+        self.status.setText("Privacy Recall resumed." if until == 0 else "Privacy Recall capture paused.")
+
     def refresh_recall(self) -> None:
         self.recall_results.clear()
         for entry in self.controller.search_recall(
-            self.recall_search.text(), excluded_apps=self._excluded_apps()
+            self.recall_search.text(),
+            excluded_apps=self._excluded_apps(),
+            semantic=self.recall_related.isChecked(),
         ):
             apps = ", ".join(entry.get("apps", [])[:4]) or "Unknown application"
             titles = " · ".join(entry.get("titles", [])[:3])
             label = f"{entry.get('captured_at', '')} — {apps}"
             if titles:
                 label += f" — {titles}"
-            self.recall_results.addItem(label)
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, entry)
+            preview = self.controller.recall_store.preview_bytes(str(entry.get("name", "")))
+            if preview:
+                pixmap = QPixmap()
+                if pixmap.loadFromData(preview):
+                    item.setIcon(QIcon(pixmap.scaled(240, 135, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)))
+            self.recall_results.addItem(item)
+
+    def _capture_recall_preview(self) -> bytes | None:
+        if not self.recall_screenshots.isChecked():
+            return None
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return None
+        pixmap = screen.grabWindow(0)
+        if pixmap.isNull():
+            return None
+        if max(pixmap.width(), pixmap.height()) > 1280:
+            pixmap = pixmap.scaled(1280, 1280, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        data = QByteArray()
+        buffer = QBuffer(data)
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        pixmap.save(buffer, "JPEG", 70)
+        buffer.close()
+        return bytes(data)
+
+    def open_recall_item(self, *_args) -> None:
+        item = self.recall_results.currentItem()
+        entry = item.data(Qt.UserRole) if item else {}
+        target = next(iter(entry.get("targets", [])), "") if isinstance(entry, dict) else ""
+        if target:
+            QDesktopServices.openUrl(QUrl(target))
+
+    def delete_recall_item(self) -> None:
+        item = self.recall_results.currentItem()
+        entry = item.data(Qt.UserRole) if item else {}
+        if isinstance(entry, dict) and entry.get("name"):
+            self.controller.delete_recall(record=str(entry["name"]))
+            self.refresh_recall()
+
+    def delete_recall_app(self) -> None:
+        item = self.recall_results.currentItem()
+        entry = item.data(Qt.UserRole) if item else {}
+        app = next(iter(entry.get("apps", [])), "") if isinstance(entry, dict) else ""
+        if app:
+            self.controller.delete_recall(app=app)
+            self.refresh_recall()
+
+    def delete_recall_website(self) -> None:
+        item = self.recall_results.currentItem()
+        entry = item.data(Qt.UserRole) if item else {}
+        website = next(iter(entry.get("urls", [])), "") if isinstance(entry, dict) else ""
+        if website:
+            self.controller.delete_recall(website=website)
+            self.refresh_recall()
 
     def clear_recall(self) -> None:
         answer = QMessageBox.question(
@@ -488,7 +653,11 @@ class RecallSearchDialog(QDialog):
     def refresh(self) -> None:
         self.results.clear()
         entries = self.controller.search_recall(
-            self.query.text(), excluded_apps=self.exclusions_provider()
+            self.query.text(),
+            excluded_apps=self.exclusions_provider(),
+            semantic=QSettings("SessionSifu", "SessionSifu").value(
+                "recall_related_search", False, type=bool
+            ),
         )
         for entry in entries:
             apps = ", ".join(entry.get("apps", [])[:4]) or "Unknown application"
@@ -542,6 +711,11 @@ def run_gui(
         f"Browse Recall snapshots… ({window.shortcut_value()})", menu
     )
     search_recall.triggered.connect(show_recall_search)
+    pause_menu = QMenu("Pause Recall", menu)
+    for label, seconds in (("Resume", 0), ("15 minutes", 900), ("1 hour", 3600), ("Indefinitely", -1)):
+        action = QAction(label, pause_menu)
+        action.triggered.connect(lambda _checked=False, value=seconds: window.pause_recall(value))
+        pause_menu.addAction(action)
 
     def recall_state_changed(
         capture_enabled: bool, shortcut_enabled: bool, shortcut: str, saving: bool
@@ -573,6 +747,7 @@ def run_gui(
     quit_action = QAction("Turn Off SessionSifu", menu)
     quit_action.triggered.connect(app.quit)
     menu.addActions([show, save, restore, recall, search_recall])
+    menu.addMenu(pause_menu)
     menu.addSeparator()
     menu.addAction(quit_action)
     tray.setContextMenu(menu)

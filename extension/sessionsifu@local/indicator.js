@@ -344,16 +344,33 @@ class AwsIndicator extends PanelMenu.Button {
         });
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-        this._recallMenuItem = new PopupMenu.PopupMenuItem('');
-        this._recallMenuItem.connect('activate', () => {
-            if (this._settings.get_boolean('recall-enabled')) {
-                this._settings.set_boolean('recall-enabled', false);
-            } else {
-                try {
-                    Gio.Subprocess.new([FileUtils.getManagerExecutable()], Gio.SubprocessFlags.NONE);
-                } catch (error) {
-                    this._log.error(error, 'Could not open Privacy Recall settings');
-                }
+        this._recallMenuItem = new PopupMenu.PopupSubMenuMenuItem('');
+        const pauseFor = seconds => {
+            this._settings.set_int64(
+                'recall-pause-until', Math.floor(Date.now() / 1000) + seconds);
+        };
+        this._recallMenuItem.menu.addAction('Resume capture', () => {
+            this._settings.set_int64('recall-pause-until', 0);
+            this._settings.set_boolean('recall-enabled', true);
+        });
+        this._recallMenuItem.menu.addAction('Pause for 15 minutes', () => pauseFor(15 * 60));
+        this._recallMenuItem.menu.addAction('Pause for 1 hour', () => pauseFor(60 * 60));
+        this._recallMenuItem.menu.addAction('Pause until tomorrow', () => {
+            const tomorrow = new Date();
+            tomorrow.setHours(24, 0, 0, 0);
+            this._settings.set_int64('recall-pause-until', Math.floor(tomorrow.getTime() / 1000));
+        });
+        this._recallMenuItem.menu.addAction('Pause indefinitely', () => {
+            this._settings.set_int64('recall-pause-until', -1);
+        });
+        this._recallMenuItem.menu.addAction('Turn Recall off', () => {
+            this._settings.set_boolean('recall-enabled', false);
+        });
+        this._recallMenuItem.menu.addAction('Recall settings…', () => {
+            try {
+                Gio.Subprocess.new([FileUtils.getManagerExecutable()], Gio.SubprocessFlags.NONE);
+            } catch (error) {
+                this._log.error(error, 'Could not open Privacy Recall settings');
             }
         });
         this.menu.addMenuItem(this._recallMenuItem);
@@ -368,6 +385,8 @@ class AwsIndicator extends PanelMenu.Button {
         });
         this._recallChangedId = this._settings.connect(
             'changed::recall-enabled', () => this._updateRecallItem());
+        this._recallPauseChangedId = this._settings.connect(
+            'changed::recall-pause-until', () => this._updateRecallItem());
         this._updateRecallItem();
         this.menu.addAction('Open SessionSifu…', () => {
             try {
@@ -393,11 +412,15 @@ class AwsIndicator extends PanelMenu.Button {
     _updateRecallItem() {
         if (!this._recallMenuItem)
             return;
+        const pausedUntil = this._settings.get_int64('recall-pause-until');
+        const paused = pausedUntil < 0 || pausedUntil > Math.floor(Date.now() / 1000);
         this._recallMenuItem.label.set_text(
             recallActivity.saving
                 ? 'Privacy Recall: Saving…'
                 : this._settings.get_boolean('recall-enabled')
-                ? 'Privacy Recall: Active — Pause'
+                ? paused
+                    ? 'Privacy Recall: Paused'
+                    : 'Privacy Recall: Active'
                 : 'Privacy Recall: Off — Open settings');
     }
 
@@ -670,6 +693,10 @@ class AwsIndicator extends PanelMenu.Button {
         if (this._recallChangedId) {
             this._settings.disconnect(this._recallChangedId);
             this._recallChangedId = 0;
+        }
+        if (this._recallPauseChangedId) {
+            this._settings.disconnect(this._recallPauseChangedId);
+            this._recallPauseChangedId = 0;
         }
         if (this._recallActivityChangedId) {
             recallActivity.disconnect(this._recallActivityChangedId);

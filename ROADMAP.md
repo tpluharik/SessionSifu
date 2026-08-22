@@ -1,6 +1,6 @@
 # SessionSifu roadmap
 
-SessionSifu 2.0 establishes a shared session format, portable desktop manager,
+SessionSifu 3.0 establishes an encrypted visual Recall engine in addition to the shared session format, portable desktop manager,
 platform adapters and release automation. The following eleven improvements are
 ordered by safety and user impact rather than promised release date.
 
@@ -83,9 +83,9 @@ Support portable encrypted session archives for backup or transfer between the
 same user's devices. Sync must remain off by default, end-to-end encrypted and
 independent of any mandatory hosted SessionSifu service.
 
-## 11. Privacy-first local activity recall
+## 11. Privacy-first local activity recall — delivered in 3.0
 
-Explore an optional, Recall-style activity timeline that helps users find and
+SessionSifu 3.0 delivers an optional, Recall-style activity timeline that helps users find and
 resume earlier work through periodic desktop snapshots, on-device OCR and local
 semantic search. The feature must be disabled by default and show a persistent,
 unambiguous indicator whenever capture is active.
@@ -103,13 +103,14 @@ encryption and a clear preview of exactly what will leave the device. Security
 review, storage quotas, crash-safe deletion and automated privacy regression
 tests are release requirements rather than follow-up work.
 
-SessionSifu 2.2 implements the first, metadata-only phase behind a feature flag
-that is off by default. It provides exclusions, bounded retention, local search,
-deletion, a dedicated keyboard search popup and an active/pause indicator
-without screenshots, OCR or semantic indexing. Exclusions redact matching apps
-from existing search results as well as new captures. Those higher-risk visual
-features remain roadmap work until the encryption and security requirements
-above are satisfied on every platform.
+The 3.0 implementation remains off by default and separates screenshot, OCR,
+file-path and related-match opt-ins. Persistent records, previews and extracted
+text use authenticated encryption; search uses an ephemeral in-memory FTS5
+database. It provides visual timeline navigation, local OCR, related ranking,
+reopening, timed pauses, quotas, sensitive-text filtering, capture diagnostics
+and granular deletion. Future work remains for stronger native credential-store
+integration in every portable bundle, browser cooperation for reliable private
+tab/domain detection and optional packaged local embedding models.
 
 ## Contributing to the roadmap
 

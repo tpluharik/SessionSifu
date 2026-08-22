@@ -43,11 +43,13 @@ requested; the Integration row also exposes **Reload Integration**. Log out and
 back in only if GNOME cannot complete that live reload.
 
 Recall metadata should complete quickly even when open-file capture is enabled.
-Optional per-display JPEG encoding continues in a separate helper; under
+Optional JPEG encoding, OCR and encryption continue in separate helpers; under
 sustained load SessionSifu may skip a preview while retaining the corresponding
 searchable metadata snapshot. This is expected overload protection, not lost
-history. New previews appear as `recall-…-display-N.jpg`; the temporary raw PNG
-is removed whether compression succeeds or fails.
+history. Successful finalization moves records and previews into encrypted
+`recall/vault/*.ssrec` and `*.ssimg` envelopes; temporary JSON/JPEG/PNG files are
+removed whether finalization succeeds or fails. The **Capture diagnostics** row
+shows the last state, reason, duration, preview count, vault size and key backend.
 
 Privacy Recall is intentionally disabled by default. Enable it explicitly in
 the manager, confirm the top-bar or tray control reports **Active**, then use
@@ -56,12 +58,19 @@ GNOME entries are stored under `~/.config/sessionsifu/recall/`; portable builds
 use the `recall/` folder below their platform-specific SessionSifu data path.
 
 Turning Recall off pauses capture without deleting earlier entries. Use
-**Delete All** in the manager to remove the timeline permanently.
+per-card deletion, application/website/time deletion or **Delete All** in the
+manager to remove the timeline permanently.
 
-Changing **Excluded applications** takes effect on existing history searches
-immediately. Matching application names, window titles and opted-in file paths
-are removed before results are built; the underlying entry expires through the
-normal retention policy or can be removed with **Delete All**.
+Changing **Excluded applications** takes effect immediately and deletes affected
+encrypted entries because their pixels cannot be safely redacted. Website
+filters apply only when the browser exposes an observable URL; private browsing
+detection is not universally available on Linux.
+
+If OCR results are absent, confirm **Capture screenshot previews** and **Index
+screenshot text with local OCR** are both enabled and that `tesseract --version`
+works. OCR is never inferred from the main Recall switch. If diagnostics report
+the private fallback key, install/configure a Secret Service-compatible keyring
+and restart SessionSifu before enabling visual capture.
 
 ## The Recall search shortcut does not open
 

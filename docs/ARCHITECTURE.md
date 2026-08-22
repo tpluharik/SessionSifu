@@ -1,6 +1,6 @@
 # Architecture
 
-SessionSifu 2 has a full GNOME runtime, a portable runtime shared by Windows,
+SessionSifu 3 has a full GNOME runtime, a portable runtime shared by Windows,
 macOS and Linux desktops, and platform-specific distribution layers.
 
 ## Trust boundaries
@@ -179,28 +179,31 @@ Session JSON can contain an `open_files` array on each saved window object. This
 is best-effort metadata rather than a promise that every application's internal
 document state can be observed.
 
-Privacy Recall data is separate from named/restorable sessions. Version 2.5 can
-store one bounded JPEG preview per display on the full GNOME integration only,
-behind a second opt-in. Capture is skipped on the lock screen and whenever an
-excluded application is visible. Both conditions are checked before capture,
-after the asynchronous grab and after compression; a generation change discards
-the preview. Preview files use mode 0600 and are removed
-with their metadata. Search remains metadata-based and does not perform OCR;
-when a keyword matches an app, title or opted-in file, GTK crops that window's
-geometry from the corresponding display preview in memory. Portable editions
-stay metadata-only pending cross-platform security review.
+Privacy Recall data is separate from named/restorable sessions. Version 3.0
+moves persistent entries into an AES-GCM vault. GNOME Shell writes a short-lived
+private metadata/image capture and invokes the unprivileged manager finalizer;
+the finalizer applies domain/sensitive policy, optional OCR, deduplication,
+authenticated encryption, retention and quota pruning, then removes plaintext
+temporary files. GNOME uses one encrypted image per display. Portable Qt builds
+use the standard screen API to create one bounded preview after user permission.
 
-Changing the exclusion list purges existing screenshot previews while preserving
-metadata because previously captured pixels cannot be retroactively redacted.
+Search decrypts bounded records into process memory and creates an ephemeral
+SQLite FTS5 table. It ranks application, title, file and OCR fields separately;
+optional related matching adds local token-similarity candidates. Persistent
+plaintext OCR or search indexes are never created. The GTK visual timeline can
+decode encrypted previews directly into pixbufs and offers reopen, copy and
+granular deletion actions. Changing exclusions deletes affected vault records
+because previously captured pixels cannot be reliably redacted.
 
 Recall's hot path uses compact atomic asynchronous writes. Open-file discovery is
 bounded and avoids redundant target probes; paths are validated before restore.
 GNOME Shell performs one asynchronous desktop grab and never overlaps another
 Recall image capture. The unprivileged manager helper loads that temporary PNG
 once, crops every display, downsizes the longest edge to at most 1,280 pixels and
-writes quality-70 JPEG previews through private temporary files. Summary parsing
-and decoded search images are bounded caches, and retention scans run at most
-every five minutes unless the retention setting changes.
+writes quality-70 JPEG previews through private temporary files. Encryption,
+OCR, FTS and decoded images execute outside GNOME Shell. Capture status contains
+only structural diagnostics such as duration, preview count, skip reason and
+vault size.
 
 ## Debian package and update channel
 

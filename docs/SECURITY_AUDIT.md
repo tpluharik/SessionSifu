@@ -1,5 +1,34 @@
 # Security audit — 22 August 2026
 
+## Version 3.0 Recall security delta
+
+The 3.0 release adds a new high-sensitivity boundary and its release tests cover
+the principal invariants:
+
+- Recall records, previews and OCR use AES-256-GCM with a fresh nonce and
+  filename-associated data; persistent plaintext search indexes are prohibited.
+- GNOME prefers the operating-system credential store. A private `0600` key-file
+  fallback is reported in the UI as degraded protection rather than hidden.
+- GNOME Shell performs only bounded capture. OCR, encryption, FTS construction,
+  preview decoding and deletion execute in an unprivileged process outside the
+  compositor.
+- Record, preview, OCR, query, entry-count, retention and quota sizes are
+  bounded. Symlinked roots, vaults, keys, captures and assets are rejected.
+- Application/domain exclusions, lock/generation checks and default-on
+  sensitive-text filtering precede vault publication. Changing an application
+  exclusion deletes affected entries because stored pixels cannot be redacted.
+- Reopen accepts only absolute opted-in files converted to `file:` URIs and
+  observable `http(s)` URLs. Captured strings are never passed to a shell.
+- Granular deletion removes records and associated encrypted images together;
+  documentation states backup, copy-on-write and SSD-remanence limits.
+
+Coverage lives in `tests/test_recall_engine.py`, portable vault tests, GNOME
+privacy/activity smoke tests and the package static/security suite. Residual
+risks are best-effort website/private-mode detection on generic Linux,
+credential-store availability in portable source builds, OCR false negatives,
+and owner-private temporary screenshots existing briefly before finalization.
+Visual capture therefore remains off by default.
+
 ## Executive summary
 
 This review originally covered the SessionSifu 2.4.0 source tree corresponding

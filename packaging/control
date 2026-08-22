@@ -1,10 +1,10 @@
 Package: sessionsifu
-Version: 2.5.2
+Version: 3.0.0
 Section: gnome
 Priority: optional
 Architecture: all
 Maintainer: SessionSifu contributors <noreply@example.invalid>
-Depends: gnome-shell (>= 50), gjs, python3, python3-gi, gir1.2-gtk-4.0, gir1.2-adw-1, gir1.2-gdkpixbuf-2.0, gir1.2-gtop-2.0, procps, libglib2.0-bin, openssl
+Depends: gnome-shell (>= 50), gjs, python3, python3-gi, python3-cryptography, python3-keyring, tesseract-ocr, gir1.2-gtk-4.0, gir1.2-adw-1, gir1.2-gdkpixbuf-2.0, gir1.2-gtop-2.0, procps, libglib2.0-bin, openssl
 Suggests: ydotool
 Description: save and restore GNOME desktop layouts
  SessionSifu records running applications and window state, then relaunches

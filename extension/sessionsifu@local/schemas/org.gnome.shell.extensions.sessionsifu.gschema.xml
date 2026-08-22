@@ -194,6 +194,42 @@
       </description>
     </key>
 
+    <key name="recall-ocr-enabled" type="b">
+      <default>false</default>
+      <summary>Index screenshot text with local OCR</summary>
+      <description>Separate opt-in. OCR runs locally after encryption-safe capture finalization.</description>
+    </key>
+
+    <key name="recall-semantic-search-enabled" type="b">
+      <default>false</default>
+      <summary>Enable related-match ranking</summary>
+      <description>Separate opt-in for local related-match ranking; no query or snapshot is uploaded.</description>
+    </key>
+
+    <key name="recall-sensitive-filter" type="b">
+      <default>true</default>
+      <summary>Discard captures containing likely sensitive information</summary>
+      <description>Best-effort local filtering for passwords, payment cards and security codes.</description>
+    </key>
+
+    <key name="recall-excluded-websites" type="as">
+      <default>[]</default>
+      <summary>Websites excluded from Privacy Recall</summary>
+      <description>Domain suffixes that must not be retained when an observable URL is available.</description>
+    </key>
+
+    <key name="recall-storage-quota-mb" type="i">
+      <default>512</default>
+      <range min="64" max="16384"/>
+      <summary>Maximum encrypted Recall vault size in MiB</summary>
+    </key>
+
+    <key name="recall-pause-until" type="x">
+      <default>0</default>
+      <summary>Unix timestamp until which Recall capture is paused</summary>
+      <description>Zero means no timed pause; -1 means paused indefinitely.</description>
+    </key>
+
     <key name="recall-excluded-apps" type="as">
       <default>['SessionSifu']</default>
       <summary>Applications excluded from Privacy Recall</summary>

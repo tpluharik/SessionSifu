@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sessionsifu-portable"
-version = "2.5.2"
+version = "3.0.0"
 description = "Cross-platform desktop session snapshots for Windows, macOS, KDE and GNOME"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "GPL-3.0-or-later"
 authors = [{name = "SessionSifu contributors"}]
-dependencies = ["psutil==7.2.2"]
+dependencies = ["psutil==7.2.2", "cryptography==46.0.5", "keyring==25.7.0"]
 
 [project.optional-dependencies]
 gui = [
