@@ -2,6 +2,14 @@
 
 All notable SessionSifu changes are documented here.
 
+## 2.3.2
+
+- Kept logging safe before GNOME preferences are initialized, so the real
+  open-file performance smoke test behaves identically on clean Ubuntu 26.04
+  release runners and installed desktops.
+- Restored the Debian release path after the new Recall latency test exposed
+  that pre-initialization edge case in CI.
+
 ## 2.3.1
 
 - Made Recall metadata writes start immediately through GIO's asynchronous

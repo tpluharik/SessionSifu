@@ -9,11 +9,14 @@ export const Log = class {
     }
 
     isDebug() {
-        return PrefsUtils.isDebug();
+        // Utility modules are also exercised before the extension preferences
+        // singleton exists (for example by package smoke tests). Logging must
+        // remain optional in that state instead of aborting the caller.
+        return PrefsUtils?.isDebug?.() ?? false;
     }
 
     isVerboseLogging() {
-        return PrefsUtils.isVerboseLogging();
+        return PrefsUtils?.isVerboseLogging?.() ?? false;
     }
 
     debug(logContent) {

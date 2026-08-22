@@ -1,7 +1,7 @@
 {
-  "version": "2.3.1",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.3.1_all.deb",
-  "sha256": "688fa92b4d3a3d2914724b04cf8090cf04b850cf73ff27cf725af006f3d3c330",
-  "size": 248676,
+  "version": "2.3.2",
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.3.2_all.deb",
+  "sha256": "f5190b7c2eaf29a28c114be171a7e401914d8d8278179f4ec550ae30e233a68d",
+  "size": 248992,
   "notes": "Speeds up Privacy Recall with bounded file discovery, immediate asynchronous metadata writes, non-overlapping background screenshot previews and cached history summaries."
 }
