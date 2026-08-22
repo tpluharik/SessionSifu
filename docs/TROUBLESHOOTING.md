@@ -45,6 +45,21 @@ use the `recall/` folder below their platform-specific SessionSifu data path.
 Turning Recall off pauses capture without deleting earlier entries. Use
 **Delete All** in the manager to remove the timeline permanently.
 
+Changing **Excluded applications** takes effect on existing history searches
+immediately. Matching application names, window titles and opted-in file paths
+are removed before results are built; the underlying entry expires through the
+normal retention policy or can be removed with **Delete All**.
+
+## The Recall search shortcut does not open
+
+The `Ctrl+Alt+Space` shortcut is registered only while Privacy Recall and its
+shortcut option are enabled. On KDE/Wayland or general Linux, approve the XDG
+desktop-portal shortcut request. On macOS, allow SessionSifu under **Privacy &
+Security → Input Monitoring**. Windows reports a conflict when another program
+already owns the shortcut. The top-bar/tray **Search Privacy Recall…** action
+and the same shortcut while SessionSifu is focused remain available as a
+fallback.
+
 ## A restored application does not reopen its document
 
 SessionSifu checks process descriptors, explicit process arguments and GNOME's

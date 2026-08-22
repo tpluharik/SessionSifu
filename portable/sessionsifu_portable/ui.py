@@ -7,11 +7,12 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QTimer, Qt
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -29,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from . import VERSION
 from .controller import SessionController
+from .hotkey import RecallHotkey, SHORTCUT_LABEL
 
 INTERVALS = [30, 60, 300, 600, 900, 1800]
 RECALL_INTERVALS = [60, 300, 900, 1800]
@@ -131,6 +133,15 @@ class MainWindow(QMainWindow):
         self.recall_exclusions.editingFinished.connect(self.recall_settings_changed)
         recall_form.addRow("Excluded apps", self.recall_exclusions)
         recall_layout.addLayout(recall_form)
+
+        self.recall_shortcut = QCheckBox(
+            f"Enable global Recall search shortcut ({SHORTCUT_LABEL})"
+        )
+        self.recall_shortcut.setChecked(
+            self.settings.value("recall_shortcut_enabled", True, type=bool)
+        )
+        self.recall_shortcut.toggled.connect(self.toggle_recall_shortcut)
+        recall_layout.addWidget(self.recall_shortcut)
 
         self.recall_files = QCheckBox("Include full paths of open files")
         self.recall_files.setChecked(
@@ -254,6 +265,11 @@ class MainWindow(QMainWindow):
         self.settings.setValue("recall_excluded_apps", self.recall_exclusions.text().strip())
         self.settings.setValue("recall_include_file_paths", self.recall_files.isChecked())
 
+    def toggle_recall_shortcut(self, enabled: bool) -> None:
+        self.settings.setValue("recall_shortcut_enabled", enabled)
+        if self._recall_state_callback is not None:
+            self._recall_state_callback(self.recall_enabled.isChecked())
+
     def toggle_recall(self, enabled: bool) -> None:
         self.settings.setValue("recall_enabled", enabled)
         self.update_recall_timer()
@@ -274,6 +290,7 @@ class MainWindow(QMainWindow):
         self.recall_exclusions.setEnabled(enabled)
         self.recall_files.setEnabled(enabled)
         self.recall_capture.setEnabled(enabled)
+        self.recall_shortcut.setEnabled(enabled)
         if enabled:
             self.recall_timer.start(seconds * 1000)
         else:
@@ -297,7 +314,9 @@ class MainWindow(QMainWindow):
 
     def refresh_recall(self) -> None:
         self.recall_results.clear()
-        for entry in self.controller.search_recall(self.recall_search.text()):
+        for entry in self.controller.search_recall(
+            self.recall_search.text(), excluded_apps=self._excluded_apps()
+        ):
             apps = ", ".join(entry.get("apps", [])[:4]) or "Unknown application"
             titles = " · ".join(entry.get("titles", [])[:3])
             label = f"{entry.get('captured_at', '')} — {apps}"
@@ -351,13 +370,87 @@ class MainWindow(QMainWindow):
             event.accept()
 
 
-def run_gui(controller: SessionController | None = None) -> int:
-    app = QApplication(sys.argv)
+class RecallSearchDialog(QDialog):
+    """Small, independent search surface opened by the Recall shortcut."""
+
+    def __init__(self, controller: SessionController, exclusions_provider) -> None:
+        super().__init__()
+        self.controller = controller
+        self.exclusions_provider = exclusions_provider
+        self.setWindowTitle("Search Privacy Recall")
+        self.setWindowIcon(QIcon(str(icon_path())))
+        self.resize(680, 420)
+        layout = QVBoxLayout(self)
+        title = QLabel("<h2>Search Privacy Recall</h2>")
+        title.setTextFormat(Qt.RichText)
+        layout.addWidget(title)
+        self.notice = QLabel(
+            "Excluded applications are redacted from these results, including older entries."
+        )
+        self.notice.setWordWrap(True)
+        layout.addWidget(self.notice)
+        row = QHBoxLayout()
+        self.query = QLineEdit()
+        self.query.setPlaceholderText("Application, window title or opted-in file path")
+        self.query.returnPressed.connect(self.refresh)
+        search = QPushButton("Search")
+        search.clicked.connect(self.refresh)
+        row.addWidget(self.query, 1)
+        row.addWidget(search)
+        layout.addLayout(row)
+        self.results = QListWidget()
+        layout.addWidget(self.results, 1)
+        self.local_shortcut = QShortcut(QKeySequence(SHORTCUT_LABEL), self)
+        self.local_shortcut.activated.connect(self.focus_search)
+
+    def focus_search(self) -> None:
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.query.setFocus()
+        self.query.selectAll()
+
+    def refresh(self) -> None:
+        self.results.clear()
+        entries = self.controller.search_recall(
+            self.query.text(), excluded_apps=self.exclusions_provider()
+        )
+        for entry in entries:
+            apps = ", ".join(entry.get("apps", [])[:4]) or "Unknown application"
+            titles = " · ".join(entry.get("titles", [])[:3])
+            label = f"{entry.get('captured_at', '')} — {apps}"
+            if titles:
+                label += f" — {titles}"
+            self.results.addItem(label)
+        self.notice.setText(
+            f"{len(entries)} matching entries. Excluded applications are redacted from all results."
+            if entries
+            else "No matching non-excluded Recall entries."
+        )
+
+
+def run_gui(
+    controller: SessionController | None = None, *, open_recall_search: bool = False
+) -> int:
+    app = QApplication([sys.argv[0]])
     app.setApplicationName("SessionSifu")
     app.setApplicationVersion(VERSION)
     app.setQuitOnLastWindowClosed(False)
     controller = controller or SessionController()
     window = MainWindow(controller)
+    recall_search = RecallSearchDialog(controller, window._excluded_apps)
+
+    def show_recall_search() -> None:
+        recall_search.refresh()
+        recall_search.focus_search()
+
+    local_shortcut = QShortcut(QKeySequence(SHORTCUT_LABEL), window)
+    local_shortcut.activated.connect(
+        lambda: show_recall_search() if window.recall_enabled.isChecked() else None
+    )
+    native_hotkey = RecallHotkey()
+    native_hotkey.triggered.connect(show_recall_search)
+    native_hotkey.status_changed.connect(window.status.setText)
 
     tray = QSystemTrayIcon(QIcon(str(icon_path())), app)
     menu = QMenu()
@@ -370,19 +463,25 @@ def run_gui(controller: SessionController | None = None) -> int:
     recall = QAction("Privacy Recall capture (experimental)", menu)
     recall.setCheckable(True)
     recall.toggled.connect(window.recall_enabled.setChecked)
-    window.set_recall_state_callback(
-        lambda enabled: (
-            recall.setChecked(enabled),
-            tray.setToolTip(
-                f"SessionSifu {VERSION} · Privacy Recall active"
-                if enabled
-                else f"SessionSifu {VERSION}"
-            ),
+    search_recall = QAction(f"Search Privacy Recall… ({SHORTCUT_LABEL})", menu)
+    search_recall.triggered.connect(show_recall_search)
+
+    def recall_state_changed(enabled: bool) -> None:
+        recall.setChecked(enabled)
+        tray.setToolTip(
+            f"SessionSifu {VERSION} · Privacy Recall active"
+            if enabled
+            else f"SessionSifu {VERSION}"
         )
-    )
+        if enabled and window.recall_shortcut.isChecked():
+            native_hotkey.start()
+        else:
+            native_hotkey.stop()
+
+    window.set_recall_state_callback(recall_state_changed)
     quit_action = QAction("Turn Off SessionSifu", menu)
     quit_action.triggered.connect(app.quit)
-    menu.addActions([show, save, restore, recall])
+    menu.addActions([show, save, restore, recall, search_recall])
     menu.addSeparator()
     menu.addAction(quit_action)
     tray.setContextMenu(menu)
@@ -397,5 +496,9 @@ def run_gui(controller: SessionController | None = None) -> int:
         else None
     )
     tray.show()
-    window.show()
+    app.aboutToQuit.connect(native_hotkey.stop)
+    if open_recall_search:
+        show_recall_search()
+    else:
+        window.show()
     return app.exec()

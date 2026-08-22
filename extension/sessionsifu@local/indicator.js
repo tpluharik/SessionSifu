@@ -343,6 +343,15 @@ class AwsIndicator extends PanelMenu.Button {
             }
         });
         this.menu.addMenuItem(this._recallMenuItem);
+        this.menu.addAction('Search Privacy Recall…  Ctrl+Alt+Space', () => {
+            try {
+                Gio.Subprocess.new(
+                    [FileUtils.getManagerExecutable(), '--recall-search'],
+                    Gio.SubprocessFlags.NONE);
+            } catch (error) {
+                this._log.error(error, 'Could not open Privacy Recall search');
+            }
+        });
         this._recallChangedId = this._settings.connect(
             'changed::recall-enabled', () => this._updateRecallItem());
         this._updateRecallItem();

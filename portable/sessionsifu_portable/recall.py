@@ -132,7 +132,9 @@ class RecallStore:
                 path.unlink(missing_ok=True)
 
     @staticmethod
-    def _load_summary(path: Path) -> dict[str, object] | None:
+    def _load_summary(
+        path: Path, exclusions: tuple[str, ...] = DEFAULT_EXCLUSIONS
+    ) -> dict[str, object] | None:
         try:
             if path.stat().st_size > MAX_RECALL_BYTES:
                 return None
@@ -146,9 +148,17 @@ class RecallStore:
             titles: list[str] = []
             files: list[str] = []
             search_parts: list[str] = []
+            included_windows = 0
             for item in raw_windows[:512]:
                 if not isinstance(item, dict):
                     continue
+                identity = "\n".join(
+                    str(item.get(field) or "")
+                    for field in ("app_id", "app_name")
+                ).casefold()
+                if any(token and token in identity for token in exclusions):
+                    continue
+                included_windows += 1
                 app = str(item.get("app_name") or item.get("app_id") or "")[:512]
                 title = str(item.get("title") or "")[:4096]
                 paths = [str(value)[:4096] for value in list(item.get("open_files") or [])[:32]]
@@ -160,6 +170,8 @@ class RecallStore:
                     if value and value not in files:
                         files.append(value)
                 search_parts.extend((app, title, *paths))
+            if not included_windows:
+                return None
             return {
                 "name": path.name,
                 "captured_at": str(payload.get("captured_at") or "")[:128],
@@ -171,11 +183,17 @@ class RecallStore:
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             return None
 
-    def search(self, query: str = "", limit: int = 100) -> list[dict[str, object]]:
+    def search(
+        self,
+        query: str = "",
+        limit: int = 100,
+        excluded_apps: list[str] | tuple[str, ...] = (),
+    ) -> list[dict[str, object]]:
         needle = query.strip().casefold()[:256]
+        exclusions = self._exclusions(excluded_apps)
         results = []
         for path in self._paths():
-            summary = self._load_summary(path)
+            summary = self._load_summary(path, exclusions)
             if summary is None or (needle and needle not in summary.pop("search_text")):
                 continue
             summary.pop("search_text", None)

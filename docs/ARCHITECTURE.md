@@ -50,6 +50,13 @@ applications are discarded. Files are limited to 2 MiB, queries to 100 results,
 storage to 500 entries and retention to 30 days at the schema level. Recall
 files use mode 0600 below a mode-0700 directory on POSIX systems.
 
+Application exclusions are also re-evaluated while reading every entry. This
+query-time filter removes the matching application's identity, title and file
+paths before search text or result rows are constructed, so editing exclusions
+redacts existing history immediately. The GNOME Shell keybinding is registered
+only while Recall and its shortcut option are enabled; it launches the separate
+GTK Recall search application without reading arbitrary keyboard input.
+
 The extension exports `org.gnome.Shell.Extensions.SessionSifu.Control` on the
 session D-Bus. The interface supports health checks, named-session operations,
 automatic history operations, previous-session restoration and opening the
@@ -86,7 +93,17 @@ in widget code.
 `recall.py` provides the portable activity timeline. It stores a reduced JSON
 shape rather than restorable process commands, writes through an atomic
 same-directory replacement, rejects symbolic-link storage and applies bounded
-retention. The Qt timer starts only while its persisted feature flag is true.
+retention. It applies the current exclusion list during capture and again before
+constructing search summaries. The Qt timer starts only while its persisted
+feature flag is true.
+
+`hotkey.py` exposes the same exact-key Recall popup shortcut on portable
+targets. Windows uses `RegisterHotKey`; macOS uses Cocoa's modifier/key event
+monitor; KDE/Wayland and other supporting Linux compositors use the user-mediated
+XDG GlobalShortcuts portal. The helper reacts only to `Ctrl+Alt+Space`, does not
+record key text and is stopped whenever Recall or its shortcut option is off.
+The tray action and application-local shortcut remain available if a compositor
+does not implement the portal or permission is declined.
 
 The portable model intentionally records only observable state. Process files
 are restricted to readable regular files below the user's home directory,
@@ -131,7 +148,7 @@ Session JSON can contain an `open_files` array on each saved window object. This
 is best-effort metadata rather than a promise that every application's internal
 document state can be observed.
 
-Privacy Recall data is separate from named/restorable sessions. Version 2.1
+Privacy Recall data is separate from named/restorable sessions. Version 2.2
 does not take screenshots or perform OCR. This prevents a high-risk visual
 archive from being created before OS credential-store encryption, reliable
 private-context exclusions and cross-platform security review are available.

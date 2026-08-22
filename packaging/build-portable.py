@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PORTABLE = ROOT / "portable"
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 
 
 def parse_args() -> argparse.Namespace:

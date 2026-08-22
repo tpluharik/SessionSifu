@@ -1,5 +1,9 @@
 'use strict';
 
+import Gio from 'gi://Gio';
+import Meta from 'gi://Meta';
+import Shell from 'gi://Shell';
+
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import * as OpenWindowsTracker from './openWindowsTracker.js';
@@ -38,8 +42,14 @@ export default class SessionSifuExtension extends Extension {
         this._showIndicatorChangedId = this._settings.connect(
             'changed::show-indicator', () => this.showOrHideIndicator());
         this._recallIndicatorChangedId = this._settings.connect(
-            'changed::recall-enabled', () => this.showOrHideIndicator());
+            'changed::recall-enabled', () => {
+                this.showOrHideIndicator();
+                this._syncRecallShortcut();
+            });
+        this._recallShortcutChangedId = this._settings.connect(
+            'changed::recall-search-shortcut-enabled', () => this._syncRecallShortcut());
         this.showOrHideIndicator();
+        this._syncRecallShortcut();
 
         _autostartServiceProvider = new Autostart.AutostartServiceProvider();
 
@@ -76,7 +86,46 @@ export default class SessionSifuExtension extends Extension {
         }
     }
 
+    _syncRecallShortcut() {
+        this._removeRecallShortcut();
+        if (!this._settings.get_boolean('recall-enabled') ||
+            !this._settings.get_boolean('recall-search-shortcut-enabled'))
+            return;
+        try {
+            Main.wm.addKeybinding(
+                'recall-search-shortcut',
+                this._settings,
+                Meta.KeyBindingFlags.NONE,
+                Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
+                () => {
+                    try {
+                        Gio.Subprocess.new(
+                            [FileUtils.getManagerExecutable(), '--recall-search'],
+                            Gio.SubprocessFlags.NONE);
+                    } catch (error) {
+                        Log.Log.getDefault().error(error, 'Could not open Privacy Recall search');
+                    }
+                });
+            this._recallShortcutRegistered = true;
+        } catch (error) {
+            Log.Log.getDefault().error(error, 'Could not register Privacy Recall shortcut');
+        }
+    }
+
+    _removeRecallShortcut() {
+        if (!this._recallShortcutRegistered)
+            return;
+        try {
+            Main.wm.removeKeybinding('recall-search-shortcut');
+        } catch (error) {
+            Log.Log.getDefault().error(error, 'Could not remove Privacy Recall shortcut');
+        }
+        this._recallShortcutRegistered = false;
+    }
+
     disable() {
+
+        this._removeRecallShortcut();
 
         this.hideIndicator();
 
@@ -112,6 +161,10 @@ export default class SessionSifuExtension extends Extension {
             if (this._recallIndicatorChangedId) {
                 this._settings.disconnect(this._recallIndicatorChangedId);
                 this._recallIndicatorChangedId = 0;
+            }
+            if (this._recallShortcutChangedId) {
+                this._settings.disconnect(this._recallShortcutChangedId);
+                this._recallShortcutChangedId = 0;
             }
             this._settings = null;
         }

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sessionsifu-portable"
-version = "2.1.0"
+version = "2.2.0"
 description = "Cross-platform desktop session snapshots for Windows, macOS, KDE and GNOME"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,7 +13,11 @@ authors = [{name = "SessionSifu contributors"}]
 dependencies = ["psutil>=5.9"]
 
 [project.optional-dependencies]
-gui = ["PySide6>=6.8"]
+gui = [
+  "PySide6>=6.8",
+  "dbus-next>=0.2.3; sys_platform == 'linux'",
+  "pyobjc-framework-Cocoa>=11; sys_platform == 'darwin'",
+]
 build = ["PyInstaller>=6.12", "Pillow>=11"]
 
 [project.scripts]

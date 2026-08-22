@@ -116,7 +116,7 @@ const AutostartService = GObject.registerClass(
         }
 
         Ping() {
-            return 'SessionSifu 2.1.0 is ready';
+            return 'SessionSifu 2.2.0 is ready';
         }
 
         _validSessionName(sessionName) {
@@ -209,9 +209,8 @@ const AutostartService = GObject.registerClass(
         }
 
         ListRecall(query) {
-            if (!this._settings.get_boolean('recall-enabled'))
-                return '[]';
-            return JSON.stringify(RecallRecorder.listRecall(query));
+            return JSON.stringify(RecallRecorder.listRecall(
+                query, this._settings.get_strv('recall-excluded-apps')));
         }
 
         CaptureRecallNow() {

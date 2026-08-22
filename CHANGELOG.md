@@ -2,6 +2,20 @@
 
 All notable SessionSifu changes are documented here.
 
+## 2.2.0
+
+- Applied application exclusions during every Recall query as well as capture,
+  so newly excluded applications, their window titles and opted-in file paths
+  are immediately redacted from existing history search results.
+- Added a dedicated, keyboard-oriented Privacy Recall search popup to GNOME,
+  KDE, Windows, macOS and portable Linux editions.
+- Added the opt-in `Ctrl+Alt+Space` global Recall search shortcut while Recall
+  is active: GNOME uses a Shell keybinding, Windows uses `RegisterHotKey`, macOS
+  uses an exact modifier/key event monitor and Linux requests compositor access
+  through the XDG GlobalShortcuts portal.
+- Added tray/top-bar search actions and an application-local shortcut fallback.
+- Kept stored Recall history searchable while new capture is paused.
+
 ## 2.1.0
 
 - Added experimental Privacy Recall as a pure feature flag that is disabled by

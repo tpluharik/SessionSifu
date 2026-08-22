@@ -1,7 +1,7 @@
 {
-  "version": "2.1.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.1.0_all.deb",
-  "sha256": "a4a385b10f47a24dd65100c32f8b940096090295d834f851a00196600f8abc60",
-  "size": 238690,
-  "notes": "Adds experimental, disabled-by-default Privacy Recall with sanitized local metadata, exclusions, retention, search and deletion controls."
+  "version": "2.2.0",
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.2.0_all.deb",
+  "sha256": "54ce48ac1ddb692bf6734dd22d14a6b1183abf56c52e11bb724a24586330448c",
+  "size": 241788,
+  "notes": "Adds search-time application redaction and a dedicated Ctrl+Alt+Space Privacy Recall search popup across GNOME, KDE, Windows, macOS and portable Linux."
 }

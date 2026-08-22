@@ -62,8 +62,12 @@ class SessionController:
             include_file_paths=include_file_paths,
         )
 
-    def search_recall(self, query: str = "") -> list[dict[str, object]]:
-        return self.recall_store.search(query)
+    def search_recall(
+        self,
+        query: str = "",
+        excluded_apps: list[str] | tuple[str, ...] = (),
+    ) -> list[dict[str, object]]:
+        return self.recall_store.search(query, excluded_apps=excluded_apps)
 
     def clear_recall(self) -> int:
         return self.recall_store.clear()

@@ -27,7 +27,7 @@ from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "2.1.0"
+CURRENT_VERSION = "2.2.0"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -471,6 +471,81 @@ def enable_extension() -> tuple[bool, str]:
     return True, "Extension installed and enabled." if installed else "Extension enabled."
 
 
+class RecallSearchWindow(Adw.ApplicationWindow):
+    """Compact, keyboard-oriented search surface for Privacy Recall."""
+
+    def __init__(self, app: Adw.Application):
+        super().__init__(application=app, title="Search Privacy Recall")
+        self.set_default_size(680, 460)
+        self._settings = settings()
+        toolbar = Adw.ToolbarView()
+        header = Adw.HeaderBar()
+        header.set_title_widget(Adw.WindowTitle(
+            title="Search Privacy Recall", subtitle="Local metadata timeline"
+        ))
+        toolbar.add_top_bar(header)
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        content.set_margin_top(18)
+        content.set_margin_bottom(18)
+        content.set_margin_start(18)
+        content.set_margin_end(18)
+        self.notice = Gtk.Label(
+            label="Excluded applications are redacted from results, including older entries.",
+            xalign=0,
+            wrap=True,
+        )
+        content.append(self.notice)
+        search_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.query = Gtk.SearchEntry(hexpand=True, placeholder_text="Application, window title or opted-in file path")
+        self.query.connect("activate", self._search)
+        search_row.append(self.query)
+        search_button = Gtk.Button(label="Search")
+        search_button.add_css_class("suggested-action")
+        search_button.connect("clicked", self._search)
+        search_row.append(search_button)
+        content.append(search_row)
+        scroller = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
+        self.results = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        self.results.add_css_class("boxed-list")
+        scroller.set_child(self.results)
+        content.append(scroller)
+        toolbar.set_content(content)
+        self.set_content(toolbar)
+        self._rows: list[Gtk.Widget] = []
+        self._search()
+
+    def _search(self, *_args) -> None:
+        for row in self._rows:
+            self.results.remove(row)
+        self._rows.clear()
+        try:
+            entries = json.loads(call(
+                "ListRecall", GLib.Variant("(s)", (self.query.get_text(),))
+            ))
+        except (GLib.Error, json.JSONDecodeError):
+            entries = []
+        for item in entries:
+            modified = datetime.fromtimestamp(item.get("modified", 0)).strftime("%Y-%m-%d %H:%M:%S")
+            apps = ", ".join(item.get("apps", [])[:4]) or "Unknown application"
+            titles = " · ".join(item.get("titles", [])[:3])
+            row = Adw.ActionRow(
+                title=f"{modified} — {apps}",
+                subtitle=titles or "No window title was exposed",
+            )
+            self.results.append(row)
+            self._rows.append(row)
+        self.notice.set_label(
+            f"{len(entries)} matching entries. Excluded applications are redacted from all results."
+            if entries
+            else "No matching non-excluded Recall entries. Capture may be paused."
+        )
+
+    def present_search(self) -> None:
+        self.present()
+        self.query.grab_focus()
+        self.query.select_region(0, -1)
+
+
 class ManagerWindow(Adw.ApplicationWindow):
     def __init__(self, app: Adw.Application):
         super().__init__(application=app, title="SessionSifu")
@@ -663,6 +738,16 @@ class ManagerWindow(Adw.ApplicationWindow):
         exclusions_row.add_suffix(self.recall_exclusions_entry)
         recall_group.add(exclusions_row)
 
+        self.recall_shortcut_switch = Adw.SwitchRow(
+            title="Global Recall search shortcut",
+            subtitle="Ctrl+Alt+Space opens a separate search popup while Recall is active",
+        )
+        self.recall_shortcut_switch.set_active(
+            self._settings.get_boolean("recall-search-shortcut-enabled")
+        )
+        self.recall_shortcut_switch.connect("notify::active", self._toggle_recall_shortcut)
+        recall_group.add(self.recall_shortcut_switch)
+
         capture_recall_row = Adw.ActionRow(
             title="Capture current activity metadata",
             subtitle="No screenshot, clipboard, keystroke, shell history or network data is recorded",
@@ -841,6 +926,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         self.recall_files_switch.set_sensitive(enabled)
         self.recall_exclusions_entry.set_sensitive(enabled)
         self.recall_capture_button.set_sensitive(enabled)
+        self.recall_shortcut_switch.set_sensitive(enabled)
         self.indicator_switch.set_sensitive(not enabled)
 
     def _recall_interval_changed(self, row, _param) -> None:
@@ -858,9 +944,14 @@ class ManagerWindow(Adw.ApplicationWindow):
     def _toggle_recall_files(self, row, _param) -> None:
         self._settings.set_boolean("recall-include-file-paths", row.get_active())
 
+    def _toggle_recall_shortcut(self, row, _param) -> None:
+        self._settings.set_boolean(
+            "recall-search-shortcut-enabled", row.get_active()
+        )
+
     def _recall_exclusions_changed(self, entry) -> None:
         values = [value.strip() for value in entry.get_text().split(",") if value.strip()]
-        if "SessionSifu" not in values:
+        if not any(value.casefold() == "sessionsifu" for value in values):
             values.insert(0, "SessionSifu")
         self._settings.set_strv("recall-excluded-apps", values)
 
@@ -875,8 +966,6 @@ class ManagerWindow(Adw.ApplicationWindow):
         self.refresh()
 
     def _recall_rows(self) -> list[dict]:
-        if not self._settings.get_boolean("recall-enabled"):
-            return []
         try:
             return json.loads(call(
                 "ListRecall", GLib.Variant("(s)", (self.recall_search_entry.get_text(),))
@@ -1076,15 +1165,15 @@ class ManagerWindow(Adw.ApplicationWindow):
         recall_entries = self._recall_rows() if live and integration_current else []
         if not self.recall_switch.get_active():
             recall_row = Adw.ActionRow(
-                title="Privacy Recall is off",
-                subtitle="Enable the feature explicitly to begin local metadata capture.",
+                title="Privacy Recall capture is paused",
+                subtitle="Existing history remains searchable and exclusions are still applied.",
             )
             self.recall_results_group.add(recall_row)
             self._recall_rows_widgets.append(recall_row)
-        elif not recall_entries:
+        if not recall_entries:
             recall_row = Adw.ActionRow(
                 title="No matching Recall entries",
-                subtitle="A first entry is created after the selected interval or with Capture Now.",
+                subtitle="No stored non-excluded activity matches this search.",
             )
             self.recall_results_group.add(recall_row)
             self._recall_rows_widgets.append(recall_row)
@@ -1125,12 +1214,19 @@ class ManagerWindow(Adw.ApplicationWindow):
 
 
 class SessionSifuApplication(Adw.Application):
-    def __init__(self):
-        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
+    def __init__(self, recall_search: bool = False):
+        self.recall_search = recall_search
+        application_id = f"{APP_ID}.RecallSearch" if recall_search else APP_ID
+        super().__init__(application_id=application_id, flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
 
     def do_activate(self):
-        window = self.get_active_window() or ManagerWindow(self)
-        window.present()
+        window = self.get_active_window()
+        if window is None:
+            window = RecallSearchWindow(self) if self.recall_search else ManagerWindow(self)
+        if self.recall_search:
+            window.present_search()
+        else:
+            window.present()
 
 
 def autostart() -> int:
@@ -1152,6 +1248,7 @@ def main() -> int:
     parser.add_argument("--save", metavar="NAME")
     parser.add_argument("--restore", metavar="NAME")
     parser.add_argument("--list", action="store_true")
+    parser.add_argument("--recall-search", action="store_true")
     args = parser.parse_args()
 
     if args.autostart:
@@ -1167,7 +1264,7 @@ def main() -> int:
             print(item["name"])
         return 0
 
-    app = SessionSifuApplication()
+    app = SessionSifuApplication(recall_search=args.recall_search)
     return app.run([sys.argv[0]])
 
 

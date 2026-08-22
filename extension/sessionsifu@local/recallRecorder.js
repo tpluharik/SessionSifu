@@ -59,7 +59,13 @@ function _entryFiles() {
     return entries;
 }
 
-function _summary(entry) {
+function _exclusions(values = []) {
+    return [...new Set(['sessionsifu', ...values]
+        .map(value => String(value).trim().toLowerCase().slice(0, 256))
+        .filter(value => value))];
+}
+
+function _summary(entry, excludedApps = []) {
     if (entry.size <= 0 || entry.size > MAX_RECALL_BYTES)
         return null;
     try {
@@ -73,7 +79,15 @@ function _summary(entry) {
         const apps = [];
         const titles = [];
         const files = [];
+        let includedWindows = 0;
+        const exclusions = _exclusions(excludedApps);
         for (const window of payload.x_session_config_objects.slice(0, 512)) {
+            const identity = [window.app_name, window.desktop_file_id, window.wm_class]
+                .map(value => String(value ?? '').toLowerCase())
+                .join('\n');
+            if (exclusions.some(value => identity.includes(value)))
+                continue;
+            includedWindows++;
             const app = String(window.app_name ?? window.desktop_file_id ?? '').slice(0, 512);
             const title = String(window.window_title ?? '').slice(0, 4096);
             if (app && !apps.includes(app))
@@ -86,6 +100,8 @@ function _summary(entry) {
                     files.push(value);
             }
         }
+        if (!includedWindows)
+            return null;
         return {
             name: entry.name,
             modified: entry.modified,
@@ -100,11 +116,11 @@ function _summary(entry) {
     }
 }
 
-export function listRecall(query = '') {
+export function listRecall(query = '', excludedApps = []) {
     const needle = String(query).trim().toLowerCase().slice(0, 256);
     const results = [];
     for (const entry of _entryFiles()) {
-        const summary = _summary(entry);
+        const summary = _summary(entry, excludedApps);
         if (!summary)
             continue;
         const searchable = [...summary.apps, ...summary.titles, ...summary.files]

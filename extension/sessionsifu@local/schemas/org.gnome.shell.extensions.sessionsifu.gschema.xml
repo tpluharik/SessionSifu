@@ -188,7 +188,17 @@
     <key name="recall-excluded-apps" type="as">
       <default>['SessionSifu']</default>
       <summary>Applications excluded from Privacy Recall</summary>
-      <description>Case-insensitive application identifiers or name fragments.</description>
+      <description>Case-insensitive application identifiers or name fragments, redacted during capture and search.</description>
+    </key>
+
+    <key name="recall-search-shortcut-enabled" type="b">
+      <default>true</default>
+      <summary>Enable the Privacy Recall search shortcut while Recall is active</summary>
+    </key>
+
+    <key name="recall-search-shortcut" type="as">
+      <default>['&lt;Control&gt;&lt;Alt&gt;space']</default>
+      <summary>Keyboard shortcut that opens the dedicated Privacy Recall search popup</summary>
     </key>
 
     <key name="debugging-mode" type="b">

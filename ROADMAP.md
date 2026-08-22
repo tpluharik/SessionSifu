@@ -84,11 +84,13 @@ encryption and a clear preview of exactly what will leave the device. Security
 review, storage quotas, crash-safe deletion and automated privacy regression
 tests are release requirements rather than follow-up work.
 
-SessionSifu 2.1 implements the first, metadata-only phase behind a feature flag
+SessionSifu 2.2 implements the first, metadata-only phase behind a feature flag
 that is off by default. It provides exclusions, bounded retention, local search,
-deletion and an active/pause indicator without screenshots, OCR or semantic
-indexing. Those higher-risk visual features remain roadmap work until the
-encryption and security requirements above are satisfied on every platform.
+deletion, a dedicated keyboard search popup and an active/pause indicator
+without screenshots, OCR or semantic indexing. Exclusions redact matching apps
+from existing search results as well as new captures. Those higher-risk visual
+features remain roadmap work until the encryption and security requirements
+above are satisfied on every platform.
 
 ## Contributing to the roadmap
 

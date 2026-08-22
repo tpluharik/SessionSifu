@@ -69,7 +69,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "2.1.0")
+        self.assertEqual(VERSION, "2.2.0")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -152,6 +152,7 @@ class PortableTests(unittest.TestCase):
             self.assertNotIn("open_files", payload["windows"][0])
             self.assertEqual(len(store.search("Notes")), 1)
             self.assertEqual(store.search("Must not be captured"), [])
+            self.assertEqual(store.search("Notes", excluded_apps=["Editor"]), [])
             if os.name != "nt":
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
                 self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
@@ -181,6 +182,23 @@ class PortableTests(unittest.TestCase):
 
             controller.save_recall(include_file_paths=True)
             self.assertTrue(adapter.last_include_files)
+
+    def test_privacy_recall_search_redacts_apps_from_existing_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RecallStore(Path(directory))
+            session = FakeAdapter().capture()
+            session.windows.append(
+                WindowSnapshot(
+                    app_id="org.example.Browser",
+                    app_name="Browser",
+                    title="Public research",
+                )
+            )
+            store.save(session)
+            result = store.search("", excluded_apps=["Editor"])
+            self.assertEqual(result[0]["apps"], ["Browser"])
+            self.assertEqual(result[0]["titles"], ["Public research"])
+            self.assertEqual(store.search("Notes", excluded_apps=["Editor"]), [])
 
 
 if __name__ == "__main__":

@@ -21,6 +21,9 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--history", action="store_true", help="list rolling snapshots")
     result.add_argument("--restore-file", type=Path, help="restore a SessionSifu JSON file")
     result.add_argument("--diagnostics", action="store_true", help="print adapter capabilities")
+    result.add_argument(
+        "--recall-search", action="store_true", help="open the dedicated Privacy Recall search popup"
+    )
     result.add_argument("--no-gui", action="store_true", help="do not launch the desktop interface")
     return result
 
@@ -59,7 +62,7 @@ def main() -> int:
         from .ui import run_gui
     except ImportError as error:
         raise SystemExit("The GUI requires PySide6. Install sessionsifu-portable[gui].") from error
-    return run_gui(controller)
+    return run_gui(controller, open_recall_search=args.recall_search)
 
 
 if __name__ == "__main__":

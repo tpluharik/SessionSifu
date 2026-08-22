@@ -5,6 +5,6 @@
   "shell-version": ["50"],
   "settings-schema": "org.gnome.shell.extensions.sessionsifu",
   "original-author": "nlpsuge and Another Window Session Manager contributors",
-  "version": 5,
-  "version-name": "2.1.0"
+  "version": 6,
+  "version-name": "2.2.0"
 }
