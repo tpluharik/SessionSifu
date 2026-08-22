@@ -9,6 +9,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as FileUtils from './utils/fileUtils.js';
 import * as Log from './utils/log.js';
 import * as SaveSession from './saveSession.js';
+import {recallActivity} from './recallActivity.js';
 
 
 export const RECALL_PATTERN = /^recall-\d{8}-\d{6}-\d{3}\.json$/;
@@ -434,6 +435,7 @@ export const RecallRecorder = class {
         if (this._saving || !this._settings.get_boolean('recall-enabled'))
             return false;
         this._saving = true;
+        recallActivity.begin();
         const startedUs = GLib.get_monotonic_time();
         try {
             _ensurePrivateDirectory();
@@ -481,11 +483,13 @@ export const RecallRecorder = class {
             return false;
         } finally {
             this._saving = false;
+            recallActivity.end();
         }
     }
 
     async _captureScreenshotForEntry(name, screenshotGeneration, exclusions, displays) {
         this._screenshotSaving = true;
+        recallActivity.begin();
         try {
             if (!displays.length)
                 throw new Error('No active displays are available for Recall preview capture');
@@ -506,6 +510,7 @@ export const RecallRecorder = class {
             this._log.error(error, 'Could not capture Recall screenshot preview');
         } finally {
             this._screenshotSaving = false;
+            recallActivity.end();
         }
     }
 

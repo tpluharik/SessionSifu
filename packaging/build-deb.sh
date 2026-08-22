@@ -5,7 +5,7 @@ project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 extension_dir="$project_dir/extension/sessionsifu@local"
 dist_dir="$project_dir/dist"
 updates_dir="$project_dir/updates"
-version="2.5.0"
+version="2.5.1"
 package="$dist_dir/sessionsifu_${version}_all.deb"
 update_package="$updates_dir/sessionsifu_${version}_all.deb"
 stage=$(mktemp -d /tmp/sessionsifu-package.XXXXXX)
@@ -26,6 +26,7 @@ gjs -m "$project_dir/tests/open-files-smoke.js"
 gjs -m "$project_dir/tests/runtime-safety-smoke.js"
 gjs -m "$project_dir/tests/window-safety-smoke.js"
 gjs -m "$project_dir/tests/security-smoke.js"
+gjs -m "$project_dir/tests/recall-activity-smoke.js"
 python3 "$project_dir/tests/test_static.py" "$project_dir"
 python3 "$project_dir/tests/test_portable.py"
 

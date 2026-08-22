@@ -25,6 +25,7 @@ import {PrefsUtils} from './utils/prefsUtils.js';
 import * as Log from './utils/log.js';
 import * as Signal from './utils/signal.js';
 import {mayRestoreApplications} from './runtimeSafety.js';
+import {recallActivity} from './recallActivity.js';
 
 
 export const NEW_WINDOW_SETTLE_DELAY_MS = 750;
@@ -35,6 +36,8 @@ class AwsIndicator extends PanelMenu.Button {
 
     _init() {
         super._init(0.0, "SessionSifu");
+
+        this._isDestroyed = false;
 
         this._windowTracker = Shell.WindowTracker.get_default();
 
@@ -53,11 +56,23 @@ class AwsIndicator extends PanelMenu.Button {
         // TODO backup path
 
         // Use the SessionSifu yin-yang mark so the panel identity matches the app.
-        let icon = new St.Icon({
+        this._iconBox = new St.BoxLayout({
+            style_class: 'panel-status-menu-box',
+        });
+        this._mainIcon = new St.Icon({
             gicon: IconFinder.find('sessionsifu-symbolic.svg'),
             style_class: 'popup-menu-icon'
         });
-        this.add_child(icon);
+        this._savingIcon = new St.Icon({
+            icon_name: 'media-record-symbolic',
+            style_class: 'popup-menu-icon',
+            visible: recallActivity.saving,
+        });
+        this._iconBox.add_child(this._mainIcon);
+        this._iconBox.add_child(this._savingIcon);
+        this.add_child(this._iconBox);
+        this._recallActivityChangedId = recallActivity.connect(
+            'changed', (_activity, saving) => this._updateRecallActivity(saving));
 
         this._createMenu();
 
@@ -78,7 +93,6 @@ class AwsIndicator extends PanelMenu.Button {
         this._display = global.display;
         this._displayId = this._display.connect('window-created', this._windowCreated.bind(this));
 
-        this._isDestroyed = false;
         this._closingWindows = new WeakSet();
         this._restoringWindows = new WeakMap();
         this._restoredWindows = new WeakSet();
@@ -380,9 +394,21 @@ class AwsIndicator extends PanelMenu.Button {
         if (!this._recallMenuItem)
             return;
         this._recallMenuItem.label.set_text(
-            this._settings.get_boolean('recall-enabled')
+            recallActivity.saving
+                ? 'Privacy Recall: Saving…'
+                : this._settings.get_boolean('recall-enabled')
                 ? 'Privacy Recall: Active — Pause'
                 : 'Privacy Recall: Off — Open settings');
+    }
+
+    _updateRecallActivity(saving) {
+        if (this._isDestroyed)
+            return;
+        this._savingIcon.visible = saving;
+        this.accessible_name = saving
+            ? 'SessionSifu — saving Privacy Recall'
+            : 'SessionSifu';
+        this._updateRecallItem();
     }
 
     _addScrollableSessionsMenuSection() {
@@ -644,6 +670,10 @@ class AwsIndicator extends PanelMenu.Button {
         if (this._recallChangedId) {
             this._settings.disconnect(this._recallChangedId);
             this._recallChangedId = 0;
+        }
+        if (this._recallActivityChangedId) {
+            recallActivity.disconnect(this._recallActivityChangedId);
+            this._recallActivityChangedId = 0;
         }
 
         if (this._windowSettleWaits) {

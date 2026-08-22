@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "Security release: shell-free restore, signed updates, private storage, Recall race protection and bounded matching."
+  "notes": "Privacy Recall now shows a live recording badge on the GNOME top bar and portable tray while a snapshot is being saved."
 }

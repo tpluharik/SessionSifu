@@ -2,6 +2,17 @@
 
 All notable SessionSifu changes are documented here.
 
+## 2.5.1
+
+- Added a live recording badge to the GNOME top-bar icon while Privacy Recall
+  metadata or screenshot previews are being saved.
+- Added matching saving feedback to the portable Windows, macOS, KDE and Linux
+  tray icon, tooltip and Recall menu action.
+- Made capture activity reference-counted and failure-safe so overlapping
+  metadata/preview work cannot flicker or leave the indicator stuck on.
+- Added GNOME activity-state and cross-platform tray integration regression
+  checks to the release build.
+
 ## 2.5.0
 
 - Removed shell interpretation from GNOME fallback restore. Saved applications

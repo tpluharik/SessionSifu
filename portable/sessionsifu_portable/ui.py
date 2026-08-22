@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QTimer, Qt
-from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -43,6 +43,20 @@ def icon_path() -> Path:
     return base / "app" / "org.gnome.SessionSifu.svg"
 
 
+def recall_saving_icon() -> QIcon:
+    """Add a high-contrast recording badge without another bundled asset."""
+    pixmap = QIcon(str(icon_path())).pixmap(64, 64)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor("#e85d75"))
+    painter.drawEllipse(40, 2, 22, 22)
+    painter.setBrush(QColor("#ffffff"))
+    painter.drawEllipse(47, 9, 8, 8)
+    painter.end()
+    return QIcon(pixmap)
+
+
 def qt_shortcut(shortcut: str) -> QKeySequence:
     """Translate the portable Super spelling to Qt's Meta spelling."""
 
@@ -58,6 +72,7 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(QIcon(str(icon_path())))
         self.resize(760, 560)
         self._recall_state_callback = None
+        self._recall_saving = False
 
         root = QWidget()
         layout = QVBoxLayout(root)
@@ -313,6 +328,7 @@ class MainWindow(QMainWindow):
                 self.recall_enabled.isChecked(),
                 self.recall_shortcut.isChecked(),
                 self.shortcut_value(),
+                self._recall_saving,
             )
 
     def toggle_recall(self, enabled: bool) -> None:
@@ -347,16 +363,26 @@ class MainWindow(QMainWindow):
             if not silent:
                 self.status.setText("Enable Privacy Recall before capturing activity metadata.")
             return
+        if self._recall_saving:
+            return
         self.recall_settings_changed()
-        self._perform(
-            lambda: self.controller.save_recall(
-                retention_hours=int(self.recall_retention.currentData()),
-                excluded_apps=self._excluded_apps(),
-                include_file_paths=self.recall_files.isChecked(),
-            ),
-            "Saved a private local Recall entry.",
-            silent=silent,
-        )
+        self._recall_saving = True
+        self._notify_recall_state()
+        QApplication.processEvents()
+        try:
+            self._perform(
+                lambda: self.controller.save_recall(
+                    retention_hours=int(self.recall_retention.currentData()),
+                    excluded_apps=self._excluded_apps(),
+                    include_file_paths=self.recall_files.isChecked(),
+                ),
+                "Saved a private local Recall entry.",
+                silent=silent,
+            )
+        finally:
+            self._recall_saving = False
+            self._notify_recall_state()
+            QApplication.processEvents()
 
     def refresh_recall(self) -> None:
         self.recall_results.clear()
@@ -499,7 +525,9 @@ def run_gui(
     native_hotkey.triggered.connect(show_recall_search)
     native_hotkey.status_changed.connect(window.status.setText)
 
-    tray = QSystemTrayIcon(QIcon(str(icon_path())), app)
+    normal_tray_icon = QIcon(str(icon_path()))
+    saving_tray_icon = recall_saving_icon()
+    tray = QSystemTrayIcon(normal_tray_icon, app)
     menu = QMenu()
     show = QAction("Open SessionSifu", menu)
     show.triggered.connect(lambda: (window.show(), window.raise_(), window.activateWindow()))
@@ -516,11 +544,19 @@ def run_gui(
     search_recall.triggered.connect(show_recall_search)
 
     def recall_state_changed(
-        capture_enabled: bool, shortcut_enabled: bool, shortcut: str
+        capture_enabled: bool, shortcut_enabled: bool, shortcut: str, saving: bool
     ) -> None:
         recall.setChecked(capture_enabled)
+        recall.setText(
+            "Privacy Recall: saving…"
+            if saving
+            else "Privacy Recall capture (experimental)"
+        )
+        tray.setIcon(saving_tray_icon if saving else normal_tray_icon)
         tray.setToolTip(
-            f"SessionSifu {VERSION} · Privacy Recall active"
+            f"SessionSifu {VERSION} · Saving Privacy Recall…"
+            if saving
+            else f"SessionSifu {VERSION} · Privacy Recall active"
             if capture_enabled
             else f"SessionSifu {VERSION}"
         )
