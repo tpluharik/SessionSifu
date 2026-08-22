@@ -84,7 +84,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: SessionSifu-GNOME-Debian
-          path: dist/sessionsifu_2.0.0_all.deb
+          path: dist/sessionsifu_2.1.0_all.deb
           if-no-files-found: error
 
   release:

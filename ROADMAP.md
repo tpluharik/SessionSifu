@@ -1,7 +1,7 @@
 # SessionSifu roadmap
 
 SessionSifu 2.0 establishes a shared session format, portable desktop manager,
-platform adapters and release automation. The following ten improvements are
+platform adapters and release automation. The following eleven improvements are
 ordered by safety and user impact rather than promised release date.
 
 ## 1. Signed and notarized release artifacts
@@ -63,6 +63,32 @@ permission audits plus automated long-running capture/restore stress tests.
 Support portable encrypted session archives for backup or transfer between the
 same user's devices. Sync must remain off by default, end-to-end encrypted and
 independent of any mandatory hosted SessionSifu service.
+
+## 11. Privacy-first local activity recall
+
+Explore an optional, Recall-style activity timeline that helps users find and
+resume earlier work through periodic desktop snapshots, on-device OCR and local
+semantic search. The feature must be disabled by default and show a persistent,
+unambiguous indicator whenever capture is active.
+
+Design it around data minimization and a published threat model: let users
+exclude applications, windows, websites, displays and private/incognito
+contexts; detect and redact password fields and other sensitive content where
+platform APIs permit; support an immediate pause control; and provide short,
+configurable retention with deletion by time range, application or website.
+Snapshots, extracted text and indexes must be encrypted at rest with keys held
+in the operating-system credential store. Processing stays on the device by
+default, with no advertising use, model-training upload or hidden telemetry.
+Any export or synchronization requires a separate explicit opt-in, end-to-end
+encryption and a clear preview of exactly what will leave the device. Security
+review, storage quotas, crash-safe deletion and automated privacy regression
+tests are release requirements rather than follow-up work.
+
+SessionSifu 2.1 implements the first, metadata-only phase behind a feature flag
+that is off by default. It provides exclusions, bounded retention, local search,
+deletion and an active/pause indicator without screenshots, OCR or semantic
+indexing. Those higher-risk visual features remain roadmap work until the
+encryption and security requirements above are satisfied on every platform.
 
 ## Contributing to the roadmap
 

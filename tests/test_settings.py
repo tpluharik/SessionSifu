@@ -26,6 +26,11 @@ assert settings.get_boolean("show-indicator") is True
 assert settings.get_int("autostart-delay") >= 0
 assert settings.get_boolean("continuous-save-enabled") is True
 assert settings.get_int("continuous-save-interval") == 300
+assert settings.get_boolean("recall-enabled") is False
+assert settings.get_int("recall-interval") == 300
+assert settings.get_int("recall-retention-hours") == 24
+assert settings.get_boolean("recall-include-file-paths") is False
+assert "SessionSifu" in settings.get_strv("recall-excluded-apps")
 settings.set_int("continuous-save-interval", 30)
 assert settings.get_int("continuous-save-interval") == 30
 settings.set_int("continuous-save-interval", 300)
@@ -33,15 +38,15 @@ settings.set_int("continuous-save-interval", 300)
 manifest = module.parse_update_manifest(
     json.dumps(
         {
-            "version": "2.0.0",
-            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.0.0_all.deb",
+            "version": "2.1.0",
+            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.1.0_all.deb",
             "sha256": "a" * 64,
             "size": 12345,
             "notes": "Test update",
         }
     )
 )
-assert manifest["version"] == "2.0.0"
+assert manifest["version"] == "2.1.0"
 assert manifest["size"] == 12345
 
 
@@ -124,7 +129,7 @@ try:
     module.parse_update_manifest(
         json.dumps(
             {
-                "version": "2.0.0",
+                "version": "2.1.0",
                 "package_url": "https://example.com/sessionsifu.deb",
                 "sha256": "a" * 64,
                 "size": 12345,

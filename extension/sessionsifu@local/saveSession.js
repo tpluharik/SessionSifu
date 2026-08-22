@@ -90,6 +90,48 @@ export const SaveSession = class {
         }
     }
 
+    async saveRecallAsync(
+        sessionName,
+        baseDir,
+        excludedApps = [],
+        includeFilePaths = false
+    ) {
+        try {
+            this._openFileResolver.reset();
+            const sessionConfig = await this._buildSession(sessionName, includeFilePaths);
+            const exclusions = new Set(
+                ['sessionsifu', ...excludedApps]
+                    .map(value => String(value).trim().toLowerCase())
+                    .filter(value => value));
+            sessionConfig.x_session_config_objects = sessionConfig.sort()
+                .filter(item => {
+                    const identity = [item.app_name, item.desktop_file_id, item.wm_class]
+                        .map(value => String(value ?? '').toLowerCase())
+                        .join('\n');
+                    return ![...exclusions].some(value => identity.includes(value));
+                })
+                .map(item => {
+                    const sanitized = {...item};
+                    for (const field of [
+                        'pid', 'username', 'client_machine_name',
+                        'process_create_time', 'cpu_percent', 'memory_percent',
+                        'cmd', 'desktop_file_id_full_path'])
+                        delete sanitized[field];
+                    if (!includeFilePaths)
+                        sanitized.open_files = [];
+                    return sanitized;
+                });
+            if (!sessionConfig.x_session_config_objects.length)
+                return false;
+            sessionConfig.recall_schema = 1;
+            sessionConfig.recall_include_file_paths = Boolean(includeFilePaths);
+            return await this._saveSessionConfigAsync(sessionConfig, baseDir);
+        } catch (error) {
+            this._log.error(error);
+            return false;
+        }
+    }
+
     async saveWindowsSessionAsync(metaWindows, cancellableMap) {
         try {
             this._openFileResolver.reset();
@@ -186,11 +228,13 @@ export const SaveSession = class {
         }
     }
 
-    async _buildSession(sessionName) {
+    async _buildSession(sessionName, includeOpenFiles = true) {
         const runningShellApps = this._defaultAppSystem.get_running();
-        const _getProcessInfoPromise = SubprocessUtils.getProcessInfo(runningShellApps, (metaWindow) => {
-            return UiHelper.ignoreWindows(metaWindow);
-        })
+        const _getProcessInfoPromise = includeOpenFiles
+            ? SubprocessUtils.getProcessInfo(runningShellApps, (metaWindow) => {
+                return UiHelper.ignoreWindows(metaWindow);
+            })
+            : Promise.resolve(new Map());
 
         const sessionConfig = new SessionConfig.SessionConfig();
         sessionConfig.session_name = sessionName ? sessionName : FileUtils.default_sessionName;
@@ -211,7 +255,8 @@ export const SaveSession = class {
                     sessionConfigObject.windows_count = runningShellApp.get_n_windows() - ignoredWindowsMap.get(runningShellApp).length;
 
                     const processInfoArray = processInfoMap.get(metaWindow.get_pid());
-                    this._setFieldsFromProcess(processInfoArray, sessionConfigObject);
+                    this._setFieldsFromProcess(
+                        processInfoArray, sessionConfigObject, includeOpenFiles);
 
                     sessionConfig.x_session_config_objects.push(sessionConfigObject);
                 } catch (e) {
@@ -489,7 +534,7 @@ export const SaveSession = class {
             });
     }
 
-    _setFieldsFromProcess(processInfoArray, sessionConfigObject) {
+    _setFieldsFromProcess(processInfoArray, sessionConfigObject, includeOpenFiles = true) {
         if (processInfoArray) {
             sessionConfigObject.process_create_time = processInfoArray.slice(0, 5).join(' ');
             sessionConfigObject.cpu_percent = processInfoArray.slice(5, 6).join();
@@ -501,10 +546,12 @@ export const SaveSession = class {
             sessionConfigObject.memory_percent = null;
             sessionConfigObject.cmd = null;
         }
-        sessionConfigObject.open_files = this._openFileResolver.resolve(
-            sessionConfigObject.pid,
-            sessionConfigObject.cmd,
-            sessionConfigObject.window_title);
+        sessionConfigObject.open_files = includeOpenFiles
+            ? this._openFileResolver.resolve(
+                sessionConfigObject.pid,
+                sessionConfigObject.cmd,
+                sessionConfigObject.window_title)
+            : [];
     }
 
     destroy() {

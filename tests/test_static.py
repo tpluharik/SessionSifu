@@ -31,8 +31,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "2.0.0"
-assert metadata["version"] == 4
+assert metadata["version-name"] == "2.1.0"
+assert metadata["version"] == 5
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -45,6 +45,10 @@ assert schema_keys["continuous-save-interval"].find("range").attrib == {
     "min": "30",
     "max": "3600",
 }
+assert schema_keys["recall-enabled"].findtext("default") == "false"
+assert schema_keys["recall-interval"].findtext("default") == "300"
+assert schema_keys["recall-retention-hours"].findtext("default") == "24"
+assert schema_keys["recall-include-file-paths"].findtext("default") == "false"
 
 build_script = (root / "packaging" / "build-deb.sh").read_text()
 assert 'mkdir -p "$stage/usr/share/glib-2.0/schemas"' in build_script
@@ -52,7 +56,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="2.0.0"' in build_script
+assert 'version="2.1.0"' in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
 assert "tests/open-files-smoke.js" in build_script
@@ -79,6 +83,9 @@ assert {
     "ListHistory",
     "SaveHistoryNow",
     "RestoreHistory",
+    "ListRecall",
+    "CaptureRecallNow",
+    "DeleteRecall",
 } <= methods
 
 source_text = "\n".join(path.read_text(errors="replace") for path in extension.rglob("*.js"))
@@ -89,12 +96,20 @@ assert "session-keeper@local" not in source_text
 assert "Meta.is_wayland_compositor" not in source_text
 assert "history_limit = 5" in source_text
 assert "continuous-save-interval" in source_text
+assert "recall-enabled" in source_text
+assert "Privacy Recall: Active — Pause" in source_text
+assert "get_boolean('show-indicator') ||" in source_text
+assert "saveRecallAsync" in source_text
+assert "GLib.chmod(path, 0o600)" in source_text
 assert "sessionsifu-symbolic.svg" in source_text
 assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "2.0.0"' in app_source
+assert 'CURRENT_VERSION = "2.1.0"' in app_source
+assert 'self.settings.value("recall_enabled", False, type=bool)' in (
+    root / "portable" / "sessionsifu_portable" / "ui.py"
+).read_text()
 assert "self.snapshot_intervals = [30, 60, 300, 600, 900, 1800]" in app_source
 assert "raw.githubusercontent.com/tpluharik/SessionSifu" in app_source
 assert "Downloaded update failed SHA-256 verification" in app_source
@@ -129,6 +144,7 @@ for required in (
     portable / "model.py",
     portable / "storage.py",
     portable / "controller.py",
+    portable / "recall.py",
     portable / "ui.py",
     portable / "adapters" / "windows.py",
     portable / "adapters" / "macos.py",
@@ -139,7 +155,7 @@ for required in (
     assert required.is_file(), required
 
 roadmap = (root / "ROADMAP.md").read_text()
-assert len(re.findall(r"^## \d+\.", roadmap, re.MULTILINE)) == 10
+assert len(re.findall(r"^## \d+\.", roadmap, re.MULTILINE)) == 11
 
 workflow = (root / ".github" / "workflows" / "release.yml").read_text()
 for runner in ("ubuntu-26.04", "windows-2025", "macos-15", "macos-15-intel"):

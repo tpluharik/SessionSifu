@@ -31,6 +31,16 @@
             <arg type="s" name="snapshot_name" direction="in"/>
             <arg type="s" name="message" direction="out"/>
         </method>
+        <method name="ListRecall">
+            <arg type="s" name="query" direction="in"/>
+            <arg type="s" name="recall_json" direction="out"/>
+        </method>
+        <method name="CaptureRecallNow">
+            <arg type="s" name="message" direction="out"/>
+        </method>
+        <method name="DeleteRecall">
+            <arg type="s" name="message" direction="out"/>
+        </method>
         <method name="OpenManager">
             <arg type="s" name="message" direction="out"/>
         </method>

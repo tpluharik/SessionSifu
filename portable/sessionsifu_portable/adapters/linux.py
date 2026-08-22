@@ -30,7 +30,7 @@ class LinuxAdapter(PlatformAdapter):
         native_wayland=False,
     )
 
-    def capture_windows(self) -> list[WindowSnapshot]:
+    def capture_windows(self, include_files: bool = True) -> list[WindowSnapshot]:
         if not shutil.which("wmctrl"):
             return []
         windows: list[WindowSnapshot] = []
@@ -44,7 +44,7 @@ class LinuxAdapter(PlatformAdapter):
                 geometry = [int(x), int(y), int(width), int(height)]
             except ValueError:
                 continue
-            executable, command = process_details(pid)
+            executable, command = process_details(pid, include_command=include_files)
             if Path(executable).stem.casefold() in {"sessionsifu", "plasmashell", "gnome-shell"}:
                 continue
             windows.append(
@@ -58,7 +58,7 @@ class LinuxAdapter(PlatformAdapter):
                     pid=pid,
                     geometry=geometry,
                     workspace=workspace,
-                    open_files=process_files(pid),
+                    open_files=process_files(pid) if include_files else [],
                 )
             )
         return windows
@@ -119,9 +119,9 @@ class KDEAdapter(LinuxAdapter):
             return ""
         return _run([self.kdotool, *arguments])
 
-    def capture_windows(self) -> list[WindowSnapshot]:
+    def capture_windows(self, include_files: bool = True) -> list[WindowSnapshot]:
         if not self.kdotool:
-            return super().capture_windows()
+            return super().capture_windows(include_files=include_files)
         windows: list[WindowSnapshot] = []
         for window_id in self._kdo("search").splitlines():
             window_id = window_id.strip()
@@ -144,7 +144,7 @@ class KDEAdapter(LinuxAdapter):
                 round(float(size.group(1))),
                 round(float(size.group(2))),
             ]
-            executable, command = process_details(pid)
+            executable, command = process_details(pid, include_command=include_files)
             if Path(executable).stem.casefold() in {"sessionsifu", "plasmashell", "gnome-shell"}:
                 continue
             identity = app_id[0].strip() if app_id else Path(executable).stem
@@ -159,7 +159,7 @@ class KDEAdapter(LinuxAdapter):
                     pid=pid,
                     geometry=geometry,
                     workspace=self._kdo("get_desktop_for_window", window_id).strip(),
-                    open_files=process_files(pid),
+                    open_files=process_files(pid) if include_files else [],
                 )
             )
         return windows

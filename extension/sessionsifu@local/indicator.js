@@ -330,6 +330,22 @@ class AwsIndicator extends PanelMenu.Button {
         });
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        this._recallMenuItem = new PopupMenu.PopupMenuItem('');
+        this._recallMenuItem.connect('activate', () => {
+            if (this._settings.get_boolean('recall-enabled')) {
+                this._settings.set_boolean('recall-enabled', false);
+            } else {
+                try {
+                    Gio.Subprocess.new([FileUtils.getManagerExecutable()], Gio.SubprocessFlags.NONE);
+                } catch (error) {
+                    this._log.error(error, 'Could not open Privacy Recall settings');
+                }
+            }
+        });
+        this.menu.addMenuItem(this._recallMenuItem);
+        this._recallChangedId = this._settings.connect(
+            'changed::recall-enabled', () => this._updateRecallItem());
+        this._updateRecallItem();
         this.menu.addAction('Open SessionSifu…', () => {
             try {
                 Gio.Subprocess.new([FileUtils.getManagerExecutable()], Gio.SubprocessFlags.NONE);
@@ -349,6 +365,15 @@ class AwsIndicator extends PanelMenu.Button {
                 return GLib.SOURCE_REMOVE;
             });
         });
+    }
+
+    _updateRecallItem() {
+        if (!this._recallMenuItem)
+            return;
+        this._recallMenuItem.label.set_text(
+            this._settings.get_boolean('recall-enabled')
+                ? 'Privacy Recall: Active — Pause'
+                : 'Privacy Recall: Off — Open settings');
     }
 
     _addScrollableSessionsMenuSection() {
@@ -606,6 +631,11 @@ class AwsIndicator extends PanelMenu.Button {
 
     destroy() {
         this._isDestroyed = true;
+
+        if (this._recallChangedId) {
+            this._settings.disconnect(this._recallChangedId);
+            this._recallChangedId = 0;
+        }
 
         if (this._windowSettleWaits) {
             for (const [metaWindow, pending] of this._windowSettleWaits) {

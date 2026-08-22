@@ -1,7 +1,7 @@
 {
-  "version": "2.0.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.0.0_all.deb",
-  "sha256": "0b790bf39a256c40f9ff74f214ae316a98dd997c2ae9de440578a7509c026724",
-  "size": 229704,
-  "notes": "Introduces SessionSifu 2 with shared Windows, macOS, KDE and portable GNOME foundations plus an automated multi-platform release pipeline."
+  "version": "2.1.0",
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.1.0_all.deb",
+  "sha256": "a4a385b10f47a24dd65100c32f8b940096090295d834f851a00196600f8abc60",
+  "size": 238690,
+  "notes": "Adds experimental, disabled-by-default Privacy Recall with sanitized local metadata, exclusions, retention, search and deletion controls."
 }

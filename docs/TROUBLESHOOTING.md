@@ -34,6 +34,17 @@ ls -l ~/.config/sessionsifu/history/
 If the manager shows an integration-version warning, update the integration and
 start a new login session before testing snapshots.
 
+## Privacy Recall is empty
+
+Privacy Recall is intentionally disabled by default. Enable it explicitly in
+the manager, confirm the top-bar or tray control reports **Active**, then use
+**Capture Now**. Check that the application is not matched by an exclusion.
+GNOME entries are stored under `~/.config/sessionsifu/recall/`; portable builds
+use the `recall/` folder below their platform-specific SessionSifu data path.
+
+Turning Recall off pauses capture without deleting earlier entries. Use
+**Delete All** in the manager to remove the timeline permanently.
+
 ## A restored application does not reopen its document
 
 SessionSifu checks process descriptors, explicit process arguments and GNOME's

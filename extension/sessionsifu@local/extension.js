@@ -37,6 +37,8 @@ export default class SessionSifuExtension extends Extension {
 
         this._showIndicatorChangedId = this._settings.connect(
             'changed::show-indicator', () => this.showOrHideIndicator());
+        this._recallIndicatorChangedId = this._settings.connect(
+            'changed::recall-enabled', () => this.showOrHideIndicator());
         this.showOrHideIndicator();
 
         _autostartServiceProvider = new Autostart.AutostartServiceProvider();
@@ -56,7 +58,8 @@ export default class SessionSifuExtension extends Extension {
     }
 
     showOrHideIndicator() {
-        if (this._settings.get_boolean('show-indicator')) {
+        if (this._settings.get_boolean('show-indicator') ||
+            this._settings.get_boolean('recall-enabled')) {
             if (!_indicator) {
                 _indicator = new Indicator.AwsIndicator();
                 Main.panel.addToStatusArea('SessionSifu', _indicator);
@@ -105,6 +108,10 @@ export default class SessionSifuExtension extends Extension {
             if (this._showIndicatorChangedId) {
                 this._settings.disconnect(this._showIndicatorChangedId);
                 this._showIndicatorChangedId = 0;
+            }
+            if (this._recallIndicatorChangedId) {
+                this._settings.disconnect(this._recallIndicatorChangedId);
+                this._recallIndicatorChangedId = 0;
             }
             this._settings = null;
         }

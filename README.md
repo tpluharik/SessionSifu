@@ -8,7 +8,7 @@ SessionSifu saves and reconstructs desktop layouts. It records running
 applications, documents and windows, then can relaunch applications and rebuild
 the supported parts of their layout.
 
-Version 2.0.0 retains the full Ubuntu 26.04/GNOME Shell 50 integration and adds
+Version 2.1.0 retains the full Ubuntu 26.04/GNOME Shell 50 integration and adds
 portable editions for Windows, macOS, KDE Plasma 6 and other GNOME/Linux
 desktops. The project is open source under GPL-3.0.
 
@@ -35,6 +35,9 @@ desktops. The project is open source under GPL-3.0.
 - KDE Plasma 6 Wayland support through `kdotool`, with X11 fallback.
 - A common, validated JSON session format across portable platforms.
 - Automated multi-platform builds and tagged GitHub Releases.
+- Experimental **Privacy Recall**, a disabled-by-default searchable timeline of
+  sanitized application and window metadata with exclusions and bounded local
+  retention.
 
 ## Compatibility
 
@@ -97,17 +100,17 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_2.0.0_all.deb` from the `updates/` directory, or build it
+Download `sessionsifu_2.1.0_all.deb` from the `updates/` directory, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_2.0.0_all.deb
+sudo apt install ./sessionsifu_2.1.0_all.deb
 ```
 
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_2.0.0_all.deb
+sudo apt install ./dist/sessionsifu_2.1.0_all.deb
 ```
 
 After installation:
@@ -123,10 +126,10 @@ After installation:
 
 Tagged releases attach these self-contained artifacts:
 
-- `SessionSifu-2.0.0-windows-x64.zip`;
-- `SessionSifu-2.0.0-macos-arm64.zip`;
-- `SessionSifu-2.0.0-macos-x64.zip`; and
-- `SessionSifu-2.0.0-linux-x64.tar.gz`.
+- `SessionSifu-2.1.0-windows-x64.zip`;
+- `SessionSifu-2.1.0-macos-arm64.zip`;
+- `SessionSifu-2.1.0-macos-x64.zip`; and
+- `SessionSifu-2.1.0-linux-x64.tar.gz`.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -244,6 +247,33 @@ Portable session files remain local as well:
 - macOS: `~/Library/Application Support/SessionSifu`;
 - Linux: `${XDG_CONFIG_HOME:-~/.config}/sessionsifu-portable`.
 
+### Experimental Privacy Recall
+
+Privacy Recall is a feature flag and is **off by default** on every platform.
+Nothing is recorded and no Recall storage directory is created until the user
+explicitly enables it in the manager. While active, the GNOME top-bar or
+portable tray menu displays an active/pause control.
+
+Version 2.1 records only sanitized observable metadata: application identity,
+window title, time, workspace/monitor and geometry. It does not capture the
+screen, clipboard, keystrokes, microphone, shell history, browser history or
+private application memory. Full paths of open files require a second opt-in.
+Users can exclude applications by name or identifier, choose a retention period
+from one hour to seven days, search the local timeline and permanently delete
+all entries from the manager.
+
+Recall entries are bounded, written atomically, and stored with user-only
+permissions where the platform supports POSIX modes:
+
+- GNOME full integration: `~/.config/sessionsifu/recall/`;
+- portable editions: the platform-specific SessionSifu data directory listed
+  above, under `recall/`.
+
+SessionSifu never uploads Recall data. Screenshot capture, OCR and semantic
+indexing remain intentionally unavailable until the project can provide
+OS-backed encryption, reliable sensitive-content exclusions and a reviewed
+threat model on every supported platform.
+
 Because saved launch commands, open-file paths and window titles may contain
 sensitive information, protect backups of the SessionSifu configuration
 directory as you would other personal application data.
@@ -271,8 +301,8 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_2.0.0_all.deb
-updates/sessionsifu_2.0.0_all.deb
+dist/sessionsifu_2.1.0_all.deb
+updates/sessionsifu_2.1.0_all.deb
 updates/latest.json
 ```
 
@@ -290,16 +320,17 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v2.0.0` tag publishes the artifacts and `SHA256SUMS` as a GitHub
+A pushed `v2.1.0` tag publishes the artifacts and `SHA256SUMS` as a GitHub
 Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
 
-The public [SessionSifu roadmap](ROADMAP.md) contains ten scoped improvements
+The public [SessionSifu roadmap](ROADMAP.md) contains eleven scoped improvements
 covering signed builds, native portable updates, Wayland protocol support,
 application-specific document restoration, monitor mapping, browser and
 terminal integrations, recovery previews, accessibility/localization,
-performance/security and optional encrypted export.
+performance/security, optional encrypted export and privacy-first local
+activity recall.
 
 ## Community and development
 
@@ -313,7 +344,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Contribution guide](CONTRIBUTING.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
 
-The current 2.0.0 release establishes the shared platform architecture while
+The current 2.1.0 release establishes the shared platform architecture while
 preserving the mature GNOME 50 backend. Compatibility claims are added only
 after hands-on testing; reports from configurations not listed in the table are
 useful, but are treated as best-effort until support is documented here.

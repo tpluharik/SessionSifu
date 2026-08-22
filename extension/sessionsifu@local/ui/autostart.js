@@ -20,6 +20,7 @@ import * as RestoreSession from '../restoreSession.js';
 import * as SaveSession from '../saveSession.js';
 import * as Constants from '../constants.js';
 import * as ContinuousSaver from '../continuousSaver.js';
+import * as RecallRecorder from '../recallRecorder.js';
 
 import * as Log from '../utils/log.js';
 import {PrefsUtils} from '../utils/prefsUtils.js';
@@ -111,10 +112,11 @@ const AutostartService = GObject.registerClass(
             this._settings = PrefsUtils.getSettings();
             this._sessionName = this._settings.get_string(Constants.PREFS_SETTING_AUTORESTORE_SESSIONS);
             this._continuousSaver = new ContinuousSaver.ContinuousSaver(this._settings);
+            this._recallRecorder = new RecallRecorder.RecallRecorder(this._settings);
         }
 
         Ping() {
-            return 'SessionSifu 2.0.0 is ready';
+            return 'SessionSifu 2.1.0 is ready';
         }
 
         _validSessionName(sessionName) {
@@ -204,6 +206,24 @@ const AutostartService = GObject.registerClass(
             const restorer = new RestoreSession.RestoreSession();
             restorer.restoreSessionFromFile(path);
             return `Restoring automatic snapshot '${snapshotName}'`;
+        }
+
+        ListRecall(query) {
+            if (!this._settings.get_boolean('recall-enabled'))
+                return '[]';
+            return JSON.stringify(RecallRecorder.listRecall(query));
+        }
+
+        CaptureRecallNow() {
+            if (!this._settings.get_boolean('recall-enabled'))
+                return 'ERROR: Privacy Recall is disabled';
+            this._recallRecorder.saveNow().catch(error => this._log.error(error));
+            return 'Saving a private local Recall entry';
+        }
+
+        DeleteRecall() {
+            const removed = RecallRecorder.deleteRecall();
+            return `Deleted ${removed} Privacy Recall entries`;
         }
 
         OpenManager() {
@@ -322,6 +342,10 @@ const AutostartService = GObject.registerClass(
             if (this._continuousSaver) {
                 this._continuousSaver.destroy();
                 this._continuousSaver = null;
+            }
+            if (this._recallRecorder) {
+                this._recallRecorder.destroy();
+                this._recallRecorder = null;
             }
             if (this._autostartDialog) {
                 this._autostartDialog.destroy();

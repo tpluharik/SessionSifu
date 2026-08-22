@@ -2,6 +2,23 @@
 
 All notable SessionSifu changes are documented here.
 
+## 2.1.0
+
+- Added experimental Privacy Recall as a pure feature flag that is disabled by
+  default on GNOME, KDE, Windows, macOS and portable Linux editions.
+- Added bounded local activity timelines containing sanitized application,
+  window, workspace, monitor and geometry metadata without screenshots,
+  clipboard data, keystrokes or network upload.
+- Added application exclusions, configurable one-hour through seven-day
+  retention, searchable history, permanent deletion and a separate opt-in for
+  full open-file paths.
+- Added user-only Recall directories/files on POSIX platforms and atomic writes
+  in the portable engine.
+- Added persistent GNOME top-bar and portable tray status/pause controls while
+  Recall capture is active.
+- Kept screenshot capture, OCR and semantic indexing unavailable until
+  OS-backed encryption and sensitive-content exclusion receive security review.
+
 ## 2.0.0
 
 - Added a shared, validated session model and atomic five-snapshot storage for

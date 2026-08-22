@@ -10,6 +10,7 @@ from PySide6.QtCore import QSettings, QTimer, Qt
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QFormLayout,
     QHBoxLayout,
@@ -30,6 +31,8 @@ from . import VERSION
 from .controller import SessionController
 
 INTERVALS = [30, 60, 300, 600, 900, 1800]
+RECALL_INTERVALS = [60, 300, 900, 1800]
+RECALL_RETENTION_HOURS = [1, 6, 24, 72, 168]
 
 
 def icon_path() -> Path:
@@ -45,6 +48,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"SessionSifu {VERSION}")
         self.setWindowIcon(QIcon(str(icon_path())))
         self.resize(760, 560)
+        self._recall_state_callback = None
 
         root = QWidget()
         layout = QVBoxLayout(root)
@@ -79,11 +83,87 @@ class MainWindow(QMainWindow):
         form.addRow("Automatic snapshot interval", self.interval)
         layout.addLayout(form)
 
+        recall_box = QWidget()
+        recall_layout = QVBoxLayout(recall_box)
+        self.recall_enabled = QCheckBox("Enable experimental Privacy Recall")
+        self.recall_enabled.setToolTip(
+            "Disabled by default. Records searchable app/window metadata locally; no screenshots are taken."
+        )
+        self.recall_enabled.setChecked(
+            self.settings.value("recall_enabled", False, type=bool)
+        )
+        self.recall_enabled.toggled.connect(self.toggle_recall)
+        recall_layout.addWidget(self.recall_enabled)
+        recall_notice = QLabel(
+            "Off by default · metadata only · local storage · no network upload. "
+            "Window titles can still contain sensitive information."
+        )
+        recall_notice.setWordWrap(True)
+        recall_layout.addWidget(recall_notice)
+
+        recall_form = QFormLayout()
+        self.recall_interval = QComboBox()
+        for seconds in RECALL_INTERVALS:
+            self.recall_interval.addItem(
+                f"{seconds // 60} minute(s)", seconds
+            )
+        configured_recall_interval = int(self.settings.value("recall_interval", 300))
+        self.recall_interval.setCurrentIndex(
+            max(0, self.recall_interval.findData(configured_recall_interval))
+        )
+        self.recall_interval.currentIndexChanged.connect(self.update_recall_timer)
+        recall_form.addRow("Capture interval", self.recall_interval)
+
+        self.recall_retention = QComboBox()
+        for hours in RECALL_RETENTION_HOURS:
+            label = f"{hours} hour(s)" if hours < 24 else f"{hours // 24} day(s)"
+            self.recall_retention.addItem(label, hours)
+        configured_retention = int(self.settings.value("recall_retention_hours", 24))
+        self.recall_retention.setCurrentIndex(
+            max(0, self.recall_retention.findData(configured_retention))
+        )
+        self.recall_retention.currentIndexChanged.connect(self.recall_settings_changed)
+        recall_form.addRow("Retention", self.recall_retention)
+
+        self.recall_exclusions = QLineEdit()
+        self.recall_exclusions.setPlaceholderText("private-browser, password-manager")
+        self.recall_exclusions.setText(str(self.settings.value("recall_excluded_apps", "")))
+        self.recall_exclusions.editingFinished.connect(self.recall_settings_changed)
+        recall_form.addRow("Excluded apps", self.recall_exclusions)
+        recall_layout.addLayout(recall_form)
+
+        self.recall_files = QCheckBox("Include full paths of open files")
+        self.recall_files.setChecked(
+            self.settings.value("recall_include_file_paths", False, type=bool)
+        )
+        self.recall_files.toggled.connect(self.recall_settings_changed)
+        recall_layout.addWidget(self.recall_files)
+
+        recall_controls = QHBoxLayout()
+        self.recall_capture = QPushButton("Capture now")
+        self.recall_capture.clicked.connect(self.save_recall)
+        self.recall_search = QLineEdit()
+        self.recall_search.setPlaceholderText("Search apps, window titles or opted-in file paths")
+        self.recall_search.returnPressed.connect(self.refresh_recall)
+        search_recall = QPushButton("Search")
+        search_recall.clicked.connect(self.refresh_recall)
+        recall_controls.addWidget(self.recall_capture)
+        recall_controls.addWidget(self.recall_search, 1)
+        recall_controls.addWidget(search_recall)
+        recall_layout.addLayout(recall_controls)
+
+        self.recall_results = QListWidget()
+        recall_layout.addWidget(self.recall_results, 1)
+        clear_recall = QPushButton("Delete all Recall history")
+        clear_recall.clicked.connect(self.clear_recall)
+        recall_layout.addWidget(clear_recall)
+
         tabs = QTabWidget()
         self.named = QListWidget()
         self.history = QListWidget()
         tabs.addTab(self._list_page(self.named, self.restore_named, self.delete_named), "Named sessions")
         tabs.addTab(self._list_page(self.history, self.restore_history), "History (latest five)")
+        tabs.addTab(recall_box, "Privacy Recall")
         layout.addWidget(tabs, 1)
 
         diagnostics = QPushButton("Show platform diagnostics")
@@ -94,6 +174,9 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(lambda: self.save_history(silent=True))
         self.update_interval()
+        self.recall_timer = QTimer(self)
+        self.recall_timer.timeout.connect(lambda: self.save_recall(silent=True))
+        self.update_recall_timer()
         self.refresh()
 
     def _list_page(self, widget: QListWidget, restore_callback, delete_callback=None) -> QWidget:
@@ -159,6 +242,84 @@ class MainWindow(QMainWindow):
         self.settings.setValue("snapshot_interval", seconds)
         self.timer.start(seconds * 1000)
 
+    def _excluded_apps(self) -> list[str]:
+        return [
+            value.strip()
+            for value in self.recall_exclusions.text().split(",")
+            if value.strip()
+        ]
+
+    def recall_settings_changed(self, *_args) -> None:
+        self.settings.setValue("recall_retention_hours", int(self.recall_retention.currentData()))
+        self.settings.setValue("recall_excluded_apps", self.recall_exclusions.text().strip())
+        self.settings.setValue("recall_include_file_paths", self.recall_files.isChecked())
+
+    def toggle_recall(self, enabled: bool) -> None:
+        self.settings.setValue("recall_enabled", enabled)
+        self.update_recall_timer()
+        self.status.setText(
+            "Privacy Recall is active; sanitized metadata will be recorded locally."
+            if enabled
+            else "Privacy Recall is paused. No activity metadata is being recorded."
+        )
+        if self._recall_state_callback is not None:
+            self._recall_state_callback(enabled)
+
+    def update_recall_timer(self, *_args) -> None:
+        seconds = int(self.recall_interval.currentData())
+        self.settings.setValue("recall_interval", seconds)
+        enabled = self.recall_enabled.isChecked()
+        self.recall_interval.setEnabled(enabled)
+        self.recall_retention.setEnabled(enabled)
+        self.recall_exclusions.setEnabled(enabled)
+        self.recall_files.setEnabled(enabled)
+        self.recall_capture.setEnabled(enabled)
+        if enabled:
+            self.recall_timer.start(seconds * 1000)
+        else:
+            self.recall_timer.stop()
+
+    def save_recall(self, silent: bool = False) -> None:
+        if not self.recall_enabled.isChecked():
+            if not silent:
+                self.status.setText("Enable Privacy Recall before capturing activity metadata.")
+            return
+        self.recall_settings_changed()
+        self._perform(
+            lambda: self.controller.save_recall(
+                retention_hours=int(self.recall_retention.currentData()),
+                excluded_apps=self._excluded_apps(),
+                include_file_paths=self.recall_files.isChecked(),
+            ),
+            "Saved a private local Recall entry.",
+            silent=silent,
+        )
+
+    def refresh_recall(self) -> None:
+        self.recall_results.clear()
+        for entry in self.controller.search_recall(self.recall_search.text()):
+            apps = ", ".join(entry.get("apps", [])[:4]) or "Unknown application"
+            titles = " · ".join(entry.get("titles", [])[:3])
+            label = f"{entry.get('captured_at', '')} — {apps}"
+            if titles:
+                label += f" — {titles}"
+            self.recall_results.addItem(label)
+
+    def clear_recall(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "Delete Privacy Recall history?",
+            "All locally recorded Recall entries will be permanently deleted.",
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            removed = self.controller.clear_recall()
+            self.status.setText(f"Deleted {removed} Privacy Recall entries.")
+            self.refresh_recall()
+
+    def set_recall_state_callback(self, callback) -> None:
+        self._recall_state_callback = callback
+        callback(self.recall_enabled.isChecked())
+
     def refresh(self) -> None:
         self.named.clear()
         for path in self.controller.named_sessions():
@@ -168,6 +329,7 @@ class MainWindow(QMainWindow):
         for path in self.controller.history():
             self.history.addItem(path.stem)
             self.history.item(self.history.count() - 1).setData(Qt.UserRole, str(path))
+        self.refresh_recall()
         capabilities = self.controller.adapter.capabilities
         self.status.setText(
             f"Backend: {self.controller.adapter.desktop} · "
@@ -205,13 +367,30 @@ def run_gui(controller: SessionController | None = None) -> int:
     save.triggered.connect(window.save_history)
     restore = QAction("Restore latest snapshot", menu)
     restore.triggered.connect(window.restore_latest)
+    recall = QAction("Privacy Recall capture (experimental)", menu)
+    recall.setCheckable(True)
+    recall.toggled.connect(window.recall_enabled.setChecked)
+    window.set_recall_state_callback(
+        lambda enabled: (
+            recall.setChecked(enabled),
+            tray.setToolTip(
+                f"SessionSifu {VERSION} · Privacy Recall active"
+                if enabled
+                else f"SessionSifu {VERSION}"
+            ),
+        )
+    )
     quit_action = QAction("Turn Off SessionSifu", menu)
     quit_action.triggered.connect(app.quit)
-    menu.addActions([show, save, restore])
+    menu.addActions([show, save, restore, recall])
     menu.addSeparator()
     menu.addAction(quit_action)
     tray.setContextMenu(menu)
-    tray.setToolTip(f"SessionSifu {VERSION}")
+    tray.setToolTip(
+        f"SessionSifu {VERSION} · Privacy Recall active"
+        if window.recall_enabled.isChecked()
+        else f"SessionSifu {VERSION}"
+    )
     tray.activated.connect(
         lambda reason: show.trigger()
         if reason == QSystemTrayIcon.ActivationReason.Trigger

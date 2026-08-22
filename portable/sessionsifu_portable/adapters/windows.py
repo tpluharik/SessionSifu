@@ -53,7 +53,7 @@ class WindowsAdapter(PlatformAdapter):
         self.user32.GetWindowTextW(hwnd, buffer, len(buffer))
         return buffer.value
 
-    def _enumerate(self) -> list[WindowSnapshot]:
+    def _enumerate(self, include_files: bool = True) -> list[WindowSnapshot]:
         windows: list[WindowSnapshot] = []
 
         def visit(hwnd: int, _data: int) -> bool:
@@ -70,7 +70,7 @@ class WindowsAdapter(PlatformAdapter):
                 return True
             pid = ctypes.c_ulong()
             self.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-            executable, command = process_details(pid.value)
+            executable, command = process_details(pid.value, include_command=include_files)
             if not executable:
                 return True
             app_name = Path(executable).stem
@@ -94,7 +94,7 @@ class WindowsAdapter(PlatformAdapter):
                     geometry=[rect.left, rect.top, width, height],
                     minimized=bool(self.user32.IsIconic(hwnd)),
                     maximized=bool(self.user32.IsZoomed(hwnd)),
-                    open_files=process_files(pid.value),
+                    open_files=process_files(pid.value) if include_files else [],
                 )
             )
             return True
@@ -106,8 +106,8 @@ class WindowsAdapter(PlatformAdapter):
                 raise OSError(error, "EnumWindows failed")
         return windows
 
-    def capture_windows(self) -> list[WindowSnapshot]:
-        return self._enumerate()
+    def capture_windows(self, include_files: bool = True) -> list[WindowSnapshot]:
+        return self._enumerate(include_files=include_files)
 
     def launch_window(self, window: WindowSnapshot) -> None:
         executable = Path(window.executable)

@@ -27,12 +27,12 @@ class AdapterCapabilities:
     native_wayland: bool = False
 
 
-def process_details(pid: int) -> tuple[str, list[str]]:
+def process_details(pid: int, include_command: bool = True) -> tuple[str, list[str]]:
     if pid <= 0 or psutil is None:
         return "", []
     try:
         process = psutil.Process(pid)
-        return process.exe(), process.cmdline()[:64]
+        return process.exe(), process.cmdline()[:64] if include_command else []
     except (psutil.Error, OSError):
         return "", []
 
@@ -70,14 +70,14 @@ class PlatformAdapter(ABC):
     capabilities = AdapterCapabilities()
 
     @abstractmethod
-    def capture_windows(self) -> list[WindowSnapshot]:
+    def capture_windows(self, include_files: bool = True) -> list[WindowSnapshot]:
         raise NotImplementedError
 
-    def capture(self) -> SessionSnapshot:
+    def capture(self, include_files: bool = True) -> SessionSnapshot:
         return SessionSnapshot(
             platform=self.key,
             desktop=self.desktop,
-            windows=self.capture_windows(),
+            windows=self.capture_windows(include_files=include_files),
             capabilities=asdict(self.capabilities),
         )
 

@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -14,6 +16,7 @@ sys.path.insert(0, str(ROOT / "portable"))
 from sessionsifu_portable.adapters.base import AdapterCapabilities, PlatformAdapter  # noqa: E402
 from sessionsifu_portable.controller import SessionController  # noqa: E402
 from sessionsifu_portable.model import SessionSnapshot, WindowSnapshot  # noqa: E402
+from sessionsifu_portable.recall import RecallStore  # noqa: E402
 from sessionsifu_portable.storage import HISTORY_LIMIT, SessionStore  # noqa: E402
 from sessionsifu_portable.adapters.linux import GnomeAdapter, KDEAdapter, LinuxAdapter  # noqa: E402
 from sessionsifu_portable.adapters.macos import MacOSAdapter  # noqa: E402
@@ -28,8 +31,10 @@ class FakeAdapter(PlatformAdapter):
 
     def __init__(self) -> None:
         self.applied = None
+        self.last_include_files = None
 
-    def capture_windows(self) -> list[WindowSnapshot]:
+    def capture_windows(self, include_files: bool = True) -> list[WindowSnapshot]:
+        self.last_include_files = include_files
         return [
             WindowSnapshot(
                 window_id="1",
@@ -39,7 +44,7 @@ class FakeAdapter(PlatformAdapter):
                 executable="/usr/bin/editor",
                 command=["/usr/bin/editor"],
                 geometry=[10, 20, 900, 700],
-                open_files=["/home/test/Notes.txt"],
+                open_files=["/home/test/Notes.txt"] if include_files else [],
             )
         ]
 
@@ -64,7 +69,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "2.0.0")
+        self.assertEqual(VERSION, "2.1.0")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -107,7 +112,8 @@ class PortableTests(unittest.TestCase):
 
     def test_empty_capture_does_not_replace_history(self) -> None:
         class EmptyAdapter(FakeAdapter):
-            def capture_windows(self) -> list[WindowSnapshot]:
+            def capture_windows(self, include_files: bool = True) -> list[WindowSnapshot]:
+                del include_files
                 return []
 
         with tempfile.TemporaryDirectory() as directory:
@@ -117,6 +123,64 @@ class PortableTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 controller.save_history()
             self.assertEqual(len(store.list_history()), 1)
+
+    def test_privacy_recall_is_sanitized_searchable_and_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = RecallStore(root)
+            self.assertFalse(store.recall_dir.exists())
+            session = FakeAdapter().capture()
+            session.windows.append(
+                WindowSnapshot(
+                    app_id="org.example.SessionSifu.Helper",
+                    app_name="SessionSifu Helper",
+                    title="Must not be captured",
+                    executable="/usr/bin/sessionsifu-helper",
+                )
+            )
+            path = store.save(
+                session,
+                retention_hours=24,
+                excluded_apps=["private-browser"],
+                include_file_paths=False,
+            )
+            payload = json.loads(path.read_text())
+            self.assertEqual(payload["recall_schema"], 1)
+            self.assertEqual(len(payload["windows"]), 1)
+            self.assertNotIn("executable", payload["windows"][0])
+            self.assertNotIn("command", payload["windows"][0])
+            self.assertNotIn("open_files", payload["windows"][0])
+            self.assertEqual(len(store.search("Notes")), 1)
+            self.assertEqual(store.search("Must not be captured"), [])
+            if os.name != "nt":
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
+
+            old = time.time() - (48 * 60 * 60)
+            os.utime(path, (old, old))
+            store.prune(24)
+            self.assertFalse(path.exists())
+
+    def test_privacy_recall_file_paths_require_separate_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RecallStore(Path(directory))
+            path = store.save(FakeAdapter().capture(), include_file_paths=True)
+            payload = json.loads(path.read_text())
+            self.assertEqual(payload["windows"][0]["open_files"], ["/home/test/Notes.txt"])
+            self.assertEqual(store.search("Notes.txt")[0]["files"], ["/home/test/Notes.txt"])
+            self.assertEqual(store.clear(), 1)
+            self.assertEqual(store.search(), [])
+
+    def test_privacy_recall_capture_does_not_inspect_files_without_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            adapter = FakeAdapter()
+            controller = SessionController(adapter, SessionStore(Path(directory)))
+            path = controller.save_recall(include_file_paths=False)
+            self.assertFalse(adapter.last_include_files)
+            self.assertNotIn("open_files", json.loads(path.read_text())["windows"][0])
+
+            controller.save_recall(include_file_paths=True)
+            self.assertTrue(adapter.last_include_files)
 
 
 if __name__ == "__main__":

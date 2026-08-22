@@ -27,7 +27,7 @@ from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "2.0.0"
+CURRENT_VERSION = "2.1.0"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -598,6 +598,109 @@ class ManagerWindow(Adw.ApplicationWindow):
         snapshot_group.add(save_now_row)
         content.append(snapshot_group)
 
+        recall_group = Adw.PreferencesGroup(
+            title="Experimental Privacy Recall",
+            description=(
+                "Disabled by default. Records searchable app and window metadata locally; "
+                "this version never captures screenshots or uploads activity."
+            ),
+        )
+        self.recall_switch = Adw.SwitchRow(
+            title="Enable Privacy Recall",
+            subtitle="Window titles can contain sensitive information; use exclusions below",
+        )
+        self.recall_switch.set_active(self._settings.get_boolean("recall-enabled"))
+        self.recall_switch.connect("notify::active", self._toggle_recall)
+        recall_group.add(self.recall_switch)
+
+        self.recall_intervals = [60, 300, 900, 1800]
+        self.recall_interval_row = Adw.ComboRow(title="Capture frequency")
+        self.recall_interval_row.set_model(
+            Gtk.StringList.new(["Every minute", "Every 5 minutes", "Every 15 minutes", "Every 30 minutes"])
+        )
+        configured_recall_interval = self._settings.get_int("recall-interval")
+        self.recall_interval_row.set_selected(min(
+            range(len(self.recall_intervals)),
+            key=lambda index: abs(self.recall_intervals[index] - configured_recall_interval),
+        ))
+        self.recall_interval_row.connect("notify::selected", self._recall_interval_changed)
+        recall_group.add(self.recall_interval_row)
+
+        self.recall_retention_values = [1, 6, 24, 72, 168]
+        self.recall_retention_row = Adw.ComboRow(title="Retention")
+        self.recall_retention_row.set_model(
+            Gtk.StringList.new(["1 hour", "6 hours", "1 day", "3 days", "7 days"])
+        )
+        configured_retention = self._settings.get_int("recall-retention-hours")
+        self.recall_retention_row.set_selected(min(
+            range(len(self.recall_retention_values)),
+            key=lambda index: abs(self.recall_retention_values[index] - configured_retention),
+        ))
+        self.recall_retention_row.connect("notify::selected", self._recall_retention_changed)
+        recall_group.add(self.recall_retention_row)
+
+        self.recall_files_switch = Adw.SwitchRow(
+            title="Include full paths of open files",
+            subtitle="Separate opt-in; disabled even when Privacy Recall is enabled",
+        )
+        self.recall_files_switch.set_active(
+            self._settings.get_boolean("recall-include-file-paths")
+        )
+        self.recall_files_switch.connect("notify::active", self._toggle_recall_files)
+        recall_group.add(self.recall_files_switch)
+
+        exclusions_row = Adw.ActionRow(
+            title="Excluded applications",
+            subtitle="Comma-separated app names or identifiers",
+        )
+        self.recall_exclusions_entry = Gtk.Entry(
+            text=", ".join(self._settings.get_strv("recall-excluded-apps")),
+            placeholder_text="password-manager, private-browser",
+            hexpand=True,
+            valign=Gtk.Align.CENTER,
+        )
+        self.recall_exclusions_entry.connect("changed", self._recall_exclusions_changed)
+        exclusions_row.add_suffix(self.recall_exclusions_entry)
+        recall_group.add(exclusions_row)
+
+        capture_recall_row = Adw.ActionRow(
+            title="Capture current activity metadata",
+            subtitle="No screenshot, clipboard, keystroke, shell history or network data is recorded",
+        )
+        self.recall_capture_button = Gtk.Button(label="Capture Now", valign=Gtk.Align.CENTER)
+        self.recall_capture_button.connect("clicked", self._capture_recall)
+        capture_recall_row.add_suffix(self.recall_capture_button)
+        recall_group.add(capture_recall_row)
+        content.append(recall_group)
+        self._update_recall_controls()
+
+        recall_search_group = Adw.PreferencesGroup(
+            title="Privacy Recall history",
+            description="Search the locally stored activity timeline or delete it permanently.",
+        )
+        recall_search_row = Adw.ActionRow(title="Search")
+        self.recall_search_entry = Gtk.Entry(
+            placeholder_text="Application, window title or opted-in file path",
+            hexpand=True,
+            valign=Gtk.Align.CENTER,
+        )
+        self.recall_search_entry.connect("activate", self._search_recall)
+        recall_search_button = Gtk.Button(label="Search", valign=Gtk.Align.CENTER)
+        recall_search_button.connect("clicked", self._search_recall)
+        recall_search_row.add_suffix(self.recall_search_entry)
+        recall_search_row.add_suffix(recall_search_button)
+        recall_search_group.add(recall_search_row)
+        self._recall_rows_widgets: list[Adw.ActionRow] = []
+        self.recall_results_group = recall_search_group
+        delete_recall_row = Adw.ActionRow(title="Delete all Privacy Recall history")
+        delete_recall_button = Gtk.Button(label="Delete All", valign=Gtk.Align.CENTER)
+        delete_recall_button.add_css_class("destructive-action")
+        delete_recall_button.connect("clicked", self._delete_recall)
+        delete_recall_row.add_suffix(delete_recall_button)
+        recall_search_group.add(delete_recall_row)
+        self._recall_delete_row = delete_recall_row
+        content.append(recall_search_group)
+
         self.history_group = Adw.PreferencesGroup(
             title="Automatic history",
             description="The oldest snapshot is removed when a sixth snapshot is created.",
@@ -706,12 +809,98 @@ class ManagerWindow(Adw.ApplicationWindow):
             self._settings.set_boolean("enable-autorestore-sessions", False)
 
     def _toggle_indicator(self, row, _param) -> None:
+        if self._settings.get_boolean("recall-enabled") and not row.get_active():
+            row.set_active(True)
+            self._message("The top-bar indicator remains visible while Privacy Recall is active.")
+            return
         self._settings.set_boolean("show-indicator", row.get_active())
 
     def _toggle_continuous_save(self, row, _param) -> None:
         enabled = row.get_active()
         self._settings.set_boolean("continuous-save-enabled", enabled)
         self.snapshot_interval_row.set_sensitive(enabled)
+
+    def _toggle_recall(self, row, _param) -> None:
+        enabled = row.get_active()
+        self._settings.set_boolean("recall-enabled", enabled)
+        if enabled:
+            self._settings.set_boolean("show-indicator", True)
+            self.indicator_switch.set_active(True)
+            self._message(
+                "Privacy Recall is active. The top-bar menu provides a persistent Pause control."
+            )
+        else:
+            self._message("Privacy Recall is paused. No activity metadata is being recorded.")
+        self._update_recall_controls()
+        self.refresh()
+
+    def _update_recall_controls(self) -> None:
+        enabled = self.recall_switch.get_active()
+        self.recall_interval_row.set_sensitive(enabled)
+        self.recall_retention_row.set_sensitive(enabled)
+        self.recall_files_switch.set_sensitive(enabled)
+        self.recall_exclusions_entry.set_sensitive(enabled)
+        self.recall_capture_button.set_sensitive(enabled)
+        self.indicator_switch.set_sensitive(not enabled)
+
+    def _recall_interval_changed(self, row, _param) -> None:
+        selected = row.get_selected()
+        if selected < len(self.recall_intervals):
+            self._settings.set_int("recall-interval", self.recall_intervals[selected])
+
+    def _recall_retention_changed(self, row, _param) -> None:
+        selected = row.get_selected()
+        if selected < len(self.recall_retention_values):
+            self._settings.set_int(
+                "recall-retention-hours", self.recall_retention_values[selected]
+            )
+
+    def _toggle_recall_files(self, row, _param) -> None:
+        self._settings.set_boolean("recall-include-file-paths", row.get_active())
+
+    def _recall_exclusions_changed(self, entry) -> None:
+        values = [value.strip() for value in entry.get_text().split(",") if value.strip()]
+        if "SessionSifu" not in values:
+            values.insert(0, "SessionSifu")
+        self._settings.set_strv("recall-excluded-apps", values)
+
+    def _capture_recall(self, _button) -> None:
+        if not self.recall_switch.get_active():
+            self._message("Privacy Recall is disabled.")
+            return
+        self._call("CaptureRecallNow")
+        GLib.timeout_add(1400, self._refresh_once)
+
+    def _search_recall(self, _widget) -> None:
+        self.refresh()
+
+    def _recall_rows(self) -> list[dict]:
+        if not self._settings.get_boolean("recall-enabled"):
+            return []
+        try:
+            return json.loads(call(
+                "ListRecall", GLib.Variant("(s)", (self.recall_search_entry.get_text(),))
+            ))
+        except (GLib.Error, json.JSONDecodeError):
+            return []
+
+    def _delete_recall(self, _button) -> None:
+        dialog = Adw.AlertDialog(
+            heading="Delete all Privacy Recall history?",
+            body="All locally recorded Recall entries will be permanently deleted.",
+        )
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("delete", "Delete All")
+        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+        dialog.connect("response", self._delete_recall_response)
+        dialog.present(self)
+
+    def _delete_recall_response(self, _dialog, response: str) -> None:
+        if response == "delete":
+            self._call("DeleteRecall")
+            self.refresh()
 
     def _snapshot_interval_changed(self, row, _param) -> None:
         selected = row.get_selected()
@@ -880,6 +1069,36 @@ class ManagerWindow(Adw.ApplicationWindow):
                 row.add_suffix(restore)
                 self.history_group.add(row)
                 self._history_rows_widgets.append(row)
+
+        for child in self._recall_rows_widgets:
+            self.recall_results_group.remove(child)
+        self._recall_rows_widgets.clear()
+        recall_entries = self._recall_rows() if live and integration_current else []
+        if not self.recall_switch.get_active():
+            recall_row = Adw.ActionRow(
+                title="Privacy Recall is off",
+                subtitle="Enable the feature explicitly to begin local metadata capture.",
+            )
+            self.recall_results_group.add(recall_row)
+            self._recall_rows_widgets.append(recall_row)
+        elif not recall_entries:
+            recall_row = Adw.ActionRow(
+                title="No matching Recall entries",
+                subtitle="A first entry is created after the selected interval or with Capture Now.",
+            )
+            self.recall_results_group.add(recall_row)
+            self._recall_rows_widgets.append(recall_row)
+        else:
+            for item in recall_entries:
+                modified = datetime.fromtimestamp(item.get("modified", 0)).strftime("%Y-%m-%d %H:%M:%S")
+                apps = ", ".join(item.get("apps", [])[:4]) or "Unknown application"
+                titles = " · ".join(item.get("titles", [])[:3])
+                recall_row = Adw.ActionRow(
+                    title=f"{modified} — {apps}",
+                    subtitle=titles or "No window title was exposed",
+                )
+                self.recall_results_group.add(recall_row)
+                self._recall_rows_widgets.append(recall_row)
 
         sessions = self._session_rows() if live else []
         if not sessions:

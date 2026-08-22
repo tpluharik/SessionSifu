@@ -100,21 +100,21 @@ class MacOSAdapter(PlatformAdapter):
             )
         return completed.stdout.strip()
 
-    def capture_windows(self) -> list[WindowSnapshot]:
+    def capture_windows(self, include_files: bool = True) -> list[WindowSnapshot]:
         raw = json.loads(self._jxa(CAPTURE_SCRIPT) or "[]")
         windows: list[WindowSnapshot] = []
         for item in raw:
             pid = int(item.get("pid") or 0)
             if str(item.get("app_name") or "").casefold() in {"sessionsifu", "finder", "dock"}:
                 continue
-            executable, command = process_details(pid)
+            executable, command = process_details(pid, include_command=include_files)
             windows.append(
                 WindowSnapshot.from_dict(
                     {
                         **item,
                         "executable": executable,
                         "command": command,
-                        "open_files": process_files(pid),
+                        "open_files": process_files(pid) if include_files else [],
                     }
                 )
             )

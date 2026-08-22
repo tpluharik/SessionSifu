@@ -42,6 +42,14 @@ dialog reopens the gate.
 interval, performs an initial save shortly after startup, prevents overlapping
 saves and removes files older than the five newest successful snapshots.
 
+`recallRecorder.js` owns a separate timer that cannot save unless the
+disabled-by-default `recall-enabled` flag is true. Entries are sanitized before
+writing: process IDs, commands, host/user data and desktop-file paths are
+removed, full document paths require another opt-in, and matching excluded
+applications are discarded. Files are limited to 2 MiB, queries to 100 results,
+storage to 500 entries and retention to 30 days at the schema level. Recall
+files use mode 0600 below a mode-0700 directory on POSIX systems.
+
 The extension exports `org.gnome.Shell.Extensions.SessionSifu.Control` on the
 session D-Bus. The interface supports health checks, named-session operations,
 automatic history operations, previous-session restoration and opening the
@@ -74,6 +82,11 @@ used by both the command line and the Qt manager.
 through 30-minute intervals and exits through **Turn Off SessionSifu**. Slow or
 privileged platform operations are delegated to adapters rather than embedded
 in widget code.
+
+`recall.py` provides the portable activity timeline. It stores a reduced JSON
+shape rather than restorable process commands, writes through an atomic
+same-directory replacement, rejects symbolic-link storage and applies bounded
+retention. The Qt timer starts only while its persisted feature flag is true.
 
 The portable model intentionally records only observable state. Process files
 are restricted to readable regular files below the user's home directory,
@@ -117,6 +130,11 @@ required before files can be exchanged between those engines.
 Session JSON can contain an `open_files` array on each saved window object. This
 is best-effort metadata rather than a promise that every application's internal
 document state can be observed.
+
+Privacy Recall data is separate from named/restorable sessions. Version 2.1
+does not take screenshots or perform OCR. This prevents a high-risk visual
+archive from being created before OS credential-store encryption, reliable
+private-context exclusions and cross-platform security review are available.
 
 ## Debian package and update channel
 
