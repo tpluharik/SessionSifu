@@ -1,7 +1,7 @@
 {
-  "version": "2.2.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.2.0_all.deb",
-  "sha256": "54ce48ac1ddb692bf6734dd22d14a6b1183abf56c52e11bb724a24586330448c",
-  "size": 241788,
-  "notes": "Adds search-time application redaction and a dedicated Ctrl+Alt+Space Privacy Recall search popup across GNOME, KDE, Windows, macOS and portable Linux."
+  "version": "2.2.1",
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.2.1_all.deb",
+  "sha256": "40356627df0767e6bb1c1d75fca2afa53ca8d7b525cdc09daeefb2f59979393c",
+  "size": 243112,
+  "notes": "Fixes the Ubuntu Recall shortcut and adds immediately applied, customizable search shortcuts across GNOME, KDE, Windows, macOS and portable Linux."
 }

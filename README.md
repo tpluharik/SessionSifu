@@ -8,7 +8,7 @@ SessionSifu saves and reconstructs desktop layouts. It records running
 applications, documents and windows, then can relaunch applications and rebuild
 the supported parts of their layout.
 
-Version 2.2.0 retains the full Ubuntu 26.04/GNOME Shell 50 integration and adds
+Version 2.2.1 retains the full Ubuntu 26.04/GNOME Shell 50 integration and adds
 portable editions for Windows, macOS, KDE Plasma 6 and other GNOME/Linux
 desktops. The project is open source under GPL-3.0.
 
@@ -100,17 +100,17 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_2.2.0_all.deb` from the `updates/` directory, or build it
+Download `sessionsifu_2.2.1_all.deb` from the `updates/` directory, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_2.2.0_all.deb
+sudo apt install ./sessionsifu_2.2.1_all.deb
 ```
 
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_2.2.0_all.deb
+sudo apt install ./dist/sessionsifu_2.2.1_all.deb
 ```
 
 After installation:
@@ -126,10 +126,10 @@ After installation:
 
 Tagged releases attach these self-contained artifacts:
 
-- `SessionSifu-2.2.0-windows-x64.zip`;
-- `SessionSifu-2.2.0-macos-arm64.zip`;
-- `SessionSifu-2.2.0-macos-x64.zip`; and
-- `SessionSifu-2.2.0-linux-x64.tar.gz`.
+- `SessionSifu-2.2.1-windows-x64.zip`;
+- `SessionSifu-2.2.1-macos-arm64.zip`;
+- `SessionSifu-2.2.1-macos-x64.zip`; and
+- `SessionSifu-2.2.1-linux-x64.tar.gz`.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -264,8 +264,9 @@ all entries from the manager. Exclusions are enforced both during capture and
 during every search, so adding an exclusion immediately redacts that app's
 identity, titles and opted-in file paths from older results.
 
-While Recall is active, `Ctrl+Alt+Space` opens a separate, compact search popup.
-The shortcut can be disabled independently. GNOME uses its native Shell
+The customizable `Ctrl+Alt+Space` default opens a separate, compact search
+popup. It remains available for existing history while capture is paused and
+can be changed or disabled independently. GNOME uses its native Shell
 keybinding, Windows uses `RegisterHotKey`, macOS uses an exact Cocoa key-event
 match, and KDE/Wayland or general Linux requests user approval through the XDG
 GlobalShortcuts portal. SessionSifu does not log arbitrary keystrokes. A
@@ -310,8 +311,8 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_2.2.0_all.deb
-updates/sessionsifu_2.2.0_all.deb
+dist/sessionsifu_2.2.1_all.deb
+updates/sessionsifu_2.2.1_all.deb
 updates/latest.json
 ```
 
@@ -329,7 +330,7 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v2.2.0` tag publishes the artifacts and `SHA256SUMS` as a GitHub
+A pushed `v2.2.1` tag publishes the artifacts and `SHA256SUMS` as a GitHub
 Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
@@ -353,7 +354,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Contribution guide](CONTRIBUTING.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
 
-The current 2.2.0 release establishes the shared platform architecture while
+The current 2.2.1 release establishes the shared platform architecture while
 preserving the mature GNOME 50 backend. Compatibility claims are added only
 after hands-on testing; reports from configurations not listed in the table are
 useful, but are treated as best-effort until support is documented here.

@@ -17,6 +17,7 @@ from sessionsifu_portable.adapters.base import AdapterCapabilities, PlatformAdap
 from sessionsifu_portable.controller import SessionController  # noqa: E402
 from sessionsifu_portable.model import SessionSnapshot, WindowSnapshot  # noqa: E402
 from sessionsifu_portable.recall import RecallStore  # noqa: E402
+from sessionsifu_portable.shortcut import parse_shortcut  # noqa: E402
 from sessionsifu_portable.storage import HISTORY_LIMIT, SessionStore  # noqa: E402
 from sessionsifu_portable.adapters.linux import GnomeAdapter, KDEAdapter, LinuxAdapter  # noqa: E402
 from sessionsifu_portable.adapters.macos import MacOSAdapter  # noqa: E402
@@ -56,6 +57,19 @@ class FakeAdapter(PlatformAdapter):
 
 
 class PortableTests(unittest.TestCase):
+    def test_recall_shortcuts_are_normalized_for_all_platform_backends(self) -> None:
+        shortcut = parse_shortcut("alt+control+r")
+        self.assertEqual(shortcut.label, "Ctrl+Alt+R")
+        self.assertEqual(shortcut.portal_trigger, "<Control><Alt>r")
+        self.assertEqual(shortcut.windows_modifiers, 0x4003)
+        self.assertEqual(shortcut.windows_key, ord("R"))
+        self.assertEqual(shortcut.event_character, "r")
+        self.assertEqual(parse_shortcut("super+shift+space").label, "Shift+Super+Space")
+        with self.assertRaises(ValueError):
+            parse_shortcut("Space")
+        with self.assertRaises(ValueError):
+            parse_shortcut("Ctrl+Escape")
+
     def test_all_platform_modules_import_without_side_effects(self) -> None:
         self.assertEqual(WindowsAdapter.key, "windows")
         self.assertEqual(MacOSAdapter.key, "macos")
@@ -69,7 +83,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "2.2.0")
+        self.assertEqual(VERSION, "2.2.1")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:

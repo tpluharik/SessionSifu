@@ -15,9 +15,10 @@ import uuid
 
 from PySide6.QtCore import QObject, Signal
 
+from .shortcut import DEFAULT_SHORTCUT, ShortcutSpec, parse_shortcut
 
-SHORTCUT_LABEL = "Ctrl+Alt+Space"
-PORTAL_TRIGGER = "<Control><Alt>space"
+
+SHORTCUT_LABEL = DEFAULT_SHORTCUT
 
 
 class RecallHotkey(QObject):
@@ -26,8 +27,9 @@ class RecallHotkey(QObject):
     triggered = Signal()
     status_changed = Signal(str)
 
-    def __init__(self) -> None:
+    def __init__(self, shortcut: str = DEFAULT_SHORTCUT) -> None:
         super().__init__()
+        self._shortcut = parse_shortcut(shortcut)
         self._active = False
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -36,6 +38,21 @@ class RecallHotkey(QObject):
         self._portal_loop: asyncio.AbstractEventLoop | None = None
         self._portal_bus = None
         self._portal_session = ""
+
+    @property
+    def shortcut(self) -> ShortcutSpec:
+        return self._shortcut
+
+    def set_shortcut(self, shortcut: str) -> None:
+        replacement = parse_shortcut(shortcut)
+        if replacement == self._shortcut:
+            return
+        was_active = self._active
+        if was_active:
+            self.stop()
+        self._shortcut = replacement
+        if was_active:
+            self.start()
 
     def start(self) -> None:
         if self._active:
@@ -52,7 +69,7 @@ class RecallHotkey(QObject):
             self._thread.start()
         else:
             self.status_changed.emit(
-                f"Global {SHORTCUT_LABEL} is unavailable on this platform; use the tray action."
+                f"Global {self._shortcut.label} is unavailable on this platform; use the tray action."
             )
 
     def stop(self) -> None:
@@ -78,15 +95,16 @@ class RecallHotkey(QObject):
         kernel32 = ctypes.windll.kernel32
         hotkey_id = 0x5349
         self._windows_thread_id = kernel32.GetCurrentThreadId()
-        # MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_SPACE
-        if not user32.RegisterHotKey(None, hotkey_id, 0x0002 | 0x0001 | 0x4000, 0x20):
+        if not user32.RegisterHotKey(
+            None, hotkey_id, self._shortcut.windows_modifiers, self._shortcut.windows_key
+        ):
             self.status_changed.emit(
-                f"Could not reserve {SHORTCUT_LABEL}; another application may already use it."
+                f"Could not reserve {self._shortcut.label}; another application may already use it."
             )
             self._active = False
             self._windows_thread_id = 0
             return
-        self.status_changed.emit(f"Recall search shortcut active: {SHORTCUT_LABEL}")
+        self.status_changed.emit(f"Recall search shortcut active: {self._shortcut.label}")
         message = wintypes.MSG()
         try:
             while user32.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
@@ -112,11 +130,25 @@ class RecallHotkey(QObject):
             self._active = False
             return
 
-        required = NSEventModifierFlagControl | NSEventModifierFlagOption
+        modifier_flags = {
+            "Ctrl": NSEventModifierFlagControl,
+            "Alt": NSEventModifierFlagOption,
+        }
+        try:
+            from AppKit import NSEventModifierFlagCommand, NSEventModifierFlagShift
+
+            modifier_flags.update({
+                "Shift": NSEventModifierFlagShift,
+                "Super": NSEventModifierFlagCommand,
+            })
+        except ImportError:  # pragma: no cover - older PyObjC fallback
+            pass
+        required = sum(modifier_flags[value] for value in self._shortcut.modifiers)
 
         def matches(event) -> bool:
             return (
-                event.keyCode() == 49
+                (event.charactersIgnoringModifiers() or "").casefold()
+                == self._shortcut.event_character
                 and event.modifierFlags()
                 & NSEventModifierFlagDeviceIndependentFlagsMask
                 == required
@@ -143,12 +175,12 @@ class RecallHotkey(QObject):
                 ),
             ]
             self.status_changed.emit(
-                f"Recall search shortcut active: {SHORTCUT_LABEL} (Input Monitoring may be requested)."
+                f"Recall search shortcut active: {self._shortcut.label} (Input Monitoring may be requested)."
             )
         except Exception as error:  # pragma: no cover - requires macOS UI services
             self._mac_monitors = []
             self._active = False
-            self.status_changed.emit(f"Could not register {SHORTCUT_LABEL}: {error}")
+            self.status_changed.emit(f"Could not register {self._shortcut.label}: {error}")
 
     def _stop_macos(self) -> None:
         try:
@@ -171,7 +203,7 @@ class RecallHotkey(QObject):
             if self._stop is stop_event:
                 self._active = False
             self.status_changed.emit(
-                f"Global shortcut unavailable ({error}); use {SHORTCUT_LABEL} while SessionSifu is focused or the tray action."
+                f"Global shortcut unavailable ({error}); use {self._shortcut.label} while SessionSifu is focused or the tray action."
             )
         finally:
             self._portal_loop = None
@@ -247,7 +279,7 @@ class RecallHotkey(QObject):
                     "recall-search",
                     {
                         "description": Variant("s", "Open SessionSifu Privacy Recall search"),
-                        "preferred_trigger": Variant("s", PORTAL_TRIGGER),
+                        "preferred_trigger": Variant("s", self._shortcut.portal_trigger),
                     },
                 ]],
                 "",
@@ -256,7 +288,7 @@ class RecallHotkey(QObject):
             bind_token,
         )
         self.status_changed.emit(
-            f"Recall search shortcut active through the desktop portal: {SHORTCUT_LABEL}"
+            f"Recall search shortcut active through the desktop portal: {self._shortcut.label}"
         )
         while not stop_event.is_set():
             await asyncio.sleep(0.2)

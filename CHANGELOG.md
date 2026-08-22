@@ -2,6 +2,20 @@
 
 All notable SessionSifu changes are documented here.
 
+## 2.2.1
+
+- Fixed the GNOME/Ubuntu Recall search shortcut being silently unregistered
+  whenever Recall capture was paused. Existing Recall history can now be
+  opened from the shortcut independently of new capture.
+- Added an in-app keyboard-capture editor for the GNOME shortcut and a direct
+  **Open Search** test action. Changes are applied immediately by GNOME Shell.
+- Re-register the GNOME keybinding when its accelerator changes and accept it
+  while the overview or a Shell popup is open.
+- Added a validated, editable cross-platform shortcut for Windows, macOS, KDE
+  and portable Linux. Native registration and tray/local labels update without
+  restarting SessionSifu.
+- Added shortcut normalization and GSettings mutation regression tests.
+
 ## 2.2.0
 
 - Applied application exclusions during every Recall query as well as capture,

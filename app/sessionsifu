@@ -23,11 +23,11 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "2.2.0"
+CURRENT_VERSION = "2.2.1"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -740,13 +740,33 @@ class ManagerWindow(Adw.ApplicationWindow):
 
         self.recall_shortcut_switch = Adw.SwitchRow(
             title="Global Recall search shortcut",
-            subtitle="Ctrl+Alt+Space opens a separate search popup while Recall is active",
+            subtitle="Opens search even while new Recall capture is paused",
         )
         self.recall_shortcut_switch.set_active(
             self._settings.get_boolean("recall-search-shortcut-enabled")
         )
         self.recall_shortcut_switch.connect("notify::active", self._toggle_recall_shortcut)
         recall_group.add(self.recall_shortcut_switch)
+
+        configured_shortcuts = self._settings.get_strv("recall-search-shortcut")
+        configured_shortcut = configured_shortcuts[0] if configured_shortcuts else ""
+        self.recall_shortcut_row = Adw.ActionRow(
+            title="Keyboard combination",
+            subtitle="Choose a combination that is not already reserved by the desktop",
+        )
+        self.recall_shortcut_label = Gtk.ShortcutLabel(
+            accelerator=configured_shortcut,
+            valign=Gtk.Align.CENTER,
+        )
+        self.recall_shortcut_label.set_disabled_text("Not set")
+        self.recall_shortcut_row.add_suffix(self.recall_shortcut_label)
+        change_shortcut = Gtk.Button(label="Change…", valign=Gtk.Align.CENTER)
+        change_shortcut.connect("clicked", self._capture_recall_shortcut)
+        self.recall_shortcut_row.add_suffix(change_shortcut)
+        test_shortcut = Gtk.Button(label="Open Search", valign=Gtk.Align.CENTER)
+        test_shortcut.connect("clicked", self._open_recall_search)
+        self.recall_shortcut_row.add_suffix(test_shortcut)
+        recall_group.add(self.recall_shortcut_row)
 
         capture_recall_row = Adw.ActionRow(
             title="Capture current activity metadata",
@@ -926,7 +946,10 @@ class ManagerWindow(Adw.ApplicationWindow):
         self.recall_files_switch.set_sensitive(enabled)
         self.recall_exclusions_entry.set_sensitive(enabled)
         self.recall_capture_button.set_sensitive(enabled)
-        self.recall_shortcut_switch.set_sensitive(enabled)
+        self.recall_shortcut_switch.set_sensitive(True)
+        self.recall_shortcut_row.set_sensitive(
+            self.recall_shortcut_switch.get_active()
+        )
         self.indicator_switch.set_sensitive(not enabled)
 
     def _recall_interval_changed(self, row, _param) -> None:
@@ -948,6 +971,97 @@ class ManagerWindow(Adw.ApplicationWindow):
         self._settings.set_boolean(
             "recall-search-shortcut-enabled", row.get_active()
         )
+        self._update_recall_controls()
+
+    def _set_recall_shortcut(self, accelerator: str) -> None:
+        self._settings.set_strv(
+            "recall-search-shortcut", [accelerator] if accelerator else []
+        )
+        self.recall_shortcut_label.set_accelerator(accelerator)
+
+    def _capture_recall_shortcut(self, _button) -> None:
+        dialog = Adw.Window(
+            title="Set Recall Search Shortcut",
+            transient_for=self,
+            modal=True,
+            default_width=440,
+            default_height=210,
+        )
+        content = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=18,
+            margin_top=24,
+            margin_bottom=24,
+            margin_start=24,
+            margin_end=24,
+            focusable=True,
+        )
+        content.append(Gtk.Label(
+            label="Press the new keyboard combination",
+            css_classes=["title-2"],
+        ))
+        status = Gtk.Label(
+            label="Use at least one modifier such as Ctrl, Alt, Shift or Super.",
+            wrap=True,
+        )
+        content.append(status)
+        buttons = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=12,
+            halign=Gtk.Align.CENTER,
+        )
+        cancel = Gtk.Button(label="Cancel")
+        cancel.connect("clicked", lambda _widget: dialog.close())
+        reset = Gtk.Button(label="Reset to Ctrl+Alt+Space")
+        reset.connect(
+            "clicked",
+            lambda _widget: (self._set_recall_shortcut("<Control><Alt>space"), dialog.close()),
+        )
+        buttons.append(cancel)
+        buttons.append(reset)
+        content.append(buttons)
+        dialog.set_content(content)
+
+        modifiers_only = {
+            Gdk.KEY_Control_L, Gdk.KEY_Control_R,
+            Gdk.KEY_Shift_L, Gdk.KEY_Shift_R,
+            Gdk.KEY_Alt_L, Gdk.KEY_Alt_R,
+            Gdk.KEY_Meta_L, Gdk.KEY_Meta_R,
+            Gdk.KEY_Super_L, Gdk.KEY_Super_R,
+        }
+
+        def capture(_controller, keyval, _keycode, state) -> bool:
+            if keyval == Gdk.KEY_Escape:
+                dialog.close()
+                return True
+            if keyval in modifiers_only:
+                return True
+            modifiers = state & Gtk.accelerator_get_default_mod_mask()
+            if not modifiers or not Gtk.accelerator_valid(keyval, modifiers):
+                status.set_label(
+                    "That combination cannot be global. Hold Ctrl, Alt, Shift or Super and press another key."
+                )
+                status.add_css_class("error")
+                return True
+            accelerator = Gtk.accelerator_name(keyval, modifiers)
+            self._set_recall_shortcut(accelerator)
+            dialog.close()
+            return True
+
+        key_controller = Gtk.EventControllerKey.new()
+        key_controller.connect("key-pressed", capture)
+        content.add_controller(key_controller)
+        dialog.present()
+        content.grab_focus()
+
+    def _open_recall_search(self, _button) -> None:
+        try:
+            Gio.Subprocess.new(
+                [str(Path(__file__).resolve()), "--recall-search"],
+                Gio.SubprocessFlags.NONE,
+            )
+        except GLib.Error as error:
+            self._message(f"Could not open Recall search: {error.message}")
 
     def _recall_exclusions_changed(self, entry) -> None:
         values = [value.strip() for value in entry.get_text().split(",") if value.strip()]

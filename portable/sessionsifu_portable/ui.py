@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 from . import VERSION
 from .controller import SessionController
 from .hotkey import RecallHotkey, SHORTCUT_LABEL
+from .shortcut import DEFAULT_SHORTCUT, normalize_shortcut
 
 INTERVALS = [30, 60, 300, 600, 900, 1800]
 RECALL_INTERVALS = [60, 300, 900, 1800]
@@ -40,6 +41,12 @@ RECALL_RETENTION_HOURS = [1, 6, 24, 72, 168]
 def icon_path() -> Path:
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
     return base / "app" / "org.gnome.SessionSifu.svg"
+
+
+def qt_shortcut(shortcut: str) -> QKeySequence:
+    """Translate the portable Super spelling to Qt's Meta spelling."""
+
+    return QKeySequence(shortcut.replace("Super", "Meta"))
 
 
 class MainWindow(QMainWindow):
@@ -135,13 +142,25 @@ class MainWindow(QMainWindow):
         recall_layout.addLayout(recall_form)
 
         self.recall_shortcut = QCheckBox(
-            f"Enable global Recall search shortcut ({SHORTCUT_LABEL})"
+            "Enable global Recall search shortcut"
         )
         self.recall_shortcut.setChecked(
             self.settings.value("recall_shortcut_enabled", True, type=bool)
         )
         self.recall_shortcut.toggled.connect(self.toggle_recall_shortcut)
         recall_layout.addWidget(self.recall_shortcut)
+        self.recall_shortcut_value = QLineEdit()
+        self.recall_shortcut_value.setPlaceholderText(DEFAULT_SHORTCUT)
+        stored_shortcut = str(
+            self.settings.value("recall_shortcut", DEFAULT_SHORTCUT)
+        )
+        try:
+            stored_shortcut = normalize_shortcut(stored_shortcut)
+        except ValueError:
+            stored_shortcut = DEFAULT_SHORTCUT
+        self.recall_shortcut_value.setText(stored_shortcut)
+        self.recall_shortcut_value.editingFinished.connect(self.recall_shortcut_changed)
+        recall_form.addRow("Search shortcut", self.recall_shortcut_value)
 
         self.recall_files = QCheckBox("Include full paths of open files")
         self.recall_files.setChecked(
@@ -267,8 +286,34 @@ class MainWindow(QMainWindow):
 
     def toggle_recall_shortcut(self, enabled: bool) -> None:
         self.settings.setValue("recall_shortcut_enabled", enabled)
+        self.recall_shortcut_value.setEnabled(enabled)
         if self._recall_state_callback is not None:
-            self._recall_state_callback(self.recall_enabled.isChecked())
+            self._notify_recall_state()
+
+    def shortcut_value(self) -> str:
+        return normalize_shortcut(self.recall_shortcut_value.text())
+
+    def recall_shortcut_changed(self) -> None:
+        try:
+            shortcut = self.shortcut_value()
+        except ValueError as error:
+            self.status.setText(f"Invalid Recall shortcut: {error}")
+            self.recall_shortcut_value.setText(
+                str(self.settings.value("recall_shortcut", DEFAULT_SHORTCUT))
+            )
+            return
+        self.recall_shortcut_value.setText(shortcut)
+        self.settings.setValue("recall_shortcut", shortcut)
+        self.status.setText(f"Recall search shortcut changed to {shortcut}.")
+        self._notify_recall_state()
+
+    def _notify_recall_state(self) -> None:
+        if self._recall_state_callback is not None:
+            self._recall_state_callback(
+                self.recall_enabled.isChecked(),
+                self.recall_shortcut.isChecked(),
+                self.shortcut_value(),
+            )
 
     def toggle_recall(self, enabled: bool) -> None:
         self.settings.setValue("recall_enabled", enabled)
@@ -279,7 +324,7 @@ class MainWindow(QMainWindow):
             else "Privacy Recall is paused. No activity metadata is being recorded."
         )
         if self._recall_state_callback is not None:
-            self._recall_state_callback(enabled)
+            self._notify_recall_state()
 
     def update_recall_timer(self, *_args) -> None:
         seconds = int(self.recall_interval.currentData())
@@ -290,7 +335,8 @@ class MainWindow(QMainWindow):
         self.recall_exclusions.setEnabled(enabled)
         self.recall_files.setEnabled(enabled)
         self.recall_capture.setEnabled(enabled)
-        self.recall_shortcut.setEnabled(enabled)
+        self.recall_shortcut.setEnabled(True)
+        self.recall_shortcut_value.setEnabled(self.recall_shortcut.isChecked())
         if enabled:
             self.recall_timer.start(seconds * 1000)
         else:
@@ -337,7 +383,7 @@ class MainWindow(QMainWindow):
 
     def set_recall_state_callback(self, callback) -> None:
         self._recall_state_callback = callback
-        callback(self.recall_enabled.isChecked())
+        self._notify_recall_state()
 
     def refresh(self) -> None:
         self.named.clear()
@@ -403,6 +449,9 @@ class RecallSearchDialog(QDialog):
         self.local_shortcut = QShortcut(QKeySequence(SHORTCUT_LABEL), self)
         self.local_shortcut.activated.connect(self.focus_search)
 
+    def set_shortcut(self, shortcut: str) -> None:
+        self.local_shortcut.setKey(qt_shortcut(shortcut))
+
     def focus_search(self) -> None:
         self.show()
         self.raise_()
@@ -444,11 +493,9 @@ def run_gui(
         recall_search.refresh()
         recall_search.focus_search()
 
-    local_shortcut = QShortcut(QKeySequence(SHORTCUT_LABEL), window)
-    local_shortcut.activated.connect(
-        lambda: show_recall_search() if window.recall_enabled.isChecked() else None
-    )
-    native_hotkey = RecallHotkey()
+    local_shortcut = QShortcut(qt_shortcut(window.shortcut_value()), window)
+    local_shortcut.activated.connect(show_recall_search)
+    native_hotkey = RecallHotkey(window.shortcut_value())
     native_hotkey.triggered.connect(show_recall_search)
     native_hotkey.status_changed.connect(window.status.setText)
 
@@ -463,17 +510,25 @@ def run_gui(
     recall = QAction("Privacy Recall capture (experimental)", menu)
     recall.setCheckable(True)
     recall.toggled.connect(window.recall_enabled.setChecked)
-    search_recall = QAction(f"Search Privacy Recall… ({SHORTCUT_LABEL})", menu)
+    search_recall = QAction(
+        f"Search Privacy Recall… ({window.shortcut_value()})", menu
+    )
     search_recall.triggered.connect(show_recall_search)
 
-    def recall_state_changed(enabled: bool) -> None:
-        recall.setChecked(enabled)
+    def recall_state_changed(
+        capture_enabled: bool, shortcut_enabled: bool, shortcut: str
+    ) -> None:
+        recall.setChecked(capture_enabled)
         tray.setToolTip(
             f"SessionSifu {VERSION} · Privacy Recall active"
-            if enabled
+            if capture_enabled
             else f"SessionSifu {VERSION}"
         )
-        if enabled and window.recall_shortcut.isChecked():
+        local_shortcut.setKey(qt_shortcut(shortcut))
+        recall_search.set_shortcut(shortcut)
+        search_recall.setText(f"Search Privacy Recall… ({shortcut})")
+        native_hotkey.set_shortcut(shortcut)
+        if shortcut_enabled:
             native_hotkey.start()
         else:
             native_hotkey.stop()

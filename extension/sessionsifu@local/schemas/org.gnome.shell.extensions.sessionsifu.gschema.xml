@@ -193,7 +193,8 @@
 
     <key name="recall-search-shortcut-enabled" type="b">
       <default>true</default>
-      <summary>Enable the Privacy Recall search shortcut while Recall is active</summary>
+      <summary>Enable the Privacy Recall search shortcut</summary>
+      <description>The shortcut can search existing history even while new Recall capture is paused.</description>
     </key>
 
     <key name="recall-search-shortcut" type="as">

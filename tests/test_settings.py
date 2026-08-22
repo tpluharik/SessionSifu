@@ -33,6 +33,9 @@ assert settings.get_boolean("recall-include-file-paths") is False
 assert "SessionSifu" in settings.get_strv("recall-excluded-apps")
 assert settings.get_boolean("recall-search-shortcut-enabled") is True
 assert settings.get_strv("recall-search-shortcut") == ["<Control><Alt>space"]
+settings.set_strv("recall-search-shortcut", ["<Control><Shift>r"])
+assert settings.get_strv("recall-search-shortcut") == ["<Control><Shift>r"]
+settings.set_strv("recall-search-shortcut", ["<Control><Alt>space"])
 settings.set_int("continuous-save-interval", 30)
 assert settings.get_int("continuous-save-interval") == 30
 settings.set_int("continuous-save-interval", 300)

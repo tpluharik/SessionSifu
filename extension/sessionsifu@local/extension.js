@@ -36,6 +36,7 @@ export default class SessionSifuExtension extends Extension {
     enable() {
         // settings is needed by the initialization of some utils
         this._settings = this.getSettings('org.gnome.shell.extensions.sessionsifu');
+        this._recallShortcutRegistered = false;
 
         this.initUtils();
 
@@ -48,6 +49,8 @@ export default class SessionSifuExtension extends Extension {
             });
         this._recallShortcutChangedId = this._settings.connect(
             'changed::recall-search-shortcut-enabled', () => this._syncRecallShortcut());
+        this._recallAcceleratorChangedId = this._settings.connect(
+            'changed::recall-search-shortcut', () => this._syncRecallShortcut());
         this.showOrHideIndicator();
         this._syncRecallShortcut();
 
@@ -88,15 +91,15 @@ export default class SessionSifuExtension extends Extension {
 
     _syncRecallShortcut() {
         this._removeRecallShortcut();
-        if (!this._settings.get_boolean('recall-enabled') ||
-            !this._settings.get_boolean('recall-search-shortcut-enabled'))
+        if (!this._settings.get_boolean('recall-search-shortcut-enabled') ||
+            this._settings.get_strv('recall-search-shortcut').every(value => !value))
             return;
         try {
             Main.wm.addKeybinding(
                 'recall-search-shortcut',
                 this._settings,
                 Meta.KeyBindingFlags.NONE,
-                Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
+                Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW | Shell.ActionMode.POPUP,
                 () => {
                     try {
                         Gio.Subprocess.new(
@@ -165,6 +168,10 @@ export default class SessionSifuExtension extends Extension {
             if (this._recallShortcutChangedId) {
                 this._settings.disconnect(this._recallShortcutChangedId);
                 this._recallShortcutChangedId = 0;
+            }
+            if (this._recallAcceleratorChangedId) {
+                this._settings.disconnect(this._recallAcceleratorChangedId);
+                this._recallAcceleratorChangedId = 0;
             }
             this._settings = null;
         }

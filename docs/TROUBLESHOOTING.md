@@ -52,12 +52,17 @@ normal retention policy or can be removed with **Delete All**.
 
 ## The Recall search shortcut does not open
 
-The `Ctrl+Alt+Space` shortcut is registered only while Privacy Recall and its
-shortcut option are enabled. On KDE/Wayland or general Linux, approve the XDG
-desktop-portal shortcut request. On macOS, allow SessionSifu under **Privacy &
-Security → Input Monitoring**. Windows reports a conflict when another program
-already owns the shortcut. The top-bar/tray **Search Privacy Recall…** action
-and the same shortcut while SessionSifu is focused remain available as a
+The shortcut is independent of Recall capture, so it can search existing
+history while capture is paused. Open SessionSifu, ensure **Global Recall
+search shortcut** is enabled, select **Change…**, press a combination not
+already reserved by Ubuntu or another extension, and use **Open Search** to
+verify the popup target. The new GNOME keybinding is applied immediately.
+
+On KDE/Wayland or general Linux, approve the XDG desktop-portal shortcut
+request. On macOS, allow SessionSifu under **Privacy & Security → Input
+Monitoring**. Windows reports a conflict when another program already owns the
+shortcut. Portable editions accept Ctrl/Alt/Shift/Super plus Space, A-Z or 0-9.
+The top-bar/tray **Search Privacy Recall…** action remains available as a
 fallback.
 
 ## A restored application does not reopen its document

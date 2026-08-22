@@ -97,11 +97,13 @@ retention. It applies the current exclusion list during capture and again before
 constructing search summaries. The Qt timer starts only while its persisted
 feature flag is true.
 
-`hotkey.py` exposes the same exact-key Recall popup shortcut on portable
+`shortcut.py` validates and normalizes the editable cross-platform accelerator.
+`hotkey.py` exposes that Recall popup shortcut on portable
 targets. Windows uses `RegisterHotKey`; macOS uses Cocoa's modifier/key event
 monitor; KDE/Wayland and other supporting Linux compositors use the user-mediated
-XDG GlobalShortcuts portal. The helper reacts only to `Ctrl+Alt+Space`, does not
-record key text and is stopped whenever Recall or its shortcut option is off.
+XDG GlobalShortcuts portal. The helper reacts only to the configured exact
+combination, does not record key text and is stopped when its shortcut option is
+off. Search remains available while new Recall capture is paused.
 The tray action and application-local shortcut remain available if a compositor
 does not implement the portal or permission is declined.
 
