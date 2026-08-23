@@ -83,7 +83,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.1.6")
+        self.assertEqual(VERSION, "3.1.7")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -234,8 +234,12 @@ class PortableTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             store = RecallStore(Path(directory))
             store._ocr = lambda preview: (
-                "quarterly falcon figures"
-                if preview == b"exact-window-preview" else ""
+                (
+                    "quarterly falcon figures",
+                    [{"t": "falcon", "x": 1000, "y": 2000,
+                      "w": 2000, "h": 1000, "c": 92}],
+                )
+                if preview == b"exact-window-preview" else ("", [])
             )
             store.save(
                 FakeAdapter().capture(),
@@ -245,6 +249,7 @@ class PortableTests(unittest.TestCase):
             result = store.search("falcon")[0]
             self.assertEqual(result["match_type"], "Window image text")
             self.assertIn("falcon", result["ocr_excerpt"])
+            self.assertEqual(result["highlight_boxes"][0]["t"], "falcon")
 
     def test_excluded_app_pixels_are_not_persisted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

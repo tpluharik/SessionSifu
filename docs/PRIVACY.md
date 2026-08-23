@@ -69,6 +69,9 @@ Recall is designed for data minimization, not invisible monitoring:
 - text search is indexed per window. A result exposes only that window's app,
   title, opted-in file targets and optional window-image OCR; full-display OCR
   is returned separately;
+- accepted OCR words retain bounded normalized rectangles and confidence values
+  inside the same AES-GCM record solely to highlight a matching word; the app
+  writes neither plaintext coordinates nor rendered highlight images to disk;
 - exact window previews are limited to 64 per capture, 960 pixels on the longest
   edge and quality-65 JPEG; display images use a 1,280-pixel/quality-70 bound;
 - a portable shared desktop image is discarded if any excluded application is

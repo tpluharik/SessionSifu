@@ -2,6 +2,22 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.1.7
+
+- Replaced flat OCR output with confidence-filtered Tesseract TSV word data.
+  Low-confidence recognition noise is no longer added to the encrypted search
+  index, while accepted words retain normalized image coordinates.
+- Search results now return the exact matching OCR word boxes and draw a
+  high-contrast translucent highlight over the corresponding window or display
+  screenshot. The highlight is also retained while browsing the GNOME window
+  gallery.
+- Added the same encrypted OCR-coordinate model and highlighted result
+  thumbnails to the portable Windows, macOS, KDE and general Linux editions.
+- Kept OCR word coordinates inside the existing AES-GCM record envelope; no
+  persistent plaintext OCR or spatial index is created.
+- Added regressions for TSV confidence filtering, coordinate normalization,
+  search-to-box matching and the highlighting surfaces.
+
 ## 3.1.6
 
 - Added a dedicated encrypted window gallery to the GNOME Recall browser.

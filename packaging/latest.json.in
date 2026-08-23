@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "SessionSifu 3.1.6 adds separate Previous/Next browsing for every encrypted window image and improves OCR discovery with sparse-text recognition plus bounded prefix/typo matching."
+  "notes": "SessionSifu 3.1.7 highlights matched OCR words on encrypted window/display previews and improves recognition with confidence-filtered spatial OCR data."
 }

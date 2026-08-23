@@ -202,6 +202,11 @@ and small recognition substitutions; optional related matching adds local
 token-similarity candidates and the focused window receives a small rank
 boost. An empty query remains a desktop-level chronological timeline whose
 gallery can navigate each linked window image independently.
+OCR runs in Tesseract sparse-layout TSV mode. Only words meeting the confidence
+floor enter the index; their text, confidence and normalized image rectangle
+are stored inside the encrypted record. Search returns at most 64 matching
+rectangles for the selected window/display, and GTK/Qt draw them over the
+CONTAIN-fitted image without creating a modified screenshot on disk.
 Persistent plaintext OCR or search indexes are never created. Each window row
 links directly to its encrypted preview. GNOME also stores display geometry so
 the GTK browser can crop a display image in memory for older/fallback records.

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import base64
+import csv
 import contextlib
+import io
 import json
 import os
 import re
@@ -31,6 +33,9 @@ MAX_PREVIEW_BYTES = 8 * 1024 * 1024
 MAX_WINDOW_PREVIEWS = 64
 MAX_WINDOW_OCR_BYTES = 16 * 1024
 MAX_TOTAL_WINDOW_OCR_BYTES = 512 * 1024
+MAX_OCR_BOXES_PER_IMAGE = 512
+MAX_TOTAL_WINDOW_OCR_BOXES = 4096
+MIN_OCR_CONFIDENCE = 30.0
 DEFAULT_RETENTION_HOURS = 24
 DEFAULT_EXCLUSIONS = ("sessionsifu",)
 MAGIC = b"SSRF1\0"
@@ -79,6 +84,25 @@ def _domain(value: str) -> str:
 def _private_mode(path: Path, mode: int) -> None:
     with contextlib.suppress(OSError):
         path.chmod(mode)
+
+
+def _matching_ocr_boxes(boxes: object, query: str) -> list[dict]:
+    tokens = re.findall(r"[\w]+", query.casefold())[:16]
+    if not tokens or not isinstance(boxes, list):
+        return []
+    matches = []
+    for box in boxes[:MAX_OCR_BOXES_PER_IMAGE]:
+        if not isinstance(box, dict):
+            continue
+        word = str(box.get("t") or "").casefold()
+        if any(token == word or (len(token) >= 3 and token in word) for token in tokens):
+            matches.append({
+                key: box[key] for key in ("t", "x", "y", "w", "h", "c")
+                if key in box
+            })
+        if len(matches) >= 64:
+            break
+    return matches
 
 
 def _matches_exclusion(window: WindowSnapshot, exclusions: tuple[str, ...]) -> bool:
@@ -195,6 +219,7 @@ class RecallStore:
             preview = None
         windows = []
         remaining_window_ocr = MAX_TOTAL_WINDOW_OCR_BYTES
+        remaining_window_boxes = MAX_TOTAL_WINDOW_OCR_BOXES
         for source_index, window in enumerate(session.windows):
             if _matches_exclusion(window, exclusions):
                 continue
@@ -214,18 +239,23 @@ class RecallStore:
                     raise ValueError("Recall window preview exceeds the safety limit")
                 item["_preview"] = image
                 if ocr_enabled and remaining_window_ocr:
-                    text = self._ocr(image).encode("utf-8")[
+                    text, boxes = self._ocr(image)
+                    text = text.encode("utf-8")[
                         :min(MAX_WINDOW_OCR_BYTES, remaining_window_ocr)
                     ].decode("utf-8", "ignore")
                     if text:
                         item["ocr_text"] = text
+                        item["ocr_boxes"] = boxes[:remaining_window_boxes]
+                        remaining_window_boxes -= len(item["ocr_boxes"])
                         remaining_window_ocr -= len(text.encode("utf-8"))
             item["_source_index"] = source_index
             windows.append(item)
         if not windows:
             raise RuntimeError("No non-excluded windows were available for Privacy Recall")
         stamp = datetime.now(timezone.utc).strftime("recall-%Y%m%d-%H%M%S-%f")
-        ocr_text = self._ocr(preview) if preview and ocr_enabled else ""
+        ocr_text, ocr_boxes = (
+            self._ocr(preview) if preview and ocr_enabled else ("", [])
+        )
         search_text = "\n".join(
             str(value)
             for item in windows
@@ -285,6 +315,7 @@ class RecallStore:
             "include_file_paths": bool(include_file_paths),
             "windows": windows,
             "ocr_text": ocr_text,
+            "ocr_boxes": ocr_boxes,
             "urls": urls,
             "targets": [
                 *[Path(value).as_uri() for value in (files if include_file_paths else []) if Path(value).is_absolute() and Path(value).is_file()],
@@ -311,21 +342,66 @@ class RecallStore:
         return path
 
     @staticmethod
-    def _ocr(preview: bytes) -> str:
+    def _ocr(preview: bytes) -> tuple[str, list[dict]]:
         descriptor, name = tempfile.mkstemp(suffix=".jpg")
         path = Path(name)
         try:
             with os.fdopen(descriptor, "wb") as output:
                 output.write(preview)
             result = subprocess.run(
-                ["tesseract", str(path), "stdout", "--psm", "6"],
+                [
+                    "tesseract", str(path), "stdout", "--oem", "1",
+                    "--psm", "11", "-c", "preserve_interword_spaces=1", "tsv",
+                ],
                 check=False,
                 capture_output=True,
                 timeout=20,
             )
-            return result.stdout[:1024 * 1024].decode("utf-8", "replace").strip() if result.returncode == 0 else ""
+            if result.returncode != 0:
+                return "", []
+            reader = csv.DictReader(
+                io.StringIO(result.stdout[:1024 * 1024].decode("utf-8", "replace")),
+                delimiter="\t",
+            )
+            page_width = page_height = 0
+            words = []
+            boxes = []
+            for row in reader:
+                try:
+                    level = int(row.get("level") or 0)
+                    if level == 1:
+                        page_width = max(page_width, int(row.get("width") or 0))
+                        page_height = max(page_height, int(row.get("height") or 0))
+                        continue
+                    text = str(row.get("text") or "").strip()[:128]
+                    confidence = float(row.get("conf") or -1)
+                    if (
+                        level != 5 or not page_width or not page_height or not text
+                        or confidence < MIN_OCR_CONFIDENCE
+                        or not any(character.isalnum() for character in text)
+                        or len(boxes) >= MAX_OCR_BOXES_PER_IMAGE
+                    ):
+                        continue
+                    left = max(0, int(row.get("left") or 0))
+                    top = max(0, int(row.get("top") or 0))
+                    width = min(max(1, int(row.get("width") or 0)), page_width - left)
+                    height = min(max(1, int(row.get("height") or 0)), page_height - top)
+                    if left >= page_width or top >= page_height:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                words.append(text)
+                boxes.append({
+                    "t": text,
+                    "x": round(left * 10000 / page_width),
+                    "y": round(top * 10000 / page_height),
+                    "w": max(1, round(width * 10000 / page_width)),
+                    "h": max(1, round(height * 10000 / page_height)),
+                    "c": round(confidence),
+                })
+            return " ".join(words)[:1024 * 1024], boxes
         except (OSError, subprocess.TimeoutExpired):
-            return ""
+            return "", []
         finally:
             path.unlink(missing_ok=True)
 
@@ -552,6 +628,9 @@ class RecallStore:
                         "result_kind": "window",
                         "matched_window": window,
                         "window_index": index,
+                        "highlight_boxes": _matching_ocr_boxes(
+                            window.get("ocr_boxes"), needle
+                        ),
                         "ocr_excerpt": " ".join(
                             str(window.get("ocr_text") or "").split()
                         )[:320],
@@ -574,6 +653,9 @@ class RecallStore:
                         "rank": round(visual_candidates[path.name], 4),
                         "match_type": "Visual text",
                         "result_kind": "visual",
+                        "highlight_boxes": _matching_ocr_boxes(
+                            payload.get("ocr_boxes"), needle
+                        ),
                         "ocr_excerpt": " ".join(ocr_text.split())[:320],
                     })
             results.sort(

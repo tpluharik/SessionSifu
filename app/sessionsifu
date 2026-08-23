@@ -48,7 +48,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.1.6"
+CURRENT_VERSION = "3.1.7"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -176,6 +176,61 @@ def _picture(path: Path, width: int, height: int, pixbuf=None) -> Gtk.Picture:
     picture.set_can_shrink(True)
     picture.set_size_request(width, height)
     return picture
+
+
+def _draw_ocr_highlights(_area, context, width: int, height: int, state: dict) -> None:
+    """Draw normalized OCR word boxes over a CONTAIN-fitted image."""
+    pixbuf = state.get("pixbuf")
+    boxes = state.get("boxes") or []
+    if pixbuf is None or not boxes:
+        return
+    image_width = max(1, pixbuf.get_width())
+    image_height = max(1, pixbuf.get_height())
+    scale = min(width / image_width, height / image_height)
+    rendered_width = image_width * scale
+    rendered_height = image_height * scale
+    offset_x = (width - rendered_width) / 2
+    offset_y = (height - rendered_height) / 2
+    context.set_line_width(max(1.5, min(width, height) / 220))
+    for box in boxes[:64]:
+        if not isinstance(box, dict):
+            continue
+        try:
+            x = offset_x + float(box["x"]) * rendered_width / 10000
+            y = offset_y + float(box["y"]) * rendered_height / 10000
+            box_width = max(2, float(box["w"]) * rendered_width / 10000)
+            box_height = max(2, float(box["h"]) * rendered_height / 10000)
+        except (KeyError, TypeError, ValueError):
+            continue
+        context.rectangle(x, y, box_width, box_height)
+        context.set_source_rgba(1.0, 0.78, 0.08, 0.34)
+        context.fill_preserve()
+        context.set_source_rgba(1.0, 0.52, 0.0, 0.95)
+        context.stroke()
+
+
+def _highlighted_picture(
+    pixbuf: GdkPixbuf.Pixbuf,
+    boxes: list[dict],
+    width: int,
+    height: int,
+) -> Gtk.Widget:
+    picture = _picture(Path("encrypted-highlighted-preview"), width, height, pixbuf)
+    picture.set_content_fit(Gtk.ContentFit.CONTAIN)
+    if not boxes:
+        return picture
+    overlay = Gtk.Overlay()
+    overlay.set_size_request(width, height)
+    overlay.set_child(picture)
+    drawing = Gtk.DrawingArea()
+    drawing.set_can_target(False)
+    drawing.set_hexpand(True)
+    drawing.set_vexpand(True)
+    drawing.set_draw_func(
+        _draw_ocr_highlights, {"pixbuf": pixbuf, "boxes": boxes}
+    )
+    overlay.add_overlay(drawing)
+    return overlay
 
 
 def _pixbuf_from_bytes(data: bytes) -> GdkPixbuf.Pixbuf | None:
@@ -328,7 +383,14 @@ def recall_preview(
     if not item.get("_pixbufs") and str(item.get("name", "")).endswith(".ssrec"):
         encrypted = []
         encrypted_by_index = {}
-        indices = list(range(min(
+        indices = []
+        try:
+            highlighted_index = int(item.get("highlight_image_index", -1))
+        except (TypeError, ValueError):
+            highlighted_index = -1
+        if 0 <= highlighted_index < int(item.get("image_count") or 0):
+            indices.append(highlighted_index)
+        indices.extend(range(min(
             8 if show_all else 2, int(item.get("image_count") or 0)
         )))
         match = item.get("matched_window")
@@ -349,7 +411,18 @@ def recall_preview(
         item["_pixbuf_by_index"] = encrypted_by_index
     cropped = _window_pixbuf(item)
     if cropped is not None:
-        return _picture(Path("encrypted-window-preview"), width, height, cropped)
+        return _highlighted_picture(
+            cropped, item.get("highlight_boxes", []), width, height
+        )
+    try:
+        highlighted_index = int(item.get("highlight_image_index", -1))
+    except (TypeError, ValueError):
+        highlighted_index = -1
+    highlighted = item.get("_pixbuf_by_index", {}).get(highlighted_index)
+    if highlighted is not None:
+        return _highlighted_picture(
+            highlighted, item.get("highlight_boxes", []), width, height
+        )
     max_pictures = 8 if show_all else (1 if width < 220 else 2)
     candidate_count = min(
         max_pictures,
@@ -1499,7 +1572,20 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         picture.set_content_fit(Gtk.ContentFit.CONTAIN)
         picture.set_hexpand(True)
         picture.set_vexpand(True)
-        box.append(picture)
+        overlay = Gtk.Overlay()
+        overlay.set_child(picture)
+        overlay.set_hexpand(True)
+        overlay.set_vexpand(True)
+        highlight_state = {"pixbuf": None, "boxes": []}
+        highlight_layer = Gtk.DrawingArea()
+        highlight_layer.set_can_target(False)
+        highlight_layer.set_hexpand(True)
+        highlight_layer.set_vexpand(True)
+        highlight_layer.set_draw_func(
+            _draw_ocr_highlights, highlight_state
+        )
+        overlay.add_overlay(highlight_layer)
+        box.append(overlay)
         navigation = Gtk.Box(
             orientation=Gtk.Orientation.HORIZONTAL,
             spacing=12,
@@ -1525,6 +1611,23 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             picture.set_paintable(
                 Gdk.Texture.new_for_pixbuf(pixbuf) if pixbuf is not None else None
             )
+            highlight_state["pixbuf"] = pixbuf
+            match = item.get("matched_window")
+            try:
+                matched_image_index = int(match.get("image_index", -1))
+            except (AttributeError, TypeError, ValueError):
+                matched_image_index = -1
+            try:
+                highlighted_image_index = int(
+                    item.get("highlight_image_index", matched_image_index)
+                )
+            except (TypeError, ValueError):
+                highlighted_image_index = matched_image_index
+            highlight_state["boxes"] = (
+                item.get("highlight_boxes", [])
+                if image_index == highlighted_image_index else []
+            )
+            highlight_layer.queue_draw()
             window = None
             for candidate in item.get("windows", []):
                 if not isinstance(candidate, dict):

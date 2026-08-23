@@ -31,8 +31,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.1.6"
-assert metadata["version"] == 25
+assert metadata["version-name"] == "3.1.7"
+assert metadata["version"] == 26
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -63,7 +63,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.1.6"' in build_script
+assert 'version="3.1.7"' in build_script
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
@@ -135,7 +135,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.1.6"' in app_source
+assert 'CURRENT_VERSION = "3.1.7"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -154,9 +154,14 @@ assert 'Gtk.Button(label="Previous")' in app_source
 assert 'Gtk.Button(label="Next")' in app_source
 assert '"matched_window"' in (root / "app" / "recall_engine.py").read_text()
 assert "recall_windows" in (root / "app" / "recall_engine.py").read_text()
-assert '["tesseract", str(image), "stdout", "--psm", "11"]' in (
-    root / "app" / "recall_engine.py"
-).read_text()
+recall_engine_source = (root / "app" / "recall_engine.py").read_text()
+assert '"preserve_interword_spaces=1", "tsv"' in recall_engine_source
+assert '"ocr_boxes": ocr_boxes' in recall_engine_source
+assert '"highlight_boxes": self._matching_ocr_boxes(window, needle)' in recall_engine_source
+assert "MIN_OCR_CONFIDENCE = 30.0" in recall_engine_source
+assert "def _draw_ocr_highlights" in app_source
+assert "def _highlighted_picture" in app_source
+assert "highlight_layer.queue_draw()" in app_source
 assert "recall_screenshot_path" in app_source
 assert "def compress_recall_preview" in app_source
 recorder_source = (

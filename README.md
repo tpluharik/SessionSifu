@@ -46,9 +46,9 @@ GPL-3.0.
 - Automated multi-platform builds and tagged GitHub Releases.
 - **Privacy Recall**, a disabled-by-default encrypted visual timeline with
   compressed previews, on-device OCR, ranked text/related matches, exact file
-  reopening, granular deletion, timed pauses, app/site filters, storage quotas
-  and capture diagnostics. Screenshots, OCR and related-match ranking remain
-  separate opt-ins.
+  reopening, screenshot word highlighting, granular deletion, timed pauses,
+  app/site filters, storage quotas and capture diagnostics. Screenshots, OCR
+  and related-match ranking remain separate opt-ins.
 - A live recording badge on the GNOME top-bar or portable tray icon while a
   Privacy Recall snapshot is being written.
 
@@ -113,17 +113,17 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_3.1.6_all.deb` from the matching GitHub Release, or build it
+Download `sessionsifu_3.1.7_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_3.1.6_all.deb
+sudo apt install ./sessionsifu_3.1.7_all.deb
 ```
 
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.1.6_all.deb
+sudo apt install ./dist/sessionsifu_3.1.7_all.deb
 ```
 
 After installation:
@@ -139,10 +139,10 @@ After installation:
 
 Tagged releases attach these self-contained artifacts:
 
-- `SessionSifu-3.1.6-windows-x64.zip`;
-- `SessionSifu-3.1.6-macos-arm64.zip`;
-- `SessionSifu-3.1.6-macos-x64.zip`; and
-- `SessionSifu-3.1.6-linux-x64.tar.gz`.
+- `SessionSifu-3.1.7-windows-x64.zip`;
+- `SessionSifu-3.1.7-macos-arm64.zip`;
+- `SessionSifu-3.1.7-macos-x64.zip`; and
+- `SessionSifu-3.1.7-linux-x64.tar.gz`.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -336,7 +336,9 @@ capture is off by default and is skipped while the session is locked or an
 excluded application is visible. Snapshot cards provide a window-first gallery
 with Previous/Next navigation through every independently captured window and
 then each display overview. After an app, title, screenshot-text or opted-in
-file keyword matches, the result shows the exact matching window image. A
+file keyword matches, the result shows the exact matching window image. For
+new OCR-enabled captures, matching words are highlighted directly on the
+screenshot and remain highlighted in the window gallery. A
 display crop remains a compatibility fallback for old records or platforms
 that cannot capture a particular minimized/unmapped window. The result
 can reopen that window's observable file or URL with its recorded application
@@ -345,8 +347,9 @@ native window image and use their bounded screen image as a fallback.
 GNOME limits a capture to 64 window previews, 960 pixels on the longest edge at
 JPEG quality 65; display previews remain capped at 1,280 pixels and quality 70.
 Unchanged complete GNOME captures are deduplicated. Optional local OCR uses
-Tesseract sparse-text mode, is tied to each window and feeds ranked Window
-image text, Text, File, Application and Related result classes. Exact FTS5
+Tesseract sparse-text TSV mode, rejects low-confidence noise, retains bounded
+word coordinates inside the encrypted record, is tied to each window and feeds
+ranked Window image text, Text, File, Application and Related result classes. Exact FTS5
 search is supplemented by a bounded in-memory prefix/typo fallback over recent
 OCR when recognition differs slightly from the visible word. Related ranking
 is deliberately lightweight and local; it does not contact a model service.
@@ -394,7 +397,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.1.6_all.deb
+dist/sessionsifu_3.1.7_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -415,7 +418,7 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v3.1.6` tag publishes the artifacts and `SHA256SUMS` as a GitHub
+A pushed `v3.1.7` tag publishes the artifacts and `SHA256SUMS` as a GitHub
 Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
@@ -443,9 +446,10 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Privacy and local-data guide](docs/PRIVACY.md)
 - [Recall research and product decisions](docs/RECALL_RESEARCH.md)
 
-The current 3.1.6 release adds separate Previous/Next browsing for every
-encrypted window image and improves visual-text discovery with sparse-layout
-OCR plus bounded prefix and typo-tolerant matching. When Mutter cannot render
+The current 3.1.7 release highlights matched OCR words directly on encrypted
+window/display previews and replaces the raw OCR stream with confidence-filtered
+spatial word data. Previous/Next browsing remains available for every linked
+window image. When Mutter cannot render
 an inactive or minimized surface, SessionSifu shows an unavailable preview
 instead of presenting pixels cropped from an unrelated foreground window.
 Window-level privacy, bounded capture and exclusion rules remain intact.

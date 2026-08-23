@@ -66,6 +66,30 @@ def qt_shortcut(shortcut: str) -> QKeySequence:
     return QKeySequence(shortcut.replace("Super", "Meta"))
 
 
+def highlight_recall_pixmap(pixmap: QPixmap, boxes: list[dict]) -> QPixmap:
+    """Overlay matching normalized OCR word boxes on a Recall preview."""
+    if pixmap.isNull() or not boxes:
+        return pixmap
+    highlighted = pixmap.copy()
+    painter = QPainter(highlighted)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QColor(255, 132, 0, 245))
+    painter.setBrush(QColor(255, 199, 20, 90))
+    for box in boxes[:64]:
+        if not isinstance(box, dict):
+            continue
+        try:
+            x = round(float(box["x"]) * highlighted.width() / 10000)
+            y = round(float(box["y"]) * highlighted.height() / 10000)
+            width = max(2, round(float(box["w"]) * highlighted.width() / 10000))
+            height = max(2, round(float(box["h"]) * highlighted.height() / 10000))
+        except (KeyError, TypeError, ValueError):
+            continue
+        painter.drawRect(x, y, width, height)
+    painter.end()
+    return highlighted
+
+
 def recall_result_pixmap(controller: SessionController, entry: dict) -> QPixmap:
     """Prefer an encrypted window image and crop the desktop as fallback."""
     if not entry.get("has_preview"):
@@ -82,11 +106,11 @@ def recall_result_pixmap(controller: SessionController, entry: dict) -> QPixmap:
     if not preview or not pixmap.loadFromData(preview):
         return QPixmap()
     if exact_window_preview:
-        return pixmap
+        return highlight_recall_pixmap(pixmap, entry.get("highlight_boxes", []))
     geometry = window.get("geometry", []) if isinstance(window, dict) else []
     screen = QApplication.primaryScreen()
     if len(geometry) != 4 or screen is None:
-        return pixmap
+        return highlight_recall_pixmap(pixmap, entry.get("highlight_boxes", []))
     try:
         screen_geometry = screen.geometry()
         scale_x = pixmap.width() / max(1, screen_geometry.width())
@@ -99,9 +123,11 @@ def recall_result_pixmap(controller: SessionController, entry: dict) -> QPixmap:
         y = max(0, min(y, pixmap.height() - 1))
         width = max(1, min(width, pixmap.width() - x))
         height = max(1, min(height, pixmap.height() - y))
-        return pixmap.copy(x, y, width, height)
+        return highlight_recall_pixmap(
+            pixmap.copy(x, y, width, height), entry.get("highlight_boxes", [])
+        )
     except (TypeError, ValueError):
-        return pixmap
+        return highlight_recall_pixmap(pixmap, entry.get("highlight_boxes", []))
 
 
 class MainWindow(QMainWindow):

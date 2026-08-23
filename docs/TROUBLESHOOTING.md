@@ -88,6 +88,11 @@ exclusions and the last **Capture diagnostics** reason.
 Use **Browse N windows** on a Recall card to inspect each captured window
 separately. The gallery lists linked window images first and display overviews
 after them; Previous/Next does not decrypt images until they are selected.
+Version 3.1.7 and newer store confidence-filtered OCR word coordinates with new
+captures and outline the words matching the current query. Older captures keep
+their searchable OCR text but cannot be highlighted retroactively because they
+contain no word coordinates. A title/application/file match also has no visual
+box unless the same query appears in the screenshot OCR.
 
 ## The Recall search shortcut does not open
 

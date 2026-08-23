@@ -8,6 +8,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
@@ -62,7 +63,14 @@ class RecallEngineTests(unittest.TestCase):
             window.write_bytes(b"exact-window-preview")
             vault = RecallVault(root, test_key=b"v" * 32)
             vault._ocr = lambda path: (
-                "quarterly falcon figures" if "window-0" in path.name else ""
+                (
+                    "quarterly falcon figures",
+                    [
+                        {"t": "falcon", "x": 2500, "y": 3000,
+                         "w": 1800, "h": 900, "c": 91}
+                    ],
+                )
+                if "window-0" in path.name else ("", [])
             )
             result = vault.finalize(self.capture(root), RecallPolicy(ocr=True))
             record = vault.vault / result["record"]
@@ -77,6 +85,8 @@ class RecallEngineTests(unittest.TestCase):
             self.assertEqual(match["match_type"], "Window image text")
             self.assertEqual(match["matched_window"]["image_index"], image_index)
             self.assertIn("falcon", match["ocr_excerpt"])
+            self.assertEqual(match["highlight_boxes"][0]["t"], "falcon")
+            self.assertEqual(match["highlight_boxes"][0]["x"], 2500)
             self.assertEqual(
                 vault.search("quart")[0]["match_type"], "Window image text"
             )
@@ -85,6 +95,30 @@ class RecallEngineTests(unittest.TestCase):
             )
             self.assertEqual(vault.delete(record=record.name), 1)
             self.assertEqual(list(vault.vault.iterdir()), [])
+
+    def test_structured_ocr_filters_noise_and_normalizes_word_boxes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image = root / "sample.jpg"
+            image.write_bytes(b"image")
+            tsv = "\n".join((
+                "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
+                "1\t1\t0\t0\t0\t0\t0\t0\t1000\t500\t-1\t",
+                "5\t1\t1\t1\t1\t1\t100\t50\t200\t50\t93.4\tFalcon",
+                "5\t1\t1\t1\t1\t2\t320\t50\t100\t50\t12.0\tgarbage",
+            )).encode()
+            completed = mock.Mock(returncode=0, stdout=tsv)
+            vault = RecallVault(root, test_key=b"o" * 32)
+            with mock.patch("recall_engine.subprocess.run", return_value=completed) as run:
+                text, boxes = vault._ocr(image)
+            self.assertEqual(text, "Falcon")
+            self.assertEqual(boxes, [{
+                "t": "Falcon", "x": 1000, "y": 1000,
+                "w": 2000, "h": 1000, "c": 93,
+            }])
+            command = run.call_args.args[0]
+            self.assertIn("tsv", command)
+            self.assertIn("11", command)
 
     def test_sensitive_and_website_filters_discard_capture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

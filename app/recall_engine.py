@@ -9,8 +9,10 @@ FTS index for each search process.
 from __future__ import annotations
 
 import base64
+import csv
 import contextlib
 import hashlib
+import io
 import json
 import os
 import re
@@ -60,6 +62,10 @@ MAX_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_OCR_BYTES = 1024 * 1024
 MAX_WINDOW_OCR_BYTES = 16 * 1024
 MAX_TOTAL_WINDOW_OCR_BYTES = 512 * 1024
+MAX_OCR_BOXES_PER_IMAGE = 512
+MAX_DISPLAY_OCR_BOXES = 1024
+MAX_TOTAL_WINDOW_OCR_BOXES = 4096
+MIN_OCR_CONFIDENCE = 30.0
 MAX_ENTRIES = 500
 SERVICE = "org.gnome.SessionSifu.Recall"
 ACCOUNT = "local-vault-v1"
@@ -263,21 +269,83 @@ class RecallVault:
             raise ValueError("Recall vault item is not a bounded regular file")
         return self._decrypt(path.read_bytes(), path.name.encode("utf-8"))
 
-    def _ocr(self, image: Path) -> str:
+    def _ocr(self, image: Path) -> tuple[str, list[dict[str, object]]]:
+        """Return useful OCR words and normalized positions from Tesseract TSV."""
         try:
             result = subprocess.run(
                 # Application windows contain scattered controls, labels and
-                # document fragments rather than one uniform paragraph.
-                ["tesseract", str(image), "stdout", "--psm", "11"],
+                # document fragments rather than one uniform paragraph. TSV
+                # lets us discard low-confidence noise and retain word boxes.
+                [
+                    "tesseract", str(image), "stdout", "--oem", "1",
+                    "--psm", "11", "-c", "preserve_interword_spaces=1", "tsv",
+                ],
                 check=False,
                 capture_output=True,
                 timeout=20,
             )
         except (OSError, subprocess.TimeoutExpired):
-            return ""
+            return "", []
         if result.returncode != 0:
-            return ""
-        return result.stdout[:MAX_OCR_BYTES].decode("utf-8", "replace").strip()
+            return "", []
+        decoded = result.stdout[:MAX_OCR_BYTES].decode("utf-8", "replace")
+        reader = csv.DictReader(io.StringIO(decoded), delimiter="\t")
+        words: list[tuple[tuple[int, int, int], str]] = []
+        boxes: list[dict[str, object]] = []
+        page_width = page_height = 0
+        for row in reader:
+            try:
+                level = int(row.get("level") or 0)
+                if level == 1:
+                    page_width = max(page_width, int(row.get("width") or 0))
+                    page_height = max(page_height, int(row.get("height") or 0))
+                    continue
+                if level != 5 or not page_width or not page_height:
+                    continue
+                text = str(row.get("text") or "").strip()[:128]
+                confidence = float(row.get("conf") or -1)
+                if (
+                    not text or confidence < MIN_OCR_CONFIDENCE
+                    or not any(character.isalnum() for character in text)
+                    or len(boxes) >= MAX_OCR_BOXES_PER_IMAGE
+                ):
+                    continue
+                left = max(0, int(row.get("left") or 0))
+                top = max(0, int(row.get("top") or 0))
+                width = max(1, int(row.get("width") or 0))
+                height = max(1, int(row.get("height") or 0))
+                if left >= page_width or top >= page_height:
+                    continue
+                width = min(width, page_width - left)
+                height = min(height, page_height - top)
+                line = (
+                    int(row.get("block_num") or 0),
+                    int(row.get("par_num") or 0),
+                    int(row.get("line_num") or 0),
+                )
+            except (TypeError, ValueError):
+                continue
+            words.append((line, text))
+            boxes.append({
+                "t": text,
+                "x": round(left * 10000 / page_width),
+                "y": round(top * 10000 / page_height),
+                "w": max(1, round(width * 10000 / page_width)),
+                "h": max(1, round(height * 10000 / page_height)),
+                "c": round(confidence),
+            })
+        lines: list[str] = []
+        current_line = None
+        current_words: list[str] = []
+        for line, word in words:
+            if current_line is not None and line != current_line:
+                lines.append(" ".join(current_words))
+                current_words = []
+            current_line = line
+            current_words.append(word)
+        if current_words:
+            lines.append(" ".join(current_words))
+        return "\n".join(lines)[:MAX_OCR_BYTES], boxes
 
     def _write_status(self, **values: object) -> None:
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -319,7 +387,9 @@ class RecallVault:
         ]
         valid_images = []
         display_ocr_parts = []
+        display_ocr_boxes: dict[int, list[dict[str, object]]] = {}
         window_ocr: dict[int, str] = {}
+        window_ocr_boxes: dict[int, list[dict[str, object]]] = {}
         for image in image_paths:
             if image.is_symlink() or not IMAGE_RE.fullmatch(image.name):
                 continue
@@ -327,13 +397,23 @@ class RecallVault:
                 continue
             valid_images.append(image)
             if policy.ocr:
-                text = self._ocr(image)
+                ocr_result = self._ocr(image)
+                # Preserve compatibility with third-party test/finalizer
+                # integrations that supplied a text-only OCR callback.
+                if isinstance(ocr_result, tuple):
+                    text, boxes = ocr_result
+                else:
+                    text, boxes = str(ocr_result), []
                 if text:
                     match = IMAGE_RE.fullmatch(image.name)
                     if match and match.group(1) == "window":
-                        window_ocr[int(match.group(2))] = text[:MAX_WINDOW_OCR_BYTES]
+                        index = int(match.group(2))
+                        window_ocr[index] = text[:MAX_WINDOW_OCR_BYTES]
+                        window_ocr_boxes[index] = boxes
                     else:
                         display_ocr_parts.append(text)
+                        if match:
+                            display_ocr_boxes[int(match.group(2))] = boxes
 
         windows = payload.get("windows")
         if not isinstance(windows, list):
@@ -443,12 +523,15 @@ class RecallVault:
             display["image_index"] = image_index_by_display.get(display["index"], -1)
         normalized_windows = []
         remaining_window_ocr = MAX_TOTAL_WINDOW_OCR_BYTES
+        remaining_window_boxes = MAX_TOTAL_WINDOW_OCR_BOXES
         for window_index, window in enumerate(windows[:512]):
             if not isinstance(window, dict):
                 continue
             position = window.get("window_position") or {}
             ocr_text = window_ocr.get(window_index, "")[:remaining_window_ocr]
             remaining_window_ocr -= len(ocr_text)
+            ocr_boxes = window_ocr_boxes.get(window_index, [])[:remaining_window_boxes]
+            remaining_window_boxes -= len(ocr_boxes)
             normalized_windows.append({
                 "app": str(window.get("app_name") or window.get("app_id") or window.get("desktop_file_id") or "")[:512],
                 "app_id": str(window.get("app_id") or window.get("desktop_file_id") or "")[:512],
@@ -463,6 +546,7 @@ class RecallVault:
                 "height": int(position.get("height", (window.get("geometry") or [0, 0, 0, 0])[3]) or 0),
                 "image_index": image_index_by_window.get(window_index, -1),
                 "ocr_text": ocr_text,
+                "ocr_boxes": ocr_boxes,
             })
         record = {
             "schema": 3,
@@ -476,6 +560,10 @@ class RecallVault:
             "urls": urls,
             "targets": targets[:128],
             "ocr_text": "\n".join(display_ocr_parts)[:MAX_OCR_BYTES],
+            "display_ocr_boxes": {
+                str(index): boxes[:MAX_DISPLAY_OCR_BOXES]
+                for index, boxes in display_ocr_boxes.items()
+            },
             "windows": normalized_windows,
             "displays": normalized_displays,
             "images": image_names,
@@ -736,6 +824,7 @@ class RecallVault:
                             else self._window_match_type(window, needle)
                         ),
                         "result_kind": "window",
+                        "highlight_boxes": self._matching_ocr_boxes(window, needle),
                         "ocr_excerpt": self._excerpt(
                             str(window.get("ocr_text", "")), needle
                         ),
@@ -761,6 +850,7 @@ class RecallVault:
                         "rank": round(visual_candidates[path.name], 4),
                         "match_type": "Visual text",
                         "result_kind": "visual",
+                        **self._display_highlights(value, needle),
                         "ocr_excerpt": self._excerpt(
                             str(value.get("ocr_text", "")), needle
                         ),
@@ -796,6 +886,56 @@ class RecallVault:
         ).casefold():
             return "Application"
         return "Related window"
+
+    @staticmethod
+    def _matching_ocr_boxes(window: dict, query: str) -> list[dict[str, object]]:
+        """Return only encrypted OCR boxes that plausibly match this query."""
+        query_tokens = _search_tokens(query)[:16]
+        if not query_tokens:
+            return []
+        matches = []
+        for box in window.get("ocr_boxes", [])[:MAX_OCR_BOXES_PER_IMAGE]:
+            if not isinstance(box, dict):
+                continue
+            word = str(box.get("t") or "")
+            word_tokens = _search_tokens(word)
+            if not word_tokens:
+                continue
+            matched = any(
+                needle == candidate
+                or (len(needle) >= 3 and needle in candidate)
+                or _fuzzy_ocr_score(needle, candidate) >= 0.78
+                for needle in query_tokens
+                for candidate in word_tokens
+            )
+            if matched:
+                matches.append({
+                    key: box[key] for key in ("t", "x", "y", "w", "h", "c")
+                    if key in box
+                })
+            if len(matches) >= 64:
+                break
+        return matches
+
+    @classmethod
+    def _display_highlights(cls, value: dict, query: str) -> dict[str, object]:
+        boxes_by_display = value.get("display_ocr_boxes", {})
+        if not isinstance(boxes_by_display, dict):
+            return {"highlight_boxes": []}
+        displays = {
+            str(display.get("index")): display
+            for display in value.get("displays", [])
+            if isinstance(display, dict)
+        }
+        for display_index, boxes in boxes_by_display.items():
+            matches = cls._matching_ocr_boxes({"ocr_boxes": boxes}, query)
+            display = displays.get(str(display_index))
+            if matches and display:
+                return {
+                    "highlight_boxes": matches,
+                    "highlight_image_index": int(display.get("image_index", -1)),
+                }
+        return {"highlight_boxes": []}
 
     @staticmethod
     def _match_type(value: dict, query: str) -> str:
