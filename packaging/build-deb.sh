@@ -5,7 +5,7 @@ project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 extension_dir="$project_dir/extension/sessionsifu@local"
 dist_dir="$project_dir/dist"
 updates_dir="$project_dir/updates"
-version="3.0.1"
+version="3.0.2"
 package="$dist_dir/sessionsifu_${version}_all.deb"
 update_package="$updates_dir/sessionsifu_${version}_all.deb"
 stage=$(mktemp -d /tmp/sessionsifu-package.XXXXXX)
@@ -76,6 +76,7 @@ find "$stage" -type d -exec chmod 0755 {} \;
 
 mkdir -p "$dist_dir"
 dpkg-deb --build --root-owner-group "$stage" "$package"
+python3 "$project_dir/tests/test_user_update_package.py" "$project_dir" "$package"
 if [ -n "${SESSIONSIFU_UPDATE_SIGNING_KEY:-}" ]; then
     test -f "$SESSIONSIFU_UPDATE_SIGNING_KEY"
     mkdir -p "$updates_dir"

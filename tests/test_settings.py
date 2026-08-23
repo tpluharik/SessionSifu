@@ -54,19 +54,19 @@ now = datetime.now(timezone.utc)
 manifest = module.parse_update_manifest(
     json.dumps(
         {
-            "version": "3.0.1",
+            "version": "3.0.2",
             "channel": "stable",
             "issued_at": (now - timedelta(minutes=1)).isoformat(),
             "expires_at": (now + timedelta(days=30)).isoformat(),
             "minimum_version": "2.5.0",
-            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.0.1_all.deb",
+            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.0.2_all.deb",
             "sha256": "a" * 64,
             "size": 12345,
             "notes": "Test update",
         }
     )
 )
-assert manifest["version"] == "3.0.1"
+assert manifest["version"] == "3.0.2"
 assert manifest["size"] == 12345
 
 if target.is_dir():
@@ -109,15 +109,28 @@ with tempfile.TemporaryDirectory() as install_root:
     install_root = pathlib.Path(install_root)
     payload_root = install_root / "payload"
     source_app = payload_root / "usr/bin/sessionsifu"
+    source_recall_module = payload_root / "usr/lib/sessionsifu/recall_engine.py"
     source_desktop = payload_root / "usr/share/applications/org.gnome.SessionSifu.desktop"
     source_autostart = payload_root / "etc/xdg/autostart/org.gnome.SessionSifu.desktop"
     source_icon = payload_root / "usr/share/icons/hicolor/scalable/apps/org.gnome.SessionSifu.svg"
     source_extension = payload_root / "usr/share/gnome-shell/extensions/sessionsifu@local"
     source_bundle = payload_root / "usr/share/sessionsifu/sessionsifu@local.shell-extension.zip"
-    for path in [source_app, source_desktop, source_autostart, source_icon, source_bundle]:
+    for path in [
+        source_app,
+        source_recall_module,
+        source_desktop,
+        source_autostart,
+        source_icon,
+        source_bundle,
+    ]:
         path.parent.mkdir(parents=True, exist_ok=True)
     source_extension.mkdir(parents=True)
-    source_app.write_text("#!/usr/bin/python3\nprint('updated')\n")
+    source_app.write_text(
+        "#!/usr/bin/python3\n"
+        "from recall_engine import TEST_VALUE\n"
+        "print(TEST_VALUE)\n"
+    )
+    source_recall_module.write_text("TEST_VALUE = 'updated with module'\n")
     source_desktop.write_text("[Desktop Entry]\nType=Application\nExec=sessionsifu\n")
     source_autostart.write_text("[Desktop Entry]\nType=Application\nExec=sessionsifu --autostart\n")
     source_icon.write_text("<svg/>\n")
@@ -134,8 +147,22 @@ with tempfile.TemporaryDirectory() as install_root:
         user_bin_dir=bin_dir,
     )
     assert local_app == bin_dir / "sessionsifu"
-    assert local_app.read_text() == source_app.read_text()
+    installed_app = data_dir / "sessionsifu/app/sessionsifu"
+    assert installed_app.read_text() == source_app.read_text()
+    assert str(installed_app) in local_app.read_text()
     assert local_app.stat().st_mode & 0o111
+    assert installed_app.stat().st_mode & 0o111
+    installed_module = data_dir / "sessionsifu/app/recall_engine.py"
+    assert installed_module.read_text() == source_recall_module.read_text()
+    launched = subprocess.run(
+        [str(local_app)],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert launched.returncode == 0, launched.stderr
+    assert launched.stdout.strip() == "updated with module"
     assert f'Exec="{local_app}"' in (
         data_dir / "applications/org.gnome.SessionSifu.desktop"
     ).read_text()
@@ -153,7 +180,7 @@ try:
     module.parse_update_manifest(
         json.dumps(
             {
-                "version": "3.0.1",
+                "version": "3.0.2",
                 "channel": "stable",
                 "issued_at": (now - timedelta(minutes=1)).isoformat(),
                 "expires_at": (now + timedelta(days=30)).isoformat(),

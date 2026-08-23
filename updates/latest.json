@@ -1,11 +1,11 @@
 {
-  "version": "3.0.1",
+  "version": "3.0.2",
   "channel": "stable",
-  "issued_at": "2026-08-23T05:38:51Z",
-  "expires_at": "2026-10-07T05:38:51Z",
+  "issued_at": "2026-08-23T05:56:12Z",
+  "expires_at": "2026-10-07T05:56:12Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.0.1_all.deb",
-  "sha256": "4f222370d0f37f2ffd412d4c516c30b227c775e190d33febf1e7d6eeb54b9732",
-  "size": 279752,
-  "notes": "SessionSifu 3.0 adds the encrypted visual Recall timeline, time navigation, OCR-powered search, filtered applications and websites, retention controls, and cross-platform desktop builds. Version 3.0.1 also fixes release publishing."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.0.2_all.deb",
+  "sha256": "7085316b400d877c9ef2d22f11cf1d76070261523cc68d07e9c9cc91a8678116",
+  "size": 280364,
+  "notes": "SessionSifu 3.0.2 fixes the user-local updater so the Recall engine is installed before the launcher and remains importable after restart. It also adds an executable post-install regression test."
 }

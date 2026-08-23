@@ -2,6 +2,14 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.0.2
+
+- Fixed user-local updates failing to restart with `ModuleNotFoundError:
+  recall_engine` by installing the Recall engine into SessionSifu's private
+  user-data library before atomically activating the new launcher.
+- Added an executable regression test that launches a user-local installation
+  and proves its companion Python module can be imported.
+
 ## 3.0.1
 
 - Fixed the tag-only publisher by checking out the tagged repository before

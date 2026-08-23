@@ -95,9 +95,13 @@ The manager verifies the update manifest's Ed25519 signature against an embedded
 public key. It rejects wrong channels, expiry, rollbacks and incompatible
 minimum versions, then downloads the package and verifies origin, size and
 SHA-256. It uses `dpkg-deb --extract` only as an archive reader, validates
-the expected payload, then atomically installs the manager, desktop files, icon,
-extension bundle and extension below the user's XDG directories and
-`~/.local/bin`. It never invokes `apt`, `dpkg -i`, PackageKit or Ubuntu Software.
+the expected payload, then installs the manager and its Recall engine together
+below `~/.local/share/sessionsifu/app`, followed by desktop files, icon,
+extension bundle and extension below the user's XDG directories. The
+`~/.local/bin/sessionsifu` launcher is atomically replaced only after its
+dependencies are present. The real-package regression test executes that
+launcher after every Debian build. The updater never invokes `apt`, `dpkg -i`,
+PackageKit or Ubuntu Software.
 
 ## Portable core and manager
 

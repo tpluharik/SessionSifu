@@ -22,7 +22,10 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-for _module_dir in (Path(__file__).resolve().parent, Path("/usr/lib/sessionsifu")):
+for _module_dir in (
+    Path("/usr/lib/sessionsifu"),
+    Path(__file__).resolve().parent,
+):
     if str(_module_dir) not in sys.path:
         sys.path.insert(0, str(_module_dir))
 
@@ -37,7 +40,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.0.1"
+CURRENT_VERSION = "3.0.2"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -601,19 +604,35 @@ def install_user_payload(
     user_bin_dir = user_bin_dir or Path.home() / ".local" / "bin"
 
     source_app = payload_root / "usr/bin/sessionsifu"
+    source_recall_module = payload_root / "usr/lib/sessionsifu/recall_engine.py"
     source_desktop = payload_root / "usr/share/applications/org.gnome.SessionSifu.desktop"
     source_autostart = payload_root / "etc/xdg/autostart/org.gnome.SessionSifu.desktop"
     source_icon = payload_root / "usr/share/icons/hicolor/scalable/apps/org.gnome.SessionSifu.svg"
     source_extension = payload_root / "usr/share/gnome-shell/extensions" / UUID
     source_bundle = payload_root / "usr/share/sessionsifu/sessionsifu@local.shell-extension.zip"
-    required_files = [source_app, source_desktop, source_autostart, source_icon, source_bundle]
+    required_files = [
+        source_app,
+        source_recall_module,
+        source_desktop,
+        source_autostart,
+        source_icon,
+        source_bundle,
+    ]
     if any(not path.is_file() or path.is_symlink() for path in required_files):
         raise ValueError("Update package is missing a required SessionSifu file")
     if not source_extension.is_dir() or source_extension.is_symlink():
         raise ValueError("Update package is missing the GNOME Shell extension")
 
     local_app = user_bin_dir / "sessionsifu"
-    _atomic_copy(source_app, local_app, 0o755)
+    installed_app_dir = user_data_dir / "sessionsifu/app"
+    installed_app = installed_app_dir / "sessionsifu"
+    # Install dependencies before atomically activating the new launcher. This
+    # prevents a partially applied update from leaving an unstartable app.
+    _atomic_copy(
+        source_recall_module,
+        installed_app_dir / "recall_engine.py",
+        0o644,
+    )
     _atomic_write_text(
         _replace_desktop_exec(source_desktop.read_text(), local_app),
         user_data_dir / "applications/org.gnome.SessionSifu.desktop",
@@ -635,6 +654,12 @@ def install_user_payload(
     _replace_extension_tree(
         source_extension,
         user_data_dir / "gnome-shell/extensions" / UUID,
+    )
+    _atomic_copy(source_app, installed_app, 0o755)
+    _atomic_write_text(
+        f"#!/bin/sh\nexec {shlex.quote(str(installed_app))} \"$@\"\n",
+        local_app,
+        0o755,
     )
     return local_app
 
