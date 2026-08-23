@@ -1,11 +1,11 @@
 {
-  "version": "3.1.1",
+  "version": "3.1.2",
   "channel": "stable",
-  "issued_at": "2026-08-23T07:01:16Z",
-  "expires_at": "2026-10-07T07:01:16Z",
+  "issued_at": "2026-08-23T16:07:03Z",
+  "expires_at": "2026-10-07T16:07:03Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.1_all.deb",
-  "sha256": "aea857a11cdc38c58a1dc639038bcbc313757b6147ab52058b8a795373eba946",
-  "size": 283158,
-  "notes": "SessionSifu 3.1.1 fixes the GNOME Recall search startup crash, makes application filtering exact across every platform, and hardens GNOME Shell teardown against window-event races."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.2_all.deb",
+  "sha256": "29868fbed11fc0a2a47e657d604a7975dd3ecd579297f967395111bb57ee8612",
+  "size": 287646,
+  "notes": "SessionSifu 3.1.2 adds bounded encrypted screenshots and OCR indexing for individual open windows in Privacy Recall, with privacy-preserving display fallbacks."
 }
