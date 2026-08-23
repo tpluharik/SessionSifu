@@ -1,11 +1,11 @@
 {
-  "version": "3.1.3",
+  "version": "3.1.4",
   "channel": "stable",
-  "issued_at": "2026-08-23T16:49:57Z",
-  "expires_at": "2026-10-07T16:49:57Z",
+  "issued_at": "2026-08-23T17:22:02Z",
+  "expires_at": "2026-10-07T17:22:02Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.3_all.deb",
-  "sha256": "a0ea8022a6a85d795430ec6e4e4de8982eeea7c23d2bdbf8da698069991a314c",
-  "size": 288416,
-  "notes": "SessionSifu 3.1.3 fixes GNOME/Wayland per-window Recall screenshots by normalizing Mutter window IDs and avoids misleading display-crop previews for inactive windows."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.4_all.deb",
+  "sha256": "9b832058fc5e98097cc9925ff515228a09ac5318d69493754b7fb983d776624d",
+  "size": 288998,
+  "notes": "SessionSifu 3.1.4 fixes GNOME 50 all-window Recall screenshots by resolving Meta.WindowActor through get_meta_window(), with explicit matched and captured window diagnostics."
 }

@@ -2,6 +2,19 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.1.4
+
+- Fixed GNOME 50 all-window Recall capture by resolving every
+  `Meta.WindowActor` through `get_meta_window()` before matching it to the
+  saved session. The legacy actor property had left the per-window capture
+  queue empty while the single display screenshot still succeeded.
+- Added always-visible warning diagnostics when saved windows cannot be
+  matched or rendered, including expected, matched and captured counts.
+- Applied the corrected actor lookup to screenshot privacy exclusions so an
+  excluded application visible in any open window still blocks display capture.
+- Added regression coverage for the GNOME 50 actor accessor and capture-count
+  diagnostics.
+
 ## 3.1.3
 
 - Fixed GNOME/Wayland per-window Recall capture by normalizing numeric live

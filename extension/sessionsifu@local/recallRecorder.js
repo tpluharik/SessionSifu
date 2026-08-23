@@ -116,13 +116,27 @@ function _invalidateSummary(name) {
     _summaryCache.delete(GLib.build_filenamev([FileUtils.recall_path, name]));
 }
 
+function _metaWindowForActor(actor) {
+    if (!actor)
+        return null;
+    try {
+        // GNOME 50 exposes the compositor window through the accessor. The
+        // legacy JS property is retained only as a compatibility fallback for
+        // older Shell releases and test doubles.
+        return actor.get_meta_window?.() ?? actor.meta_window ?? null;
+    } catch (error) {
+        Log.Log.getDefault().error(error, 'Could not resolve a Recall window actor');
+        return null;
+    }
+}
+
 function _excludedApplicationVisible(excludedApps = []) {
     const exclusions = screenshotBlockingExclusions(excludedApps);
     if (!exclusions.length)
         return false;
     const tracker = Shell.WindowTracker.get_default();
     for (const actor of global.get_window_actors()) {
-        const window = actor.meta_window;
+        const window = _metaWindowForActor(actor);
         if (!window || !window.showing_on_its_workspace?.())
             continue;
         const app = tracker.get_window_app(window);
@@ -248,13 +262,13 @@ async function _captureWindowActors(name) {
             .map((window, index) => [_stableWindowKey(window.window_id), index])
             .filter(([windowId]) => windowId));
     if (!windowIndexes.size)
-        return {eligible: 0, captured: 0};
+        return {expected: 0, matched: 0, captured: 0};
     const jobs = [];
     const scheduledIndexes = new Set();
     for (const actor of global.get_window_actors()) {
         if (jobs.length >= MAX_WINDOW_PREVIEWS)
             break;
-        const metaWindow = actor?.meta_window;
+        const metaWindow = _metaWindowForActor(actor);
         if (!metaWindow)
             continue;
         const windowId = _stableWindowKey(
@@ -273,7 +287,7 @@ async function _captureWindowActors(name) {
                 _captureWindowActor(_windowScreenshotPath(name, index, true), actor)));
         captured += results.filter(result => result.status === 'fulfilled').length;
     }
-    return {eligible: jobs.length, captured};
+    return {expected: windowIndexes.size, matched: jobs.length, captured};
 }
 
 function _compressScreenshot(rawPath, name, displays) {
@@ -652,9 +666,13 @@ export const RecallRecorder = class {
             const rawPath = _rawScreenshotPath(name);
             await _captureScreenshot(rawPath);
             const windowCapture = await _captureWindowActors(name);
-            this._log.info(
-                `Captured ${windowCapture.captured} of ${windowCapture.eligible} ` +
-                'eligible Recall window previews');
+            const captureSummary =
+                `Captured ${windowCapture.captured} of ${windowCapture.expected} ` +
+                `saved Recall window previews (${windowCapture.matched} live actors matched)`;
+            if (windowCapture.captured < windowCapture.expected)
+                this._log.warn(captureSummary);
+            else
+                this._log.info(captureSummary);
             if (this._destroyed || screenshotGeneration !== this._screenshotGeneration ||
                 Main.sessionMode.isLocked || _excludedApplicationVisible(exclusions)) {
                 _removeScreenshots(name);
