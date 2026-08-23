@@ -149,9 +149,9 @@ not understand the signed update channel.
 ## Version 3.0.1 does not start after an in-app update
 
 Version 3.0.1's user-local updater omitted the new Recall engine module, so the
-launcher can exit with `ModuleNotFoundError: recall_engine`. Install 3.0.2 from
-the GitHub Release with `sudo apt install ./sessionsifu_3.0.2_all.deb`; this
-recovery does not remove saved sessions or Recall history. Version 3.0.2 installs
+launcher can exit with `ModuleNotFoundError: recall_engine`. Install 3.1.0 from
+the GitHub Release with `sudo apt install ./sessionsifu_3.1.0_all.deb`; this
+recovery does not remove saved sessions or Recall history. Version 3.1.0 installs
 its private Python module before activating the launcher and tests the resulting
 user-local program during every Debian build.
 

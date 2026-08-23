@@ -40,7 +40,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.0.2"
+CURRENT_VERSION = "3.1.0"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -209,6 +209,45 @@ def _matching_window_picture(
         return None
 
 
+def _window_pixbuf(item: dict) -> GdkPixbuf.Pixbuf | None:
+    """Crop the encrypted display preview to one indexed Recall window."""
+    match = item.get("matched_window")
+    if not isinstance(match, dict):
+        return None
+    display = next(
+        (
+            value for value in item.get("displays", [])
+            if isinstance(value, dict)
+            and value.get("index") == match.get("monitor")
+        ),
+        None,
+    )
+    if display is None:
+        return None
+    try:
+        image_index = int(display.get("image_index", -1))
+        pixbuf = item.get("_pixbuf_by_index", {}).get(image_index)
+        if pixbuf is None:
+            return None
+        display_width = float(display["width"])
+        display_height = float(display["height"])
+        if display_width <= 0 or display_height <= 0:
+            return None
+        scale_x = pixbuf.get_width() / display_width
+        scale_y = pixbuf.get_height() / display_height
+        crop_x = round((float(match["x"]) - float(display["x"])) * scale_x)
+        crop_y = round((float(match["y"]) - float(display["y"])) * scale_y)
+        crop_width = round(float(match["width"]) * scale_x)
+        crop_height = round(float(match["height"]) * scale_y)
+        crop_x = max(0, min(crop_x, pixbuf.get_width() - 1))
+        crop_y = max(0, min(crop_y, pixbuf.get_height() - 1))
+        crop_width = max(1, min(crop_width, pixbuf.get_width() - crop_x))
+        crop_height = max(1, min(crop_height, pixbuf.get_height() - crop_y))
+        return pixbuf.new_subpixbuf(crop_x, crop_y, crop_width, crop_height)
+    except (KeyError, TypeError, ValueError, GLib.Error):
+        return None
+
+
 def recall_preview(
     item: dict,
     width: int = 300,
@@ -218,12 +257,18 @@ def recall_preview(
     pictures: list[Gtk.Picture] = []
     if not item.get("_pixbufs") and str(item.get("name", "")).endswith(".ssrec"):
         encrypted = []
+        encrypted_by_index = {}
         for index in range(min(8 if show_all else 2, int(item.get("image_count") or 0))):
             data = recall_vault().preview_bytes(str(item["name"]), index)
             pixbuf = _pixbuf_from_bytes(data) if data else None
             if pixbuf is not None:
                 encrypted.append(pixbuf)
+                encrypted_by_index[index] = pixbuf
         item["_pixbufs"] = encrypted
+        item["_pixbuf_by_index"] = encrypted_by_index
+    cropped = _window_pixbuf(item)
+    if cropped is not None:
+        return _picture(Path("encrypted-window-preview"), width, height, cropped)
     max_pictures = 8 if show_all else (1 if width < 220 else 2)
     candidate_count = min(
         max_pictures,
@@ -1017,7 +1062,7 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         search_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.query = Gtk.SearchEntry(
             hexpand=True,
-            placeholder_text="Describe text, an application, file, website or visual clue",
+            placeholder_text="Find an application, individual window, file, website or visual clue",
         )
         self.query.connect("activate", self._search)
         self.query.connect("search-changed", self._search)
@@ -1041,7 +1086,7 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         self.date_filter.connect("changed", self._search)
         filters.append(self.date_filter)
         show_all = Gtk.Button(label="Show all timeline")
-        show_all.connect("clicked", self._search)
+        show_all.connect("clicked", self._show_all)
         filters.append(show_all)
         content.append(filters)
 
@@ -1076,12 +1121,16 @@ class RecallSearchWindow(Adw.ApplicationWindow):
 
     def _prepare_previews(self, item: dict) -> None:
         pixbufs = []
+        pixbuf_by_index = {}
         for index in range(min(8, int(item.get("image_count") or 0))):
             data = self._vault.preview_bytes(item["name"], index)
             pixbuf = self._pixbuf(data) if data else None
             if pixbuf is not None:
                 pixbufs.append(pixbuf)
+                pixbuf_by_index[index] = pixbuf
         item["_pixbufs"] = pixbufs
+        item["_pixbuf_by_index"] = pixbuf_by_index
+        item["_window_pixbuf"] = _window_pixbuf(item)
 
     def _selected_day(self) -> str:
         selected = self.date_filter.get_active_id() or ""
@@ -1095,8 +1144,15 @@ class RecallSearchWindow(Adw.ApplicationWindow):
     def _timeline_changed(self, scale) -> None:
         if not self._entries:
             return
-        index = max(0, min(len(self._entries) - 1, round(scale.get_value())))
+        position = max(0, min(len(self._entries) - 1, round(scale.get_value())))
+        index = len(self._entries) - position - 1
         self._render([self._entries[index]], timeline_selection=True)
+
+    def _show_all(self, *_args) -> None:
+        self.query.set_text("")
+        self.app_filter.set_active_id("")
+        self.date_filter.set_active_id("")
+        self._search()
 
     def _search(self, *_args) -> None:
         policy = recall_policy(self._settings)
@@ -1147,11 +1203,22 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             )
             row.add_css_class("card")
             row.append(recall_preview(item, show_all=True))
-            title = Gtk.Label(label=f"{modified} — {apps}", xalign=0, wrap=True)
+            if item.get("result_kind") == "window":
+                heading = f"{apps} — {titles}" if titles else apps
+            else:
+                heading = f"{modified} — {apps}"
+            title = Gtk.Label(
+                label=heading,
+                xalign=0,
+                wrap=True,
+            )
             title.add_css_class("heading")
             row.append(title)
             match = Gtk.Label(
-                label=f"{item.get('match_type', 'Timeline')} match · encrypted locally",
+                label=(
+                    f"{modified} · {item.get('match_type', 'Timeline')} match · "
+                    "encrypted locally"
+                ),
                 xalign=0,
             )
             match.add_css_class("caption")
@@ -1164,7 +1231,7 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             details.add_css_class("dim-label")
             row.append(details)
             actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-            if item.get("targets"):
+            if item.get("targets") or item.get("matched_window", {}).get("app_id"):
                 open_button = Gtk.Button(label="Reopen")
                 open_button.add_css_class("suggested-action")
                 open_button.connect("clicked", self._open_item, item)
@@ -1199,8 +1266,13 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             self.results.insert(row, -1)
             self._rows.append(row)
         status = self._vault.status()
+        result_label = (
+            "window moment"
+            if entries and all(item.get("result_kind") == "window" for item in entries)
+            else "Recall result"
+        )
         self.notice.set_label(
-            f"{len(entries)} snapshot{'s' if len(entries) != 1 else ''}"
+            f"{len(entries)} {result_label}{'s' if len(entries) != 1 else ''}"
             f"{' selected on the timeline' if timeline_selection else ' matched'} · "
             f"{status.get('vault_bytes', 0) / (1024 * 1024):.1f} MiB · "
             f"encryption: {status.get('encryption', 'unavailable')}"
@@ -1210,8 +1282,28 @@ class RecallSearchWindow(Adw.ApplicationWindow):
 
     def _open_item(self, _button, item: dict) -> None:
         target = next(iter(item.get("targets", [])), "")
+        match = item.get("matched_window") or {}
+        app_id = str(match.get("app_id") or "")
+        app_info = None
+        if app_id:
+            candidates = (app_id, f"{app_id}.desktop")
+            app_info = next(
+                (
+                    value for candidate in candidates
+                    for value in [Gio.DesktopAppInfo.new(candidate)] if value
+                ),
+                None,
+            )
         if target:
+            if app_info is not None:
+                try:
+                    app_info.launch([Gio.File.new_for_uri(target)], None)
+                    return
+                except GLib.Error:
+                    pass
             Gio.AppInfo.launch_default_for_uri(target, None)
+        elif app_info is not None:
+            app_info.launch([], None)
 
     def _copy_item(self, _button, item: dict) -> None:
         text = item.get("ocr_excerpt") or "\n".join(item.get("titles", []))
@@ -1236,15 +1328,19 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         self._search()
 
     def _copy_image(self, _button, item: dict) -> None:
-        data = self._vault.preview_bytes(item.get("name", ""), 0)
-        pixbuf = _pixbuf_from_bytes(data) if data else None
+        pixbuf = item.get("_window_pixbuf")
+        if pixbuf is None:
+            data = self._vault.preview_bytes(item.get("name", ""), 0)
+            pixbuf = _pixbuf_from_bytes(data) if data else None
         display = Gdk.Display.get_default()
         if display and pixbuf is not None:
             display.get_clipboard().set_texture(Gdk.Texture.new_for_pixbuf(pixbuf))
 
     def _view_item(self, _button, item: dict) -> None:
-        data = self._vault.preview_bytes(item.get("name", ""), 0)
-        pixbuf = _pixbuf_from_bytes(data) if data else None
+        pixbuf = item.get("_window_pixbuf")
+        if pixbuf is None:
+            data = self._vault.preview_bytes(item.get("name", ""), 0)
+            pixbuf = _pixbuf_from_bytes(data) if data else None
         if pixbuf is None:
             return
         viewer = Adw.Window(

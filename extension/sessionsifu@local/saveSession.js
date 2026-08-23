@@ -105,6 +105,10 @@ export const SaveSession = class {
         try {
             this._openFileResolver.reset();
             const sessionConfig = await this._buildSession(sessionName, includeFilePaths);
+            const focusedWindow = global.display.get_focus_window();
+            const focusedWindowId = focusedWindow
+                ? MetaWindowUtils.getStableWindowId(focusedWindow)
+                : '';
             const exclusions = new Set(
                 ['sessionsifu', ...excludedApps]
                     .map(value => String(value).trim().toLowerCase())
@@ -125,6 +129,8 @@ export const SaveSession = class {
                         delete sanitized[field];
                     if (!includeFilePaths)
                         sanitized.open_files = [];
+                    sanitized.recall_focused = Boolean(
+                        focusedWindowId && sanitized.window_id === focusedWindowId);
                     return sanitized;
                 });
             if (!sessionConfig.x_session_config_objects.length)

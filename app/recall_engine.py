@@ -301,6 +301,29 @@ class RecallVault:
             self._write_status(state="skipped", reason="sensitive information detected", duration_ms=round((time.monotonic() - started) * 1000))
             return {"saved": False, "reason": "sensitive information detected"}
 
+        raw_displays = payload.get("recall_displays")
+        normalized_displays = []
+        if isinstance(raw_displays, list):
+            for fallback_index, display in enumerate(raw_displays[:8]):
+                if not isinstance(display, dict):
+                    continue
+                try:
+                    normalized = {
+                        "index": int(display.get("index", fallback_index)),
+                        "x": int(display.get("x", 0)),
+                        "y": int(display.get("y", 0)),
+                        "width": int(display.get("width", 0)),
+                        "height": int(display.get("height", 0)),
+                    }
+                except (TypeError, ValueError):
+                    continue
+                if (
+                    0 <= normalized["index"] < 8
+                    and normalized["width"] > 0
+                    and normalized["height"] > 0
+                ):
+                    normalized_displays.append(normalized)
+
         image_names = []
         image_hashes = []
         for image in valid_images:
@@ -318,12 +341,18 @@ class RecallVault:
             )
             return {"saved": False, "reason": "screen unchanged"}
         image_hashes = []
+        image_index_by_display = {}
         for image in valid_images:
             raw = image.read_bytes()
             target = self.vault / f"{image.stem}.ssimg"
             self._atomic_encrypted(target, raw)
+            match = IMAGE_RE.fullmatch(image.name)
+            if match:
+                image_index_by_display[int(match.group(1))] = len(image_names)
             image_names.append(target.name)
             image_hashes.append(hashlib.sha256(raw).hexdigest())
+        for display in normalized_displays:
+            display["image_index"] = image_index_by_display.get(display["index"], -1)
         normalized_windows = []
         for window in windows[:512]:
             if not isinstance(window, dict):
@@ -331,9 +360,12 @@ class RecallVault:
             position = window.get("window_position") or {}
             normalized_windows.append({
                 "app": str(window.get("app_name") or window.get("app_id") or window.get("desktop_file_id") or "")[:512],
+                "app_id": str(window.get("app_id") or window.get("desktop_file_id") or "")[:512],
                 "title": str(window.get("title") or window.get("window_title") or "")[:4096],
                 "files": [str(value)[:4096] for value in list(window.get("open_files") or [])[:32]],
                 "monitor": int(window.get("monitor_number", window.get("monitor", 0)) or 0),
+                "workspace": int(window.get("desktop_number", window.get("workspace", 0)) or 0),
+                "focused": bool(window.get("recall_focused", False)),
                 "x": int(position.get("x_offset", (window.get("geometry") or [0, 0, 0, 0])[0]) or 0),
                 "y": int(position.get("y_offset", (window.get("geometry") or [0, 0, 0, 0])[1]) or 0),
                 "width": int(position.get("width", (window.get("geometry") or [0, 0, 0, 0])[2]) or 0),
@@ -352,6 +384,7 @@ class RecallVault:
             "targets": targets[:128],
             "ocr_text": "\n".join(ocr_parts)[:MAX_OCR_BYTES],
             "windows": normalized_windows,
+            "displays": normalized_displays,
             "images": image_names,
             "image_hashes": image_hashes,
         }
@@ -407,54 +440,220 @@ class RecallVault:
     def search(self, query: str = "", *, app: str = "", day: str = "", semantic: bool = False, excluded_apps: tuple[str, ...] = (), limit: int = 100) -> list[dict[str, object]]:
         records = [(path, self._load(path)) for path in self._record_paths()]
         records = [(path, value) for path, value in records if value]
+        exclusion_tokens = tuple(
+            token.strip().casefold() for token in excluded_apps if token.strip()
+        )
         connection = sqlite3.connect(":memory:")
         try:
-            connection.execute("CREATE VIRTUAL TABLE recall USING fts5(name UNINDEXED, apps, titles, files, ocr)")
+            connection.execute(
+                "CREATE VIRTUAL TABLE recall_windows USING fts5("
+                "key UNINDEXED, app, title, files)"
+            )
+            connection.execute(
+                "CREATE VIRTUAL TABLE recall_visual USING fts5(name UNINDEXED, ocr)"
+            )
+            loaded = []
             for path, value in records:
-                identity = "\n".join(value.get("apps", [])).casefold()
-                if any(token.strip().casefold() in identity for token in excluded_apps if token.strip()):
+                captured = str(value.get("captured_at") or "")
+                if day and not captured.startswith(day):
                     continue
-                connection.execute(
-                    "INSERT INTO recall VALUES (?, ?, ?, ?, ?)",
-                    (path.name, "\n".join(value.get("apps", [])), "\n".join(value.get("titles", [])), "\n".join(value.get("files", [])), value.get("ocr_text", "")),
-                )
-            candidates: dict[str, float] = {}
+                visible_windows = []
+                excluded_visible = False
+                for index, window in enumerate(value.get("windows", [])[:512]):
+                    if not isinstance(window, dict):
+                        continue
+                    identity = "\n".join(
+                        (str(window.get("app", "")), str(window.get("app_id", "")))
+                    ).casefold()
+                    if any(token in identity for token in exclusion_tokens):
+                        excluded_visible = True
+                        continue
+                    visible_windows.append((index, window))
+                    connection.execute(
+                        "INSERT INTO recall_windows VALUES (?, ?, ?, ?)",
+                        (
+                            f"{path.name}#{index}",
+                            str(window.get("app", "")),
+                            str(window.get("title", "")),
+                            "\n".join(str(item) for item in window.get("files", [])),
+                        ),
+                    )
+                if not visible_windows:
+                    continue
+                preview_allowed = not excluded_visible
+                if preview_allowed:
+                    connection.execute(
+                        "INSERT INTO recall_visual VALUES (?, ?)",
+                        (path.name, str(value.get("ocr_text", ""))),
+                    )
+                loaded.append((path, value, visible_windows, preview_allowed))
+
+            window_candidates: dict[str, float] = {}
+            visual_candidates: dict[str, float] = {}
             needle = query.strip()[:256]
             if needle:
                 tokens = re.findall(r"[\w.-]+", needle.casefold())[:16]
                 expression = " OR ".join(f'"{token.replace(chr(34), "")}"' for token in tokens if token)
                 if expression:
                     with contextlib.suppress(sqlite3.OperationalError):
-                        for name, rank in connection.execute("SELECT name, bm25(recall, 0, 6, 4, 3, 2) FROM recall WHERE recall MATCH ? ORDER BY 2 LIMIT 250", (expression,)):
-                            candidates[name] = -float(rank)
-            else:
-                candidates = {path.name: 0.0 for path, _value in records}
+                        for key, rank in connection.execute(
+                            "SELECT key, bm25(recall_windows, 0, 6, 5, 3) "
+                            "FROM recall_windows WHERE recall_windows MATCH ? "
+                            "ORDER BY 2 LIMIT 500",
+                            (expression,),
+                        ):
+                            window_candidates[key] = -float(rank)
+                    with contextlib.suppress(sqlite3.OperationalError):
+                        for name, rank in connection.execute(
+                            "SELECT name, bm25(recall_visual, 0, 2) "
+                            "FROM recall_visual WHERE recall_visual MATCH ? "
+                            "ORDER BY 2 LIMIT 100",
+                            (expression,),
+                        ):
+                            visual_candidates[name] = -float(rank)
             if needle and semantic:
                 query_terms = set(re.findall(r"[\w]+", needle.casefold()))
-                for path, value in records:
-                    text_terms = set(re.findall(r"[\w]+", " ".join([*value.get("apps", []), *value.get("titles", []), str(value.get("ocr_text", ""))]).casefold()))
-                    related = len(query_terms & text_terms) / max(1, len(query_terms | text_terms))
-                    if related >= 0.08:
-                        candidates[path.name] = max(candidates.get(path.name, 0.0), related)
+                for path, _value, windows, _preview_allowed in loaded:
+                    for index, window in windows:
+                        text_terms = set(re.findall(
+                            r"[\w]+",
+                            " ".join([
+                                str(window.get("app", "")),
+                                str(window.get("title", "")),
+                                *(str(item) for item in window.get("files", [])),
+                            ]).casefold(),
+                        ))
+                        related = len(query_terms & text_terms) / max(
+                            1, len(query_terms | text_terms)
+                        )
+                        if related >= 0.08:
+                            key = f"{path.name}#{index}"
+                            window_candidates[key] = max(
+                                window_candidates.get(key, 0.0), related
+                            )
             output = []
-            for path, value in records:
-                if path.name not in candidates:
+            for path, value, windows, preview_allowed in loaded:
+                common = {
+                    "name": path.name,
+                    "captured_at": value.get("captured_at"),
+                    "modified": float(value.get("modified") or path.stat().st_mtime),
+                    "image_count": len(value.get("images", [])) if preview_allowed else 0,
+                    "displays": value.get("displays", []) if preview_allowed else [],
+                }
+                if not needle and not app:
+                    apps = list(dict.fromkeys(
+                        str(window.get("app", ""))
+                        for _index, window in windows if window.get("app")
+                    ))
+                    titles = list(dict.fromkeys(
+                        str(window.get("title", ""))
+                        for _index, window in windows if window.get("title")
+                    ))
+                    files = list(dict.fromkeys(
+                        str(item) for _index, window in windows
+                        for item in window.get("files", [])
+                    ))
+                    urls = list(dict.fromkeys(URL_RE.findall("\n".join(titles))))
+                    output.append({
+                        **common,
+                        "apps": apps,
+                        "titles": titles,
+                        "files": files,
+                        "urls": urls,
+                        "targets": self._targets(files, urls),
+                        "windows": [window for _index, window in windows],
+                        "rank": 0.0,
+                        "match_type": "Timeline",
+                        "result_kind": "timeline",
+                        "ocr_excerpt": "",
+                    })
                     continue
-                identity = "\n".join(value.get("apps", [])).casefold()
-                if any(token.strip().casefold() in identity for token in excluded_apps if token.strip()):
-                    continue
-                if app and app.casefold() not in "\n".join(value.get("apps", [])).casefold():
-                    continue
-                captured = str(value.get("captured_at") or "")
-                if day and not captured.startswith(day):
-                    continue
-                summary = {key: value.get(key) for key in ("captured_at", "modified", "apps", "titles", "files", "urls", "targets", "windows")}
-                summary.update({"name": path.name, "rank": round(candidates[path.name], 4), "match_type": self._match_type(value, needle), "ocr_excerpt": self._excerpt(str(value.get("ocr_text", "")), needle), "image_count": len(value.get("images", []))})
-                output.append(summary)
+
+                for index, window in windows:
+                    identity = "\n".join(
+                        (str(window.get("app", "")), str(window.get("app_id", "")))
+                    ).casefold()
+                    if app and app.casefold() not in identity:
+                        continue
+                    key = f"{path.name}#{index}"
+                    if needle and key not in window_candidates:
+                        continue
+                    files = [str(item) for item in window.get("files", [])]
+                    urls = list(dict.fromkeys(
+                        URL_RE.findall(str(window.get("title", "")))
+                    ))
+                    rank = window_candidates.get(key, 0.0)
+                    if window.get("focused"):
+                        rank += 0.15
+                    output.append({
+                        **common,
+                        "apps": [str(window.get("app", ""))] if window.get("app") else [],
+                        "titles": [str(window.get("title", ""))] if window.get("title") else [],
+                        "files": files,
+                        "urls": urls,
+                        "targets": self._targets(files, urls),
+                        "windows": [window],
+                        "matched_window": window,
+                        "window_index": index,
+                        "rank": round(rank, 4),
+                        "match_type": self._window_match_type(window, needle),
+                        "result_kind": "window",
+                        "ocr_excerpt": "",
+                    })
+
+                if needle and not app and path.name in visual_candidates:
+                    apps = list(dict.fromkeys(
+                        str(window.get("app", ""))
+                        for _index, window in windows if window.get("app")
+                    ))
+                    titles = list(dict.fromkeys(
+                        str(window.get("title", ""))
+                        for _index, window in windows if window.get("title")
+                    ))
+                    output.append({
+                        **common,
+                        "apps": apps,
+                        "titles": titles,
+                        "files": [],
+                        "urls": [],
+                        "targets": [],
+                        "windows": [window for _index, window in windows],
+                        "rank": round(visual_candidates[path.name], 4),
+                        "match_type": "Visual text",
+                        "result_kind": "visual",
+                        "ocr_excerpt": self._excerpt(
+                            str(value.get("ocr_text", "")), needle
+                        ),
+                    })
             output.sort(key=lambda item: (-float(item["rank"]), -float(item.get("modified") or 0)))
             return output[:max(1, min(250, int(limit)))]
         finally:
             connection.close()
+
+    @staticmethod
+    def _targets(files: list[str], urls: list[str]) -> list[str]:
+        targets = [
+            Path(value).as_uri()
+            for value in files
+            if Path(value).is_absolute() and Path(value).is_file()
+        ]
+        targets.extend(urls)
+        return list(dict.fromkeys(targets))[:32]
+
+    @staticmethod
+    def _window_match_type(window: dict, query: str) -> str:
+        needle = query.casefold()
+        if not needle:
+            return "Window"
+        if needle in str(window.get("title", "")).casefold():
+            return "Window text"
+        if any(needle in str(value).casefold() for value in window.get("files", [])):
+            return "Window file"
+        if needle in "\n".join(
+            (str(window.get("app", "")), str(window.get("app_id", "")))
+        ).casefold():
+            return "Application"
+        return "Related window"
 
     @staticmethod
     def _match_type(value: dict, query: str) -> str:

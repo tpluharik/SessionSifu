@@ -332,61 +332,206 @@ class RecallStore:
         needle = query.strip().casefold()[:256]
         exclusions = self._exclusions(excluded_apps)
         connection = sqlite3.connect(":memory:")
-        connection.execute("CREATE VIRTUAL TABLE recall USING fts5(name UNINDEXED, apps, titles, files, ocr)")
-        loaded = []
-        for path in self._paths():
-            payload = self._load(path)
-            if not payload:
-                continue
-            windows = [item for item in payload.get("windows", []) if isinstance(item, dict)]
-            windows = [item for item in windows if not any(token in "\n".join((str(item.get("app_id", "")), str(item.get("app_name", "")))).casefold() for token in exclusions)]
-            if not windows:
-                continue
-            apps = list(dict.fromkeys(str(item.get("app_name") or item.get("app_id") or "") for item in windows if item.get("app_name") or item.get("app_id")))
-            titles = list(dict.fromkeys(str(item.get("title") or "") for item in windows if item.get("title")))
-            files = list(dict.fromkeys(str(value) for item in windows for value in item.get("open_files", [])))
-            connection.execute("INSERT INTO recall VALUES (?, ?, ?, ?, ?)", (path.name, "\n".join(apps), "\n".join(titles), "\n".join(files), payload.get("ocr_text", "")))
-            loaded.append((path, payload, apps, titles, files))
-        if needle:
-            terms = re.findall(r"[\w.-]+", needle)[:16]
-            expression = " OR ".join(f'"{term}"' for term in terms)
-            names = {}
-            with contextlib.suppress(sqlite3.OperationalError):
-                names = {name: -float(rank) for name, rank in connection.execute("SELECT name, bm25(recall,0,6,4,3,2) FROM recall WHERE recall MATCH ? ORDER BY 2", (expression,))}
-        else:
-            names = {path.name: 0.0 for path, *_ in loaded}
-        if needle and semantic:
-            query_terms = set(re.findall(r"[\w]+", needle))
-            for path, payload, apps, titles, _files in loaded:
-                text_terms = set(re.findall(
-                    r"[\w]+",
-                    " ".join([*apps, *titles, str(payload.get("ocr_text") or "")]).casefold(),
-                ))
-                related = len(query_terms & text_terms) / max(1, len(query_terms | text_terms))
-                if related >= 0.08:
-                    names[path.name] = max(names.get(path.name, 0.0), related)
-        results = []
-        for path, payload, apps, titles, files in loaded:
-            if path.name not in names or (app and app.casefold() not in "\n".join(apps).casefold()):
-                continue
-            ocr_text = str(payload.get("ocr_text") or "")
-            results.append({
-                "name": path.name,
-                "captured_at": str(payload.get("captured_at") or "")[:128],
-                "modified": float(payload.get("modified") or path.stat().st_mtime),
-                "apps": apps,
-                "titles": titles,
-                "files": files,
-                "targets": list(payload.get("targets") or []),
-                "urls": list(payload.get("urls") or []),
-                "rank": names[path.name],
-                "match_type": "OCR" if needle and needle in ocr_text.casefold() else "Text" if needle and any(needle in value.casefold() for value in titles) else "Related" if needle else "Timeline",
-                "ocr_excerpt": " ".join(ocr_text.split())[:320],
-                "has_preview": bool(payload.get("image")),
-            })
-        connection.close()
-        results.sort(key=lambda value: (-float(value["rank"]), -float(value["modified"])))
-        return results[:max(1, min(250, int(limit)))]
+        try:
+            connection.execute(
+                "CREATE VIRTUAL TABLE recall_windows USING fts5("
+                "key UNINDEXED, app, title, files)"
+            )
+            connection.execute(
+                "CREATE VIRTUAL TABLE recall_visual USING fts5(name UNINDEXED, ocr)"
+            )
+            loaded = []
+            for path in self._paths():
+                payload = self._load(path)
+                if not payload:
+                    continue
+                visible_windows = []
+                excluded_visible = False
+                for index, window in enumerate(payload.get("windows", [])[:512]):
+                    if not isinstance(window, dict):
+                        continue
+                    identity = "\n".join((
+                        str(window.get("app_id", "")),
+                        str(window.get("app_name", "")),
+                    )).casefold()
+                    if any(token in identity for token in exclusions):
+                        excluded_visible = True
+                        continue
+                    visible_windows.append((index, window))
+                    connection.execute(
+                        "INSERT INTO recall_windows VALUES (?, ?, ?, ?)",
+                        (
+                            f"{path.name}#{index}",
+                            str(window.get("app_name") or window.get("app_id") or ""),
+                            str(window.get("title") or ""),
+                            "\n".join(str(value) for value in window.get("open_files", [])),
+                        ),
+                    )
+                if not visible_windows:
+                    continue
+                preview_allowed = not excluded_visible
+                if preview_allowed:
+                    connection.execute(
+                        "INSERT INTO recall_visual VALUES (?, ?)",
+                        (path.name, str(payload.get("ocr_text") or "")),
+                    )
+                loaded.append((path, payload, visible_windows, preview_allowed))
+
+            window_candidates: dict[str, float] = {}
+            visual_candidates: dict[str, float] = {}
+            if needle:
+                terms = re.findall(r"[\w.-]+", needle)[:16]
+                expression = " OR ".join(f'"{term.replace(chr(34), "")}"' for term in terms)
+                if expression:
+                    with contextlib.suppress(sqlite3.OperationalError):
+                        for key, rank in connection.execute(
+                            "SELECT key, bm25(recall_windows,0,6,5,3) "
+                            "FROM recall_windows WHERE recall_windows MATCH ? ORDER BY 2",
+                            (expression,),
+                        ):
+                            window_candidates[key] = -float(rank)
+                    with contextlib.suppress(sqlite3.OperationalError):
+                        for name, rank in connection.execute(
+                            "SELECT name, bm25(recall_visual,0,2) "
+                            "FROM recall_visual WHERE recall_visual MATCH ? ORDER BY 2",
+                            (expression,),
+                        ):
+                            visual_candidates[name] = -float(rank)
+            if needle and semantic:
+                query_terms = set(re.findall(r"[\w]+", needle))
+                for path, _payload, windows, _preview_allowed in loaded:
+                    for index, window in windows:
+                        text_terms = set(re.findall(
+                            r"[\w]+",
+                            " ".join([
+                                str(window.get("app_name") or window.get("app_id") or ""),
+                                str(window.get("title") or ""),
+                                *(str(value) for value in window.get("open_files", [])),
+                            ]).casefold(),
+                        ))
+                        related = len(query_terms & text_terms) / max(
+                            1, len(query_terms | text_terms)
+                        )
+                        if related >= 0.08:
+                            key = f"{path.name}#{index}"
+                            window_candidates[key] = max(
+                                window_candidates.get(key, 0.0), related
+                            )
+
+            results = []
+            for path, payload, windows, preview_allowed in loaded:
+                common = {
+                    "name": path.name,
+                    "captured_at": str(payload.get("captured_at") or "")[:128],
+                    "modified": float(payload.get("modified") or path.stat().st_mtime),
+                    "has_preview": bool(payload.get("image")) and preview_allowed,
+                }
+                if not needle and not app:
+                    apps = list(dict.fromkeys(
+                        str(window.get("app_name") or window.get("app_id") or "")
+                        for _index, window in windows
+                        if window.get("app_name") or window.get("app_id")
+                    ))
+                    titles = list(dict.fromkeys(
+                        str(window.get("title") or "")
+                        for _index, window in windows if window.get("title")
+                    ))
+                    files = list(dict.fromkeys(
+                        str(value) for _index, window in windows
+                        for value in window.get("open_files", [])
+                    ))
+                    urls = list(dict.fromkeys(URL_RE.findall("\n".join(titles))))
+                    results.append({
+                        **common,
+                        "apps": apps,
+                        "titles": titles,
+                        "files": files,
+                        "targets": self._targets(files, urls),
+                        "urls": urls,
+                        "rank": 0.0,
+                        "match_type": "Timeline",
+                        "result_kind": "timeline",
+                        "ocr_excerpt": "",
+                    })
+                    continue
+
+                for index, window in windows:
+                    identity = "\n".join((
+                        str(window.get("app_id", "")),
+                        str(window.get("app_name", "")),
+                    )).casefold()
+                    if app and app.casefold() not in identity:
+                        continue
+                    key = f"{path.name}#{index}"
+                    if needle and key not in window_candidates:
+                        continue
+                    files = [str(value) for value in window.get("open_files", [])]
+                    title = str(window.get("title") or "")
+                    urls = list(dict.fromkeys(URL_RE.findall(title)))
+                    results.append({
+                        **common,
+                        "apps": [str(window.get("app_name") or window.get("app_id") or "")],
+                        "titles": [title] if title else [],
+                        "files": files,
+                        "targets": self._targets(files, urls),
+                        "urls": urls,
+                        "rank": round(window_candidates.get(key, 0.0), 4),
+                        "match_type": self._window_match_type(window, needle),
+                        "result_kind": "window",
+                        "matched_window": window,
+                        "window_index": index,
+                        "ocr_excerpt": "",
+                    })
+
+                if needle and not app and path.name in visual_candidates:
+                    ocr_text = str(payload.get("ocr_text") or "")
+                    apps = list(dict.fromkeys(
+                        str(window.get("app_name") or window.get("app_id") or "")
+                        for _index, window in windows
+                        if window.get("app_name") or window.get("app_id")
+                    ))
+                    results.append({
+                        **common,
+                        "apps": apps,
+                        "titles": [],
+                        "files": [],
+                        "targets": [],
+                        "urls": [],
+                        "rank": round(visual_candidates[path.name], 4),
+                        "match_type": "Visual text",
+                        "result_kind": "visual",
+                        "ocr_excerpt": " ".join(ocr_text.split())[:320],
+                    })
+            results.sort(
+                key=lambda value: (-float(value["rank"]), -float(value["modified"]))
+            )
+            return results[:max(1, min(250, int(limit)))]
+        finally:
+            connection.close()
+
+    @staticmethod
+    def _targets(files: list[str], urls: list[str]) -> list[str]:
+        targets = [
+            Path(value).as_uri()
+            for value in files
+            if Path(value).is_absolute() and Path(value).is_file()
+        ]
+        targets.extend(urls)
+        return list(dict.fromkeys(targets))[:32]
+
+    @staticmethod
+    def _window_match_type(window: dict, needle: str) -> str:
+        if not needle:
+            return "Window"
+        if needle in str(window.get("title") or "").casefold():
+            return "Window text"
+        if any(needle in str(value).casefold() for value in window.get("open_files", [])):
+            return "Window file"
+        if needle in "\n".join((
+            str(window.get("app_name") or ""), str(window.get("app_id") or "")
+        )).casefold():
+            return "Application"
+        return "Related window"
 
     def preview_bytes(self, record: str) -> bytes | None:
         if not RECORD_RE.fullmatch(record):

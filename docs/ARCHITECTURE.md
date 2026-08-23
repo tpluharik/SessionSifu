@@ -191,13 +191,24 @@ authenticated encryption, retention and quota pruning, then removes plaintext
 temporary files. GNOME uses one encrypted image per display. Portable Qt builds
 use the standard screen API to create one bounded preview after user permission.
 
-Search decrypts bounded records into process memory and creates an ephemeral
-SQLite FTS5 table. It ranks application, title, file and OCR fields separately;
-optional related matching adds local token-similarity candidates. Persistent
-plaintext OCR or search indexes are never created. The GTK visual timeline can
-decode encrypted previews directly into pixbufs and offers reopen, copy and
-granular deletion actions. Changing exclusions deletes affected vault records
-because previously captured pixels cannot be reliably redacted.
+Search decrypts bounded records into process memory and creates separate
+ephemeral SQLite FTS5 tables for individual windows and display-wide OCR. Each
+window row has a stable record/window identity and independently weighted
+application, title and opted-in file fields; optional related matching adds
+local token-similarity candidates and the focused window receives a small rank
+boost. An empty query remains a desktop-level chronological timeline.
+Persistent plaintext OCR or search indexes are never created. GNOME stores the
+display's logical geometry beside its encrypted image, allowing the GTK browser
+to crop the matching window only after decryption and only in memory. The
+portable Qt browser applies the same result model and crops its bounded primary
+display preview when compatible geometry is available. Reopen actions use only
+that window's validated file or observable URL targets.
+
+Changing exclusions deletes affected vault records because previously captured
+pixels cannot be reliably redacted. As an additional query-time boundary, a
+legacy record containing both an excluded and non-excluded application may
+return the non-excluded window's metadata, but its shared display preview and
+OCR are withheld so pixels from the excluded application cannot leak.
 
 Recall's hot path uses compact atomic asynchronous writes. Open-file discovery is
 bounded and avoids redundant target probes; paths are validated before restore.

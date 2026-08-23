@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QBuffer, QIODevice, QSettings, QTimer, Qt, QUrl
+from PySide6.QtCore import QByteArray, QBuffer, QIODevice, QSettings, QSize, QTimer, Qt, QUrl
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -64,6 +64,36 @@ def qt_shortcut(shortcut: str) -> QKeySequence:
     """Translate the portable Super spelling to Qt's Meta spelling."""
 
     return QKeySequence(shortcut.replace("Super", "Meta"))
+
+
+def recall_result_pixmap(controller: SessionController, entry: dict) -> QPixmap:
+    """Decode a local preview and crop it to an individual window result."""
+    if not entry.get("has_preview"):
+        return QPixmap()
+    preview = controller.recall_store.preview_bytes(str(entry.get("name", "")))
+    pixmap = QPixmap()
+    if not preview or not pixmap.loadFromData(preview):
+        return QPixmap()
+    window = entry.get("matched_window")
+    geometry = window.get("geometry", []) if isinstance(window, dict) else []
+    screen = QApplication.primaryScreen()
+    if len(geometry) != 4 or screen is None:
+        return pixmap
+    try:
+        screen_geometry = screen.geometry()
+        scale_x = pixmap.width() / max(1, screen_geometry.width())
+        scale_y = pixmap.height() / max(1, screen_geometry.height())
+        x = round((float(geometry[0]) - screen_geometry.x()) * scale_x)
+        y = round((float(geometry[1]) - screen_geometry.y()) * scale_y)
+        width = round(float(geometry[2]) * scale_x)
+        height = round(float(geometry[3]) * scale_y)
+        x = max(0, min(x, pixmap.width() - 1))
+        y = max(0, min(y, pixmap.height() - 1))
+        width = max(1, min(width, pixmap.width() - x))
+        height = max(1, min(height, pixmap.height() - y))
+        return pixmap.copy(x, y, width, height)
+    except (TypeError, ValueError):
+        return pixmap
 
 
 class MainWindow(QMainWindow):
@@ -506,11 +536,9 @@ class MainWindow(QMainWindow):
                 label += f" — {titles}"
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, entry)
-            preview = self.controller.recall_store.preview_bytes(str(entry.get("name", "")))
-            if preview:
-                pixmap = QPixmap()
-                if pixmap.loadFromData(preview):
-                    item.setIcon(QIcon(pixmap.scaled(240, 135, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)))
+            pixmap = recall_result_pixmap(self.controller, entry)
+            if not pixmap.isNull():
+                item.setIcon(QIcon(pixmap.scaled(240, 135, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)))
             self.recall_results.addItem(item)
 
     def _capture_recall_preview(self) -> bytes | None:
@@ -632,11 +660,23 @@ class RecallSearchDialog(QDialog):
         self.query.returnPressed.connect(self.refresh)
         search = QPushButton("Search")
         search.clicked.connect(self.refresh)
+        self.app_filter = QComboBox()
+        self.app_filter.addItem("All applications", "")
+        self.app_filter.currentIndexChanged.connect(self.refresh)
         row.addWidget(self.query, 1)
+        row.addWidget(self.app_filter)
         row.addWidget(search)
         layout.addLayout(row)
         self.results = QListWidget()
+        self.results.setIconSize(QSize(240, 135))
+        self.results.itemDoubleClicked.connect(self.open_selected)
         layout.addWidget(self.results, 1)
+        actions = QHBoxLayout()
+        open_button = QPushButton("Reopen selected window")
+        open_button.clicked.connect(self.open_selected)
+        actions.addWidget(open_button)
+        actions.addStretch(1)
+        layout.addLayout(actions)
         self.local_shortcut = QShortcut(QKeySequence(SHORTCUT_LABEL), self)
         self.local_shortcut.activated.connect(self.focus_search)
 
@@ -655,22 +695,50 @@ class RecallSearchDialog(QDialog):
         entries = self.controller.search_recall(
             self.query.text(),
             excluded_apps=self.exclusions_provider(),
+            app=str(self.app_filter.currentData() or ""),
             semantic=QSettings("SessionSifu", "SessionSifu").value(
                 "recall_related_search", False, type=bool
             ),
         )
+        if self.app_filter.count() == 1:
+            all_entries = self.controller.search_recall(
+                "", excluded_apps=self.exclusions_provider()
+            )
+            apps = sorted(
+                {app for entry in all_entries for app in entry.get("apps", [])},
+                key=str.casefold,
+            )
+            self.app_filter.blockSignals(True)
+            for app in apps:
+                self.app_filter.addItem(app, app)
+            self.app_filter.blockSignals(False)
         for entry in entries:
             apps = ", ".join(entry.get("apps", [])[:4]) or "Unknown application"
             titles = " · ".join(entry.get("titles", [])[:3])
-            label = f"{entry.get('captured_at', '')} — {apps}"
+            label = f"{apps} — {titles or 'Window moment'}\n{entry.get('captured_at', '')}"
             if titles:
-                label += f" — {titles}"
-            self.results.addItem(label)
+                label += f" · {entry.get('match_type', 'Window')}"
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, entry)
+            pixmap = recall_result_pixmap(self.controller, entry)
+            if not pixmap.isNull():
+                item.setIcon(QIcon(pixmap.scaled(
+                    240, 135, Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )))
+            self.results.addItem(item)
         self.notice.setText(
-            f"{len(entries)} matching entries. Excluded applications are redacted from all results."
+            f"{len(entries)} matching window moments. Excluded applications are redacted from all results."
             if entries
             else "No matching non-excluded Recall entries."
         )
+
+    def open_selected(self, *_args) -> None:
+        item = self.results.currentItem()
+        entry = item.data(Qt.UserRole) if item else {}
+        target = next(iter(entry.get("targets", [])), "") if isinstance(entry, dict) else ""
+        if target:
+            QDesktopServices.openUrl(QUrl(target))
 
 
 def run_gui(

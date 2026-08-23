@@ -108,7 +108,10 @@ file-path and related-match opt-ins. Persistent records, previews and extracted
 text use authenticated encryption; search uses an ephemeral in-memory FTS5
 database. It provides visual timeline navigation, local OCR, related ranking,
 reopening, timed pauses, quotas, sensitive-text filtering, capture diagnostics
-and granular deletion. Future work remains for stronger native credential-store
+and granular deletion. Version 3.1 adds individual-window search results,
+GNOME focused-window ranking, app filters, window-cropped encrypted previews and
+window-specific reopen targets across the GNOME and portable interfaces.
+Future work remains for stronger native credential-store
 integration in every portable bundle, browser cooperation for reliable private
 tab/domain detection and optional packaged local embedding models.
 

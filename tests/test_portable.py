@@ -83,7 +83,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.0.2")
+        self.assertEqual(VERSION, "3.1.0")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -242,11 +242,37 @@ class PortableTests(unittest.TestCase):
                     title="Public research",
                 )
             )
-            store.save(session)
+            store.save(session, preview=b"encrypted-shared-display")
             result = store.search("", excluded_apps=["Editor"])
             self.assertEqual(result[0]["apps"], ["Browser"])
             self.assertEqual(result[0]["titles"], ["Public research"])
             self.assertEqual(store.search("Notes", excluded_apps=["Editor"]), [])
+            self.assertFalse(result[0]["has_preview"])
+
+    def test_privacy_recall_search_returns_individual_window_moments(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RecallStore(Path(directory))
+            session = FakeAdapter().capture()
+            session.windows[0].title = "Project notes"
+            session.windows.append(
+                WindowSnapshot(
+                    app_id="org.example.Browser",
+                    app_name="Browser",
+                    title="Project research",
+                    geometry=[920, 20, 900, 700],
+                )
+            )
+            store.save(session)
+            results = store.search("Project", semantic=True)
+            self.assertEqual(len(results), 2)
+            self.assertTrue(all(item["result_kind"] == "window" for item in results))
+            self.assertEqual(
+                {item["matched_window"]["app_name"] for item in results},
+                {"Editor", "Browser"},
+            )
+            browser = store.search("Project", app="Browser", semantic=True)
+            self.assertEqual(len(browser), 1)
+            self.assertEqual(browser[0]["apps"], ["Browser"])
 
 
 if __name__ == "__main__":

@@ -2,6 +2,27 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.1.0
+
+- Changed Recall search from one result per desktop snapshot to one result per
+  individual application window, with separate application, title and opted-in
+  file indexing and optional related-window ranking.
+- Added focused-window ranking on GNOME, plus application filters and
+  window-specific reopen targets to the GNOME and portable Windows, macOS, KDE
+  and Linux search paths.
+- Added encrypted display geometry metadata so GNOME can crop the matching
+  window from its display preview in memory without storing duplicate images.
+- Added window-cropped preview, view and copy-image actions to the GTK browser,
+  plus matching thumbnails, filtering and reopen actions in the portable Qt
+  popup.
+- Kept unfiltered browsing as a chronological desktop timeline and fixed its
+  Earlier-to-Now slider direction and Show All reset action.
+- Hardened query-time exclusions: if an old capture contains an excluded
+  application, non-excluded window metadata remains searchable but the shared
+  screenshot and OCR are withheld to prevent pixel leakage.
+- Added per-window search, app-filter, focus ranking, display mapping and
+  exclusion-preview regression coverage.
+
 ## 3.0.2
 
 - Fixed user-local updates failing to restart with `ModuleNotFoundError:

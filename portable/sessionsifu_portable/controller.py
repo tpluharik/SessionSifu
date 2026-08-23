@@ -77,10 +77,11 @@ class SessionController:
         query: str = "",
         excluded_apps: list[str] | tuple[str, ...] = (),
         *,
+        app: str = "",
         semantic: bool = False,
     ) -> list[dict[str, object]]:
         return self.recall_store.search(
-            query, excluded_apps=excluded_apps, semantic=semantic
+            query, excluded_apps=excluded_apps, app=app, semantic=semantic
         )
 
     def clear_recall(self) -> int:

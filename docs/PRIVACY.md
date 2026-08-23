@@ -66,6 +66,11 @@ Recall is designed for data minimization, not invisible monitoring:
   when default-on sensitive filtering recognizes them;
 - search creates an ephemeral in-memory SQLite FTS5 index and never uploads a
   query, preview or OCR result;
+- text search is indexed per window. A result exposes only that window's app,
+  title and opted-in file targets; full-display OCR is returned separately;
+- if an older shared screenshot contains an application that is now excluded,
+  SessionSifu withholds the complete preview and its OCR even when another
+  non-excluded window in the same entry remains searchable;
 - timed pause controls, quota pruning, unchanged-frame deduplication and the
   capture status row make recording state and failures visible.
 
