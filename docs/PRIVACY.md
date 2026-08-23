@@ -58,6 +58,9 @@ Recall is designed for data minimization, not invisible monitoring:
 - file paths are removed unless separately enabled;
 - screenshots are skipped while locked or when an excluded application is
   detected before capture, after capture or after compression;
+- OCR preprocessing uses a private temporary grayscale image that is deleted
+  immediately after local Tesseract recognition; only the compact preview and
+  accepted OCR words/coordinates enter the encrypted vault;
 - SessionSifu's built-in self-exclusion removes its windows from searchable
   metadata but does not suppress display previews merely because the manager or
   Recall browser is open; user-configured exclusions still block previews;

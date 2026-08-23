@@ -113,17 +113,17 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_3.1.7_all.deb` from the matching GitHub Release, or build it
+Download `sessionsifu_3.1.8_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_3.1.7_all.deb
+sudo apt install ./sessionsifu_3.1.8_all.deb
 ```
 
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.1.7_all.deb
+sudo apt install ./dist/sessionsifu_3.1.8_all.deb
 ```
 
 After installation:
@@ -139,10 +139,10 @@ After installation:
 
 Tagged releases attach these self-contained artifacts:
 
-- `SessionSifu-3.1.7-windows-x64.zip`;
-- `SessionSifu-3.1.7-macos-arm64.zip`;
-- `SessionSifu-3.1.7-macos-x64.zip`; and
-- `SessionSifu-3.1.7-linux-x64.tar.gz`.
+- `SessionSifu-3.1.8-windows-x64.zip`;
+- `SessionSifu-3.1.8-macos-arm64.zip`;
+- `SessionSifu-3.1.8-macos-x64.zip`; and
+- `SessionSifu-3.1.8-linux-x64.tar.gz`.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -397,7 +397,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.1.7_all.deb
+dist/sessionsifu_3.1.8_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -418,7 +418,7 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v3.1.7` tag publishes the artifacts and `SHA256SUMS` as a GitHub
+A pushed `v3.1.8` tag publishes the artifacts and `SHA256SUMS` as a GitHub
 Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
@@ -446,10 +446,13 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Privacy and local-data guide](docs/PRIVACY.md)
 - [Recall research and product decisions](docs/RECALL_RESEARCH.md)
 
-The current 3.1.7 release highlights matched OCR words directly on encrypted
-window/display previews and replaces the raw OCR stream with confidence-filtered
-spatial word data. Previous/Next browsing remains available for every linked
-window image. When Mutter cannot render
+The current 3.1.8 release improves small-text recognition with a private,
+temporary high-contrast OCR working image while keeping stored previews compact
+and encrypted. Recall search is now debounced and presents one clear result per
+row; **Open** and **View screenshots** stay visible while copy and deletion
+commands are grouped under **More**. A matched result can browse every captured
+window from that saved moment, with the matching window and OCR highlights shown
+first. When Mutter cannot render
 an inactive or minimized surface, SessionSifu shows an unavailable preview
 instead of presenting pixels cropped from an unrelated foreground window.
 Window-level privacy, bounded capture and exclusion rules remain intact.

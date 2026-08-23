@@ -31,8 +31,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.1.7"
-assert metadata["version"] == 26
+assert metadata["version-name"] == "3.1.8"
+assert metadata["version"] == 27
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -63,7 +63,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.1.7"' in build_script
+assert 'version="3.1.8"' in build_script
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
@@ -135,7 +135,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.1.7"' in app_source
+assert 'CURRENT_VERSION = "3.1.8"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -146,6 +146,10 @@ assert "class RecallSearchWindow" in app_source
 assert ".get_n_items()" not in app_source
 assert "model.iter_n_children(None)" in app_source
 assert "Gtk.FlowBox" in app_source
+assert "GLib.timeout_add(250, self._run_scheduled_search)" in app_source
+assert "max_children_per_line=1" in app_source
+assert 'Gtk.MenuButton(label="More")' in app_source
+assert 'Gtk.Scale.new_with_range' not in app_source
 assert "def _window_pixbuf" in app_source
 assert "def recall_window_image_indices" in app_source
 assert "def recall_image_indices" in app_source
@@ -156,6 +160,8 @@ assert '"matched_window"' in (root / "app" / "recall_engine.py").read_text()
 assert "recall_windows" in (root / "app" / "recall_engine.py").read_text()
 recall_engine_source = (root / "app" / "recall_engine.py").read_text()
 assert '"preserve_interword_spaces=1", "tsv"' in recall_engine_source
+assert "def _prepare_ocr_image" in recall_engine_source
+assert '"--dpi", "180"' in recall_engine_source
 assert '"ocr_boxes": ocr_boxes' in recall_engine_source
 assert '"highlight_boxes": self._matching_ocr_boxes(window, needle)' in recall_engine_source
 assert "MIN_OCR_CONFIDENCE = 30.0" in recall_engine_source

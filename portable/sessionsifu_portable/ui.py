@@ -765,16 +765,18 @@ class RecallSearchDialog(QDialog):
         layout.addWidget(self.notice)
         row = QHBoxLayout()
         self.query = QLineEdit()
-        self.query.setPlaceholderText("Application, window title or opted-in file path")
+        self.query.setPlaceholderText("Application, window, file, website or text in a screenshot")
         self.query.returnPressed.connect(self.refresh)
-        search = QPushButton("Search")
-        search.clicked.connect(self.refresh)
+        self.search_timer = QTimer(self)
+        self.search_timer.setSingleShot(True)
+        self.search_timer.setInterval(250)
+        self.search_timer.timeout.connect(self.refresh)
+        self.query.textChanged.connect(lambda *_args: self.search_timer.start())
         self.app_filter = QComboBox()
         self.app_filter.addItem("All applications", "")
         self.app_filter.currentIndexChanged.connect(self.refresh)
         row.addWidget(self.query, 1)
         row.addWidget(self.app_filter)
-        row.addWidget(search)
         layout.addLayout(row)
         self.results = QListWidget()
         self.results.setIconSize(QSize(240, 135))
@@ -825,8 +827,15 @@ class RecallSearchDialog(QDialog):
             apps = ", ".join(entry.get("apps", [])[:4]) or "Unknown application"
             titles = " · ".join(entry.get("titles", [])[:3])
             label = f"{apps} — {titles or 'Window moment'}\n{entry.get('captured_at', '')}"
-            if titles:
-                label += f" · {entry.get('match_type', 'Window')}"
+            match_label = {
+                "Window image text": "Found in this screenshot",
+                "Visual text": "Found in a display screenshot",
+                "Window text": "Found in the window title",
+                "Window file": "Found in an open file",
+                "Application": "Found in the application name",
+                "Timeline": "Saved moment",
+            }.get(str(entry.get("match_type", "")), "Matching saved moment")
+            label += f" · {match_label}"
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, entry)
             pixmap = recall_result_pixmap(self.controller, entry)

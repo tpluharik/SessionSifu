@@ -71,7 +71,11 @@ screenshot text with local OCR** are both enabled and that `tesseract --version`
 works. OCR applies to new captures and cannot be added retroactively. Search
 accepts exact words, useful word prefixes and small OCR substitutions; a word
 that Tesseract omitted entirely still cannot be found. Install the appropriate
-Tesseract language data when searching non-English text. OCR is never inferred
+Tesseract language data when searching non-English text (for example,
+`sudo apt install tesseract-ocr-ces` for Czech). The default Debian dependency
+provides English recognition; language packs are intentionally optional because
+they are large and user-specific. SessionSifu automatically combines an
+installed model matching the desktop locale with English. OCR is never inferred
 from the main Recall switch. If diagnostics report
 the private fallback key, install/configure a Secret Service-compatible keyring
 and restart SessionSifu before enabling visual capture.
@@ -88,11 +92,20 @@ exclusions and the last **Capture diagnostics** reason.
 Use **Browse N windows** on a Recall card to inspect each captured window
 separately. The gallery lists linked window images first and display overviews
 after them; Previous/Next does not decrypt images until they are selected.
-Version 3.1.7 and newer store confidence-filtered OCR word coordinates with new
+Version 3.1.8 preprocesses a private OCR-only copy with grayscale contrast,
+bounded upscaling and sharpening, then deletes it immediately. The compressed
+encrypted preview itself is not enlarged. Version 3.1.7 and newer store
+confidence-filtered OCR word coordinates with new
 captures and outline the words matching the current query. Older captures keep
 their searchable OCR text but cannot be highlighted retroactively because they
 contain no word coordinates. A title/application/file match also has no visual
 box unless the same query appears in the screenshot OCR.
+
+The Recall browser searches automatically after a short typing pause. Results
+are listed newest first; use application/date filters instead of a separate
+timeline slider. **View screenshots** opens every window image belonging to the
+saved moment and starts on the matched window. Less common copy and privacy
+deletion actions are under **More**.
 
 ## The Recall search shortcut does not open
 

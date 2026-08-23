@@ -202,9 +202,16 @@ and small recognition substitutions; optional related matching adds local
 token-similarity candidates and the focused window receives a small rank
 boost. An empty query remains a desktop-level chronological timeline whose
 gallery can navigate each linked window image independently.
-OCR runs in Tesseract sparse-layout TSV mode. Only words meeting the confidence
-floor enter the index; their text, confidence and normalized image rectangle
-are stored inside the encrypted record. Search returns at most 64 matching
+OCR runs in Tesseract sparse-layout TSV mode. The storage image remains a
+compact JPEG, but recognition receives a temporary `0600` grayscale copy with
+automatic contrast, bounded 3× Lanczos upscaling, sharpening and a 180-DPI hint.
+That working image is deleted immediately after Tesseract exits and is never
+encrypted or retained because the vault already contains the source preview.
+The engine queries installed Tesseract models once per process and combines a
+model matching the desktop locale with English when both are available.
+Only words meeting the confidence floor enter the index; their text, confidence
+and normalized image rectangle are stored inside the encrypted record. Search
+returns at most 64 matching
 rectangles for the selected window/display, and GTK/Qt draw them over the
 CONTAIN-fitted image without creating a modified screenshot on disk.
 Persistent plaintext OCR or search indexes are never created. Each window row
@@ -212,6 +219,12 @@ links directly to its encrypted preview. GNOME also stores display geometry so
 the GTK browser can crop a display image in memory for older/fallback records.
 The portable Qt browser follows the same exact-window-first model. Reopen
 actions use only that window's validated file or observable URL targets.
+
+The GTK search surface debounces text entry for 250 ms so decrypting and
+rebuilding the in-memory FTS index does not run for every keystroke. Window
+results retain the full non-excluded window list for gallery navigation, while
+`matched_window` remains the authoritative target for rank, preview selection,
+highlighting and reopening.
 
 Changing exclusions deletes affected vault records because previously captured
 pixels cannot be reliably redacted. As an additional query-time boundary, a

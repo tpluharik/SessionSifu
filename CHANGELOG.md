@@ -2,6 +2,29 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.1.8
+
+- Improved screenshot OCR before recognition without enlarging the encrypted
+  preview library. SessionSifu now creates a short-lived owner-only grayscale
+  working image, applies contrast correction, upscales small interface text up
+  to 3× within a 2400-pixel bound and sharpens it before Tesseract processing.
+- Added an explicit OCR DPI hint and made Pillow a runtime dependency for the
+  GNOME and portable editions. The original compact JPEG remains the only
+  image persisted in the encrypted vault; the OCR working copy is always
+  deleted after recognition. When an installed Tesseract language model matches
+  the desktop locale, SessionSifu selects it automatically alongside English.
+- Simplified Recall browsing into one clear result per row with one matched
+  screenshot, human-readable match explanations, live search debounced by 250
+  ms and primary **Open**/**View screenshots** actions. Copy and deletion
+  commands now live in a compact **More** menu.
+- Removed the ambiguous timeline slider. Date/application filters and the
+  chronological result list now provide the timeline navigation directly.
+- A window-level search result now keeps the complete captured window set, so
+  **View screenshots** can browse the entire saved moment while still opening
+  and highlighting the exact matching window first.
+- Added regression coverage for private OCR preprocessing, bounded upscaling,
+  cleanup, the single-column browser, debouncing and the compact action menu.
+
 ## 3.1.7
 
 - Replaced flat OCR output with confidence-filtered Tesseract TSV word data.

@@ -36,6 +36,11 @@ try:
 except ImportError:  # pragma: no cover - package dependency, exercised by diagnostics
     keyring = None
 
+try:
+    from PIL import Image, ImageFilter, ImageOps
+except ImportError:  # pragma: no cover - graceful fallback for source checkouts
+    Image = ImageFilter = ImageOps = None
+
 
 RECORD_RE = re.compile(r"^recall-\d{8}-\d{6}-\d{3}\.json$")
 VAULT_RE = re.compile(r"^recall-\d{8}-\d{6}-\d{3}\.ssrec$")
@@ -70,11 +75,84 @@ MAX_ENTRIES = 500
 SERVICE = "org.gnome.SessionSifu.Recall"
 ACCOUNT = "local-vault-v1"
 FUZZY_OCR_SCAN_BYTES = 2 * 1024 * 1024
+MAX_OCR_WORKING_EDGE = 2400
+_TESSERACT_LANGUAGE_ARGS: tuple[str, ...] | None = None
+TESSERACT_LANGUAGE_ALIASES = {
+    "cs": "ces", "de": "deu", "es": "spa", "fr": "fra", "it": "ita",
+    "nl": "nld", "pl": "pol", "pt": "por", "sk": "slk", "uk": "ukr",
+}
 
 
 def _private(path: Path, mode: int) -> None:
     with contextlib.suppress(OSError):
         path.chmod(mode)
+
+
+def _prepare_ocr_image(image: Path) -> Path:
+    """Create a private, temporary high-contrast OCR source when possible.
+
+    Recall previews stay compact for storage and browsing. OCR instead works
+    from an upscaled grayscale copy so small interface text is not permanently
+    lost to the preview's JPEG size and quality limits.
+    """
+    if Image is None or ImageFilter is None or ImageOps is None:
+        return image
+    temporary: Path | None = None
+    try:
+        with Image.open(image) as source:
+            prepared = ImageOps.autocontrast(source.convert("L"), cutoff=1)
+            longest = max(prepared.size)
+            if longest <= 0:
+                return image
+            scale = min(3.0, MAX_OCR_WORKING_EDGE / longest)
+            if scale > 1.05:
+                prepared = prepared.resize(
+                    (max(1, round(prepared.width * scale)),
+                     max(1, round(prepared.height * scale))),
+                    Image.Resampling.LANCZOS,
+                )
+            prepared = prepared.filter(
+                ImageFilter.UnsharpMask(radius=1.2, percent=160, threshold=3)
+            )
+            descriptor, name = tempfile.mkstemp(prefix="sessionsifu-ocr-", suffix=".png")
+            os.close(descriptor)
+            temporary = Path(name)
+            prepared.save(temporary, "PNG", optimize=True)
+            _private(temporary, 0o600)
+            return temporary
+    except (OSError, ValueError):
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        return image
+
+
+def _tesseract_language_args() -> tuple[str, ...]:
+    """Use the installed model matching the desktop locale, plus English."""
+    global _TESSERACT_LANGUAGE_ARGS
+    if _TESSERACT_LANGUAGE_ARGS is not None:
+        return _TESSERACT_LANGUAGE_ARGS
+    installed: set[str] = set()
+    try:
+        result = subprocess.run(
+            ["tesseract", "--list-langs"], check=False, capture_output=True, timeout=5,
+        )
+        if result.returncode == 0:
+            installed = {
+                line.strip() for line in result.stdout.decode("utf-8", "replace").splitlines()
+                if re.fullmatch(r"[A-Za-z_]+", line.strip())
+            }
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    locale_value = next((
+        os.environ.get(name, "") for name in ("LANGUAGE", "LC_ALL", "LC_CTYPE", "LANG")
+        if os.environ.get(name, "")
+    ), "")
+    locale_code = re.split(r"[:_.@]", locale_value.casefold())[0]
+    preferred = TESSERACT_LANGUAGE_ALIASES.get(locale_code, locale_code)
+    languages = [value for value in (preferred, "eng") if value and value in installed]
+    languages = list(dict.fromkeys(languages))
+    _TESSERACT_LANGUAGE_ARGS = ("-l", "+".join(languages)) if languages else ()
+    return _TESSERACT_LANGUAGE_ARGS
 
 
 def _luhn(value: str) -> bool:
@@ -271,14 +349,17 @@ class RecallVault:
 
     def _ocr(self, image: Path) -> tuple[str, list[dict[str, object]]]:
         """Return useful OCR words and normalized positions from Tesseract TSV."""
+        working_image = _prepare_ocr_image(image)
+        language_args = _tesseract_language_args()
         try:
             result = subprocess.run(
                 # Application windows contain scattered controls, labels and
                 # document fragments rather than one uniform paragraph. TSV
                 # lets us discard low-confidence noise and retain word boxes.
                 [
-                    "tesseract", str(image), "stdout", "--oem", "1",
-                    "--psm", "11", "-c", "preserve_interword_spaces=1", "tsv",
+                    "tesseract", str(working_image), "stdout", *language_args, "--oem", "1",
+                    "--psm", "11", "--dpi", "180", "-c",
+                    "preserve_interword_spaces=1", "tsv",
                 ],
                 check=False,
                 capture_output=True,
@@ -286,6 +367,9 @@ class RecallVault:
             )
         except (OSError, subprocess.TimeoutExpired):
             return "", []
+        finally:
+            if working_image != image:
+                working_image.unlink(missing_ok=True)
         if result.returncode != 0:
             return "", []
         decoded = result.stdout[:MAX_OCR_BYTES].decode("utf-8", "replace")
@@ -814,7 +898,10 @@ class RecallVault:
                         "files": files,
                         "urls": urls,
                         "targets": self._targets(files, urls),
-                        "windows": [window],
+                        # Keep the matched window explicit for ranking and
+                        # highlighting, but let the gallery browse the whole
+                        # captured desktop moment from this search result.
+                        "windows": [visible for _visible_index, visible in windows],
                         "matched_window": window,
                         "window_index": index,
                         "rank": round(rank, 4),

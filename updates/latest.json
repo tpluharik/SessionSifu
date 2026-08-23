@@ -1,11 +1,11 @@
 {
-  "version": "3.1.7",
+  "version": "3.1.8",
   "channel": "stable",
-  "issued_at": "2026-08-23T18:39:48Z",
-  "expires_at": "2026-10-07T18:39:48Z",
+  "issued_at": "2026-08-23T19:32:20Z",
+  "expires_at": "2026-10-07T19:32:20Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.7_all.deb",
-  "sha256": "36c64143e2343feacdff2d701ad7e6ffd87e026d06659aaff35cb45dbe7462df",
-  "size": 293880,
-  "notes": "SessionSifu 3.1.7 highlights matched OCR words on encrypted window/display previews and improves recognition with confidence-filtered spatial OCR data."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.8_all.deb",
+  "sha256": "407595b8cee2463971f520e10e6925c186284f1e4edc7405532a9e68fbf08e89",
+  "size": 295820,
+  "notes": "SessionSifu 3.1.8 improves small-text OCR with private high-contrast preprocessing and simplifies Recall browsing with debounced search and a compact result layout."
 }

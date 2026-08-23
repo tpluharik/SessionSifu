@@ -24,6 +24,11 @@ try:
 except ImportError:  # Linux system packages may intentionally omit it.
     keyring = None
 
+try:
+    from PIL import Image, ImageFilter, ImageOps
+except ImportError:  # pragma: no cover - source checkout fallback
+    Image = ImageFilter = ImageOps = None
+
 from .model import SessionSnapshot, WindowSnapshot
 
 RECALL_SCHEMA = 3
@@ -36,6 +41,12 @@ MAX_TOTAL_WINDOW_OCR_BYTES = 512 * 1024
 MAX_OCR_BOXES_PER_IMAGE = 512
 MAX_TOTAL_WINDOW_OCR_BOXES = 4096
 MIN_OCR_CONFIDENCE = 30.0
+MAX_OCR_WORKING_EDGE = 2400
+_TESSERACT_LANGUAGE_ARGS: tuple[str, ...] | None = None
+TESSERACT_LANGUAGE_ALIASES = {
+    "cs": "ces", "de": "deu", "es": "spa", "fr": "fra", "it": "ita",
+    "nl": "nld", "pl": "pol", "pt": "por", "sk": "slk", "uk": "ukr",
+}
 DEFAULT_RETENTION_HOURS = 24
 DEFAULT_EXCLUSIONS = ("sessionsifu",)
 MAGIC = b"SSRF1\0"
@@ -84,6 +95,68 @@ def _domain(value: str) -> str:
 def _private_mode(path: Path, mode: int) -> None:
     with contextlib.suppress(OSError):
         path.chmod(mode)
+
+
+def _prepare_ocr_image(image: Path) -> Path:
+    """Return a private, sharpened OCR copy without enlarging stored previews."""
+    if Image is None or ImageFilter is None or ImageOps is None:
+        return image
+    temporary: Path | None = None
+    try:
+        with Image.open(image) as source:
+            prepared = ImageOps.autocontrast(source.convert("L"), cutoff=1)
+            longest = max(prepared.size)
+            if longest <= 0:
+                return image
+            scale = min(3.0, MAX_OCR_WORKING_EDGE / longest)
+            if scale > 1.05:
+                prepared = prepared.resize(
+                    (max(1, round(prepared.width * scale)),
+                     max(1, round(prepared.height * scale))),
+                    Image.Resampling.LANCZOS,
+                )
+            prepared = prepared.filter(
+                ImageFilter.UnsharpMask(radius=1.2, percent=160, threshold=3)
+            )
+            descriptor, name = tempfile.mkstemp(prefix="sessionsifu-ocr-", suffix=".png")
+            os.close(descriptor)
+            temporary = Path(name)
+            prepared.save(temporary, "PNG", optimize=True)
+            _private_mode(temporary, 0o600)
+            return temporary
+    except (OSError, ValueError):
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        return image
+
+
+def _tesseract_language_args() -> tuple[str, ...]:
+    """Select an installed locale model and retain English UI recognition."""
+    global _TESSERACT_LANGUAGE_ARGS
+    if _TESSERACT_LANGUAGE_ARGS is not None:
+        return _TESSERACT_LANGUAGE_ARGS
+    installed: set[str] = set()
+    try:
+        result = subprocess.run(
+            ["tesseract", "--list-langs"], check=False, capture_output=True, timeout=5,
+        )
+        if result.returncode == 0:
+            installed = {
+                line.strip() for line in result.stdout.decode("utf-8", "replace").splitlines()
+                if re.fullmatch(r"[A-Za-z_]+", line.strip())
+            }
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    locale_value = next((
+        os.environ.get(name, "") for name in ("LANGUAGE", "LC_ALL", "LC_CTYPE", "LANG")
+        if os.environ.get(name, "")
+    ), "")
+    locale_code = re.split(r"[:_.@]", locale_value.casefold())[0]
+    preferred = TESSERACT_LANGUAGE_ALIASES.get(locale_code, locale_code)
+    languages = [value for value in (preferred, "eng") if value and value in installed]
+    languages = list(dict.fromkeys(languages))
+    _TESSERACT_LANGUAGE_ARGS = ("-l", "+".join(languages)) if languages else ()
+    return _TESSERACT_LANGUAGE_ARGS
 
 
 def _matching_ocr_boxes(boxes: object, query: str) -> list[dict]:
@@ -348,10 +421,13 @@ class RecallStore:
         try:
             with os.fdopen(descriptor, "wb") as output:
                 output.write(preview)
+            working_path = _prepare_ocr_image(path)
+            language_args = _tesseract_language_args()
             result = subprocess.run(
                 [
-                    "tesseract", str(path), "stdout", "--oem", "1",
-                    "--psm", "11", "-c", "preserve_interword_spaces=1", "tsv",
+                    "tesseract", str(working_path), "stdout", *language_args, "--oem", "1",
+                    "--psm", "11", "--dpi", "180", "-c",
+                    "preserve_interword_spaces=1", "tsv",
                 ],
                 check=False,
                 capture_output=True,
@@ -403,6 +479,8 @@ class RecallStore:
         except (OSError, subprocess.TimeoutExpired):
             return "", []
         finally:
+            if "working_path" in locals() and working_path != path:
+                working_path.unlink(missing_ok=True)
             path.unlink(missing_ok=True)
 
     def _paths(self) -> list[Path]:
@@ -626,6 +704,7 @@ class RecallStore:
                         "rank": round(window_candidates.get(key, 0.0), 4),
                         "match_type": self._window_match_type(window, needle),
                         "result_kind": "window",
+                        "windows": [visible for _visible_index, visible in windows],
                         "matched_window": window,
                         "window_index": index,
                         "highlight_boxes": _matching_ocr_boxes(

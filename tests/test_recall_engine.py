@@ -13,7 +13,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
 
-from recall_engine import MAGIC, RecallPolicy, RecallVault  # noqa: E402
+import recall_engine  # noqa: E402
+from recall_engine import MAGIC, RecallPolicy, RecallVault, _prepare_ocr_image  # noqa: E402
 
 
 class RecallEngineTests(unittest.TestCase):
@@ -109,7 +110,8 @@ class RecallEngineTests(unittest.TestCase):
             )).encode()
             completed = mock.Mock(returncode=0, stdout=tsv)
             vault = RecallVault(root, test_key=b"o" * 32)
-            with mock.patch("recall_engine.subprocess.run", return_value=completed) as run:
+            with mock.patch("recall_engine._tesseract_language_args", return_value=()), \
+                    mock.patch("recall_engine.subprocess.run", return_value=completed) as run:
                 text, boxes = vault._ocr(image)
             self.assertEqual(text, "Falcon")
             self.assertEqual(boxes, [{
@@ -119,6 +121,52 @@ class RecallEngineTests(unittest.TestCase):
             command = run.call_args.args[0]
             self.assertIn("tsv", command)
             self.assertIn("11", command)
+
+    def test_ocr_uses_private_upscaled_working_image_and_removes_it(self) -> None:
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image = root / "small.jpg"
+            Image.new("RGB", (320, 180), "white").save(image, "JPEG", quality=60)
+            prepared = _prepare_ocr_image(image)
+            self.assertNotEqual(prepared, image)
+            self.assertEqual(prepared.stat().st_mode & 0o777, 0o600)
+            with Image.open(prepared) as working:
+                self.assertEqual(working.mode, "L")
+                self.assertEqual(working.size, (960, 540))
+            prepared.unlink()
+
+            tsv = ("level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\t"
+                   "left\ttop\twidth\theight\tconf\ttext\n").encode()
+            completed = mock.Mock(returncode=0, stdout=tsv)
+            seen: list[Path] = []
+
+            def recognize(command, **_kwargs):
+                seen.append(Path(command[1]))
+                self.assertTrue(seen[-1].is_file())
+                self.assertNotEqual(seen[-1], image)
+                return completed
+
+            vault = RecallVault(root, test_key=b"p" * 32)
+            with mock.patch("recall_engine._tesseract_language_args", return_value=()), \
+                    mock.patch("recall_engine.subprocess.run", side_effect=recognize):
+                vault._ocr(image)
+            self.assertEqual(len(seen), 1)
+            self.assertFalse(seen[0].exists())
+            self.assertTrue(image.exists())
+
+    def test_ocr_selects_installed_desktop_language_with_english(self) -> None:
+        completed = mock.Mock(
+            returncode=0,
+            stdout=b"List of available languages in /tmp (2):\neng\nces\n",
+        )
+        with mock.patch.object(recall_engine, "_TESSERACT_LANGUAGE_ARGS", None), \
+                mock.patch.dict(os.environ, {"LANG": "cs_CZ.UTF-8"}, clear=True), \
+                mock.patch("recall_engine.subprocess.run", return_value=completed):
+            self.assertEqual(
+                recall_engine._tesseract_language_args(), ("-l", "ces+eng")
+            )
 
     def test_sensitive_and_website_filters_discard_capture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

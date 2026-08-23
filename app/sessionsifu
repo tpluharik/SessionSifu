@@ -44,11 +44,11 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.1.7"
+CURRENT_VERSION = "3.1.8"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -1245,6 +1245,7 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         self._settings = settings()
         self._vault = recall_vault()
         self._entries: list[dict] = []
+        self._search_timeout = 0
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
         header.set_title_widget(Adw.WindowTitle(
@@ -1263,48 +1264,34 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             hexpand=True,
             placeholder_text="Find an application, individual window, file, website or visual clue",
         )
-        self.query.connect("activate", self._search)
-        self.query.connect("search-changed", self._search)
+        self.query.connect("activate", self._search_now)
+        self.query.connect("search-changed", self._schedule_search)
         search_row.append(self.query)
-        search_button = Gtk.Button(label="Search")
-        search_button.add_css_class("suggested-action")
-        search_button.connect("clicked", self._search)
-        search_row.append(search_button)
         content.append(search_row)
 
         filters = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.app_filter = Gtk.ComboBoxText()
         self.app_filter.append("", "All applications")
         self.app_filter.set_active_id("")
-        self.app_filter.connect("changed", self._search)
+        self.app_filter.connect("changed", self._search_now)
         filters.append(self.app_filter)
         self.date_filter = Gtk.ComboBoxText()
         for value, label in (("", "All dates"), ("today", "Today"), ("yesterday", "Yesterday"), ("week", "Last 7 days")):
             self.date_filter.append(value, label)
         self.date_filter.set_active_id("")
-        self.date_filter.connect("changed", self._search)
+        self.date_filter.connect("changed", self._search_now)
         filters.append(self.date_filter)
         show_all = Gtk.Button(label="Show all timeline")
         show_all.connect("clicked", self._show_all)
         filters.append(show_all)
         content.append(filters)
 
-        timeline_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        timeline_box.append(Gtk.Label(label="Earlier"))
-        self.timeline = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 1, 1)
-        self.timeline.set_hexpand(True)
-        self.timeline.set_draw_value(False)
-        self.timeline.connect("value-changed", self._timeline_changed)
-        timeline_box.append(self.timeline)
-        timeline_box.append(Gtk.Label(label="Now"))
-        content.append(timeline_box)
         scroller = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
         self.results = Gtk.FlowBox(
             selection_mode=Gtk.SelectionMode.NONE,
-            homogeneous=True,
-            max_children_per_line=2,
+            homogeneous=False,
+            max_children_per_line=1,
             min_children_per_line=1,
-            column_spacing=12,
             row_spacing=12,
         )
         scroller.set_child(self.results)
@@ -1349,17 +1336,26 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             return (now - timedelta(days=1)).strftime("%Y-%m-%d")
         return ""
 
-    def _timeline_changed(self, scale) -> None:
-        if not self._entries:
-            return
-        position = max(0, min(len(self._entries) - 1, round(scale.get_value())))
-        index = len(self._entries) - position - 1
-        self._render([self._entries[index]], timeline_selection=True)
-
     def _show_all(self, *_args) -> None:
         self.query.set_text("")
         self.app_filter.set_active_id("")
         self.date_filter.set_active_id("")
+        self._search_now()
+
+    def _schedule_search(self, *_args) -> None:
+        if self._search_timeout:
+            GLib.source_remove(self._search_timeout)
+        self._search_timeout = GLib.timeout_add(250, self._run_scheduled_search)
+
+    def _run_scheduled_search(self) -> bool:
+        self._search_timeout = 0
+        self._search()
+        return GLib.SOURCE_REMOVE
+
+    def _search_now(self, *_args) -> None:
+        if self._search_timeout:
+            GLib.source_remove(self._search_timeout)
+            self._search_timeout = 0
         self._search()
 
     def _search(self, *_args) -> None:
@@ -1382,8 +1378,6 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             cutoff = time.time() - 7 * 86400
             entries = [entry for entry in entries if float(entry.get("modified") or 0) >= cutoff]
         self._entries = entries
-        self.timeline.set_range(0, max(1, len(entries) - 1))
-        self.timeline.set_value(max(0, len(entries) - 1))
         known_apps = sorted({app for entry in entries for app in entry.get("apps", [])}, key=str.casefold)
         active_app = self.app_filter.get_active_id() or ""
         if tree_model_row_count(self.app_filter.get_model()) <= 1 and known_apps:
@@ -1392,7 +1386,53 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             self.app_filter.set_active_id(active_app)
         self._render(entries)
 
-    def _render(self, entries: list[dict], timeline_selection: bool = False) -> None:
+    @staticmethod
+    def _match_description(match_type: str) -> str:
+        return {
+            "Window image text": "Found in this screenshot",
+            "Visual text": "Found in a display screenshot",
+            "Window text": "Found in the window title",
+            "Window file": "Found in an open file",
+            "Application": "Found in the application name",
+            "Timeline": "Saved moment",
+        }.get(match_type, "Matching saved moment")
+
+    def _more_button(self, item: dict) -> Gtk.MenuButton:
+        popover = Gtk.Popover()
+        menu = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=4,
+            margin_top=8, margin_bottom=8, margin_start=8, margin_end=8,
+        )
+
+        def add(label: str, callback, argument: object = item, *, destructive: bool = False) -> None:
+            button = Gtk.Button(label=label, halign=Gtk.Align.FILL)
+            if destructive:
+                button.add_css_class("destructive-action")
+            button.connect("clicked", callback, argument)
+            menu.append(button)
+
+        if item.get("image_count"):
+            add("Copy screenshot", self._copy_image)
+        add("Copy recognized text", self._copy_item)
+        add("Delete this moment", self._delete_item, destructive=True)
+        if item.get("apps"):
+            add(
+                f"Delete all from {item['apps'][0]}", self._delete_app,
+                item["apps"][0], destructive=True,
+            )
+        if item.get("urls"):
+            domain = urllib.parse.urlparse(item["urls"][0]).hostname or item["urls"][0]
+            add(f"Delete all from {domain}", self._delete_website, domain, destructive=True)
+        add(
+            "Delete moments before this", self._delete_earlier,
+            float(item.get("modified") or 0), destructive=True,
+        )
+        popover.set_child(menu)
+        more = Gtk.MenuButton(label="More")
+        more.set_popover(popover)
+        return more
+
+    def _render(self, entries: list[dict]) -> None:
         for row in self._rows:
             self.results.remove(row)
         self._rows.clear()
@@ -1402,15 +1442,18 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             apps = ", ".join(item.get("apps", [])[:4]) or "Unknown application"
             titles = " · ".join(item.get("titles", [])[:3])
             row = Gtk.Box(
-                orientation=Gtk.Orientation.VERTICAL,
-                spacing=8,
+                orientation=Gtk.Orientation.HORIZONTAL,
+                spacing=14,
                 margin_top=10,
                 margin_bottom=10,
                 margin_start=10,
                 margin_end=10,
             )
             row.add_css_class("card")
-            row.append(recall_preview(item, show_all=True))
+            preview = recall_preview(item, width=320, height=180, show_all=False)
+            preview.set_size_request(320, 180)
+            row.append(preview)
+            body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=7, hexpand=True)
             if item.get("result_kind") == "window":
                 heading = f"{apps} — {titles}" if titles else apps
             else:
@@ -1421,26 +1464,26 @@ class RecallSearchWindow(Adw.ApplicationWindow):
                 wrap=True,
             )
             title.add_css_class("heading")
-            row.append(title)
+            body.append(title)
+            match_type = str(item.get("match_type", "Timeline"))
             match = Gtk.Label(
-                label=(
-                    f"{modified} · {item.get('match_type', 'Timeline')} match · "
-                    "encrypted locally"
-                ),
+                label=f"{self._match_description(match_type)} · {modified}",
                 xalign=0,
             )
             match.add_css_class("caption")
-            row.append(match)
+            body.append(match)
             details = Gtk.Label(
                 label=item.get("ocr_excerpt") or titles or "No searchable text was exposed",
                 xalign=0,
                 wrap=True,
+                lines=3,
+                ellipsize=Pango.EllipsizeMode.END,
             )
             details.add_css_class("dim-label")
-            row.append(details)
+            body.append(details)
             actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
             if item.get("targets") or item.get("matched_window", {}).get("app_id"):
-                open_button = Gtk.Button(label="Reopen")
+                open_button = Gtk.Button(label="Open")
                 open_button.add_css_class("suggested-action")
                 open_button.connect("clicked", self._open_item, item)
                 actions.append(open_button)
@@ -1448,35 +1491,15 @@ class RecallSearchWindow(Adw.ApplicationWindow):
                 window_previews = len(recall_window_image_indices(item))
                 view_button = Gtk.Button(
                     label=(
-                        f"Browse {window_previews} windows"
-                        if window_previews > 1 else "View"
+                        f"View {window_previews} screenshots"
+                        if window_previews > 1 else "View screenshot"
                     )
                 )
                 view_button.connect("clicked", self._view_item, item)
                 actions.append(view_button)
-                copy_image = Gtk.Button(label="Copy image")
-                copy_image.connect("clicked", self._copy_image, item)
-                actions.append(copy_image)
-            copy_button = Gtk.Button(label="Copy text")
-            copy_button.connect("clicked", self._copy_item, item)
-            actions.append(copy_button)
-            delete_button = Gtk.Button(label="Delete")
-            delete_button.add_css_class("destructive-action")
-            delete_button.connect("clicked", self._delete_item, item)
-            actions.append(delete_button)
-            if item.get("apps"):
-                delete_app = Gtk.Button(label=f"Delete all {item['apps'][0]}")
-                delete_app.connect("clicked", self._delete_app, item["apps"][0])
-                actions.append(delete_app)
-            if item.get("urls"):
-                domain = urllib.parse.urlparse(item["urls"][0]).hostname or item["urls"][0]
-                delete_site = Gtk.Button(label=f"Delete all {domain}")
-                delete_site.connect("clicked", self._delete_website, domain)
-                actions.append(delete_site)
-            delete_earlier = Gtk.Button(label="Delete earlier")
-            delete_earlier.connect("clicked", self._delete_earlier, float(item.get("modified") or 0))
-            actions.append(delete_earlier)
-            row.append(actions)
+            actions.append(self._more_button(item))
+            body.append(actions)
+            row.append(body)
             self.results.insert(row, -1)
             self._rows.append(row)
         status = self._vault.status()
@@ -1487,7 +1510,7 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         )
         self.notice.set_label(
             f"{len(entries)} {result_label}{'s' if len(entries) != 1 else ''}"
-            f"{' selected on the timeline' if timeline_selection else ' matched'} · "
+            " matched · "
             f"{status.get('vault_bytes', 0) / (1024 * 1024):.1f} MiB · "
             f"encryption: {status.get('encryption', 'unavailable')}"
             if entries
