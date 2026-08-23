@@ -48,7 +48,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.1.5"
+CURRENT_VERSION = "3.1.6"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -271,6 +271,51 @@ def _window_pixbuf(item: dict) -> GdkPixbuf.Pixbuf | None:
         return pixbuf.new_subpixbuf(crop_x, crop_y, crop_width, crop_height)
     except (KeyError, TypeError, ValueError, GLib.Error):
         return None
+
+
+def recall_window_image_indices(item: dict) -> list[int]:
+    """Return every linked window image, prioritizing the matched window."""
+    try:
+        image_count = max(0, int(item.get("image_count") or 0))
+    except (TypeError, ValueError):
+        image_count = 0
+    indices: list[int] = []
+
+    def append(value: object) -> None:
+        try:
+            index = int(value)
+        except (TypeError, ValueError):
+            return
+        if 0 <= index < image_count and index not in indices:
+            indices.append(index)
+
+    match = item.get("matched_window")
+    if isinstance(match, dict):
+        append(match.get("image_index", -1))
+    for window in item.get("windows", []):
+        if isinstance(window, dict):
+            append(window.get("image_index", -1))
+    return indices
+
+
+def recall_image_indices(item: dict) -> list[int]:
+    """Order a snapshot gallery as windows, displays, then any legacy images."""
+    try:
+        image_count = max(0, int(item.get("image_count") or 0))
+    except (TypeError, ValueError):
+        image_count = 0
+    indices = recall_window_image_indices(item)
+    for display in item.get("displays", []):
+        if not isinstance(display, dict):
+            continue
+        try:
+            index = int(display.get("image_index", -1))
+        except (TypeError, ValueError):
+            continue
+        if 0 <= index < image_count and index not in indices:
+            indices.append(index)
+    indices.extend(index for index in range(image_count) if index not in indices)
+    return indices
 
 
 def recall_preview(
@@ -1327,7 +1372,13 @@ class RecallSearchWindow(Adw.ApplicationWindow):
                 open_button.connect("clicked", self._open_item, item)
                 actions.append(open_button)
             if item.get("image_count"):
-                view_button = Gtk.Button(label="View")
+                window_previews = len(recall_window_image_indices(item))
+                view_button = Gtk.Button(
+                    label=(
+                        f"Browse {window_previews} windows"
+                        if window_previews > 1 else "View"
+                    )
+                )
                 view_button.connect("clicked", self._view_item, item)
                 actions.append(view_button)
                 copy_image = Gtk.Button(label="Copy image")
@@ -1420,21 +1471,21 @@ class RecallSearchWindow(Adw.ApplicationWindow):
     def _copy_image(self, _button, item: dict) -> None:
         pixbuf = item.get("_window_pixbuf")
         if pixbuf is None:
-            data = self._vault.preview_bytes(item.get("name", ""), 0)
+            indices = recall_image_indices(item)
+            data = self._vault.preview_bytes(
+                item.get("name", ""), indices[0] if indices else 0
+            )
             pixbuf = _pixbuf_from_bytes(data) if data else None
         display = Gdk.Display.get_default()
         if display and pixbuf is not None:
             display.get_clipboard().set_texture(Gdk.Texture.new_for_pixbuf(pixbuf))
 
     def _view_item(self, _button, item: dict) -> None:
-        pixbuf = item.get("_window_pixbuf")
-        if pixbuf is None:
-            data = self._vault.preview_bytes(item.get("name", ""), 0)
-            pixbuf = _pixbuf_from_bytes(data) if data else None
-        if pixbuf is None:
+        indices = recall_image_indices(item)
+        if not indices:
             return
         viewer = Adw.Window(
-            title="Recall Snapshot",
+            title="Recall Window Gallery",
             transient_for=self,
             modal=True,
             default_width=960,
@@ -1443,13 +1494,65 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         header = Adw.HeaderBar()
         box.append(header)
-        picture = _picture(Path("encrypted-preview"), 900, 540, pixbuf)
+        picture = Gtk.Picture()
+        picture.set_size_request(900, 540)
         picture.set_content_fit(Gtk.ContentFit.CONTAIN)
         picture.set_hexpand(True)
         picture.set_vexpand(True)
         box.append(picture)
+        navigation = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=12,
+            halign=Gtk.Align.CENTER,
+            margin_bottom=12,
+        )
+        previous_button = Gtk.Button(label="Previous")
+        position_label = Gtk.Label()
+        next_button = Gtk.Button(label="Next")
+        navigation.append(previous_button)
+        navigation.append(position_label)
+        navigation.append(next_button)
+        box.append(navigation)
+
+        position = 0
+
+        def show_image(next_position: int) -> None:
+            nonlocal position
+            position = max(0, min(len(indices) - 1, next_position))
+            image_index = indices[position]
+            data = self._vault.preview_bytes(item.get("name", ""), image_index)
+            pixbuf = _pixbuf_from_bytes(data) if data else None
+            picture.set_paintable(
+                Gdk.Texture.new_for_pixbuf(pixbuf) if pixbuf is not None else None
+            )
+            window = None
+            for candidate in item.get("windows", []):
+                if not isinstance(candidate, dict):
+                    continue
+                try:
+                    candidate_index = int(candidate.get("image_index", -1))
+                except (TypeError, ValueError):
+                    continue
+                if candidate_index == image_index:
+                    window = candidate
+                    break
+            if window:
+                description = str(
+                    window.get("title") or window.get("app") or "Application window"
+                )
+            else:
+                description = "Display overview"
+            position_label.set_label(
+                f"{position + 1} of {len(indices)} — {description[:80]}"
+            )
+            previous_button.set_sensitive(position > 0)
+            next_button.set_sensitive(position + 1 < len(indices))
+
+        previous_button.connect("clicked", lambda *_args: show_image(position - 1))
+        next_button.connect("clicked", lambda *_args: show_image(position + 1))
         viewer.set_content(box)
         self._recall_viewer = viewer
+        show_image(0)
         viewer.present()
 
     def present_search(self) -> None:

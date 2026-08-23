@@ -68,7 +68,11 @@ detection is not universally available on Linux.
 
 If OCR results are absent, confirm **Capture screenshot previews** and **Index
 screenshot text with local OCR** are both enabled and that `tesseract --version`
-works. OCR is never inferred from the main Recall switch. If diagnostics report
+works. OCR applies to new captures and cannot be added retroactively. Search
+accepts exact words, useful word prefixes and small OCR substitutions; a word
+that Tesseract omitted entirely still cannot be found. Install the appropriate
+Tesseract language data when searching non-English text. OCR is never inferred
+from the main Recall switch. If diagnostics report
 the private fallback key, install/configure a Secret Service-compatible keyring
 and restart SessionSifu before enabling visual capture.
 
@@ -80,6 +84,10 @@ its pixels. Older entries are not retroactively upgraded; they continue to use
 an in-memory crop of their display preview. If every new entry is metadata-only,
 check **Capture screenshot previews**, session-lock state, application
 exclusions and the last **Capture diagnostics** reason.
+
+Use **Browse N windows** on a Recall card to inspect each captured window
+separately. The gallery lists linked window images first and display overviews
+after them; Previous/Next does not decrypt images until they are selected.
 
 ## The Recall search shortcut does not open
 

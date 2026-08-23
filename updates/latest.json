@@ -1,11 +1,11 @@
 {
-  "version": "3.1.5",
+  "version": "3.1.6",
   "channel": "stable",
-  "issued_at": "2026-08-23T17:41:29Z",
-  "expires_at": "2026-10-07T17:41:29Z",
+  "issued_at": "2026-08-23T18:12:30Z",
+  "expires_at": "2026-10-07T18:12:30Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.5_all.deb",
-  "sha256": "000562059f1d94d97e9a269b2a2624986e16c4f7403fcd92475505db73da34b7",
-  "size": 289414,
-  "notes": "SessionSifu 3.1.5 fixes user-local Recall engine precedence so every captured GNOME window image is encrypted, indexed and displayed instead of only the display screenshot."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.6_all.deb",
+  "sha256": "988ac7404eadaec3bce23c9c263dcc094e5027638ee11f4c766a0bcd3ffb55dc",
+  "size": 291196,
+  "notes": "SessionSifu 3.1.6 adds separate Previous/Next browsing for every encrypted window image and improves OCR discovery with sparse-text recognition plus bounded prefix/typo matching."
 }

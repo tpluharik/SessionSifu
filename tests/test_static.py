@@ -31,8 +31,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.1.5"
-assert metadata["version"] == 24
+assert metadata["version-name"] == "3.1.6"
+assert metadata["version"] == 25
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -63,7 +63,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.1.5"' in build_script
+assert 'version="3.1.6"' in build_script
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
@@ -135,7 +135,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.1.5"' in app_source
+assert 'CURRENT_VERSION = "3.1.6"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -147,8 +147,16 @@ assert ".get_n_items()" not in app_source
 assert "model.iter_n_children(None)" in app_source
 assert "Gtk.FlowBox" in app_source
 assert "def _window_pixbuf" in app_source
+assert "def recall_window_image_indices" in app_source
+assert "def recall_image_indices" in app_source
+assert 'title="Recall Window Gallery"' in app_source
+assert 'Gtk.Button(label="Previous")' in app_source
+assert 'Gtk.Button(label="Next")' in app_source
 assert '"matched_window"' in (root / "app" / "recall_engine.py").read_text()
 assert "recall_windows" in (root / "app" / "recall_engine.py").read_text()
+assert '["tesseract", str(image), "stdout", "--psm", "11"]' in (
+    root / "app" / "recall_engine.py"
+).read_text()
 assert "recall_screenshot_path" in app_source
 assert "def compress_recall_preview" in app_source
 recorder_source = (

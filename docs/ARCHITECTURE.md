@@ -196,9 +196,12 @@ permission.
 Search decrypts bounded records into process memory and creates separate
 ephemeral SQLite FTS5 tables for individual windows and display-wide OCR. Each
 window row has a stable record/window identity and independently weighted
-application, title, opted-in file and window-OCR fields; optional related matching adds
-local token-similarity candidates and the focused window receives a small rank
-boost. An empty query remains a desktop-level chronological timeline.
+application, title, opted-in file and window-OCR fields. Exact FTS candidates
+are supplemented by a bounded, recent-first in-memory scan for OCR prefixes
+and small recognition substitutions; optional related matching adds local
+token-similarity candidates and the focused window receives a small rank
+boost. An empty query remains a desktop-level chronological timeline whose
+gallery can navigate each linked window image independently.
 Persistent plaintext OCR or search indexes are never created. Each window row
 links directly to its encrypted preview. GNOME also stores display geometry so
 the GTK browser can crop a display image in memory for older/fallback records.

@@ -18,6 +18,7 @@ import sqlite3
 import subprocess
 import tempfile
 import time
+import unicodedata
 import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -62,6 +63,7 @@ MAX_TOTAL_WINDOW_OCR_BYTES = 512 * 1024
 MAX_ENTRIES = 500
 SERVICE = "org.gnome.SessionSifu.Recall"
 ACCOUNT = "local-vault-v1"
+FUZZY_OCR_SCAN_BYTES = 2 * 1024 * 1024
 
 
 def _private(path: Path, mode: int) -> None:
@@ -94,6 +96,60 @@ def _domain(value: str) -> str:
     with contextlib.suppress(ValueError):
         return (urllib.parse.urlparse(value).hostname or "").casefold()
     return ""
+
+
+def _search_tokens(value: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKC", value).casefold()
+    return re.findall(r"[\w]+", normalized)
+
+
+def _edit_distance_within(left: str, right: str, limit: int) -> bool:
+    """Return early once a bounded Levenshtein distance cannot match."""
+    if abs(len(left) - len(right)) > limit:
+        return False
+    previous = list(range(len(right) + 1))
+    for row, left_character in enumerate(left, 1):
+        current = [row]
+        row_minimum = row
+        for column, right_character in enumerate(right, 1):
+            current.append(min(
+                current[-1] + 1,
+                previous[column] + 1,
+                previous[column - 1] + (left_character != right_character),
+            ))
+            row_minimum = min(row_minimum, current[-1])
+        if row_minimum > limit:
+            return False
+        previous = current
+    return previous[-1] <= limit
+
+
+def _fuzzy_ocr_score(query: str, text: str) -> float:
+    """Match OCR prefixes and a small number of common recognition errors."""
+    queries = _search_tokens(query)[:16]
+    targets = _search_tokens(text)
+    best = 0.0
+    for needle in queries:
+        if len(needle) < 4:
+            continue
+        for candidate in targets:
+            if needle == candidate:
+                return 1.0
+            shorter = min(len(needle), len(candidate))
+            longer = max(len(needle), len(candidate))
+            if (
+                shorter >= 4
+                and shorter / max(1, longer) >= 0.5
+                and (candidate.startswith(needle) or needle.startswith(candidate))
+            ):
+                best = max(best, 0.86)
+                continue
+            if shorter < 4:
+                continue
+            distance_limit = 2 if longer >= 8 else 1
+            if _edit_distance_within(needle, candidate, distance_limit):
+                best = max(best, 0.82 if distance_limit == 1 else 0.78)
+    return best
 
 
 def _safe_json(path: Path, maximum: int) -> dict:
@@ -210,7 +266,9 @@ class RecallVault:
     def _ocr(self, image: Path) -> str:
         try:
             result = subprocess.run(
-                ["tesseract", str(image), "stdout", "--psm", "6"],
+                # Application windows contain scattered controls, labels and
+                # document fragments rather than one uniform paragraph.
+                ["tesseract", str(image), "stdout", "--psm", "11"],
                 check=False,
                 capture_output=True,
                 timeout=20,
@@ -541,6 +599,7 @@ class RecallVault:
 
             window_candidates: dict[str, float] = {}
             visual_candidates: dict[str, float] = {}
+            fuzzy_ocr_candidates: set[str] = set()
             needle = query.strip()[:256]
             if needle:
                 tokens = re.findall(r"[\w.-]+", needle.casefold())[:16]
@@ -562,6 +621,25 @@ class RecallVault:
                             (expression,),
                         ):
                             visual_candidates[name] = -float(rank)
+                # OCR commonly substitutes one glyph (for example O/0) or
+                # splits a long word. Apply a bounded, recent-first fallback
+                # without creating a persistent plaintext index.
+                remaining_fuzzy_bytes = FUZZY_OCR_SCAN_BYTES
+                for path, _value, windows, _preview_allowed in loaded:
+                    for index, window in windows:
+                        key = f"{path.name}#{index}"
+                        if key in window_candidates:
+                            continue
+                        ocr_text = str(window.get("ocr_text", ""))
+                        remaining_fuzzy_bytes -= len(ocr_text.encode("utf-8"))
+                        score = _fuzzy_ocr_score(needle, ocr_text)
+                        if score:
+                            window_candidates[key] = score * 0.35
+                            fuzzy_ocr_candidates.add(key)
+                        if remaining_fuzzy_bytes <= 0:
+                            break
+                    if remaining_fuzzy_bytes <= 0:
+                        break
             if needle and semantic:
                 query_terms = set(re.findall(r"[\w]+", needle.casefold()))
                 for path, _value, windows, _preview_allowed in loaded:
@@ -652,7 +730,11 @@ class RecallVault:
                         "matched_window": window,
                         "window_index": index,
                         "rank": round(rank, 4),
-                        "match_type": self._window_match_type(window, needle),
+                        "match_type": (
+                            "Window image text"
+                            if key in fuzzy_ocr_candidates
+                            else self._window_match_type(window, needle)
+                        ),
                         "result_kind": "window",
                         "ocr_excerpt": self._excerpt(
                             str(window.get("ocr_text", "")), needle

@@ -27,6 +27,15 @@ assert module.tree_model_row_count(list_model) == 0
 list_model.append(["org.example.Editor", "Editor"])
 assert module.tree_model_row_count(list_model) == 1
 
+gallery_item = {
+    "image_count": 5,
+    "matched_window": {"image_index": 3},
+    "windows": [{"image_index": 1}, {"image_index": 3}, {"image_index": -1}],
+    "displays": [{"image_index": 0}],
+}
+assert module.recall_window_image_indices(gallery_item) == [3, 1]
+assert module.recall_image_indices(gallery_item) == [3, 1, 0, 2, 4]
+
 settings = module.settings()
 assert settings.get_boolean("show-indicator") is True
 assert settings.get_int("autostart-delay") >= 0
@@ -59,19 +68,19 @@ now = datetime.now(timezone.utc)
 manifest = module.parse_update_manifest(
     json.dumps(
         {
-            "version": "3.1.5",
+            "version": "3.1.6",
             "channel": "stable",
             "issued_at": (now - timedelta(minutes=1)).isoformat(),
             "expires_at": (now + timedelta(days=30)).isoformat(),
             "minimum_version": "2.5.0",
-            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.5_all.deb",
+            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.6_all.deb",
             "sha256": "a" * 64,
             "size": 12345,
             "notes": "Test update",
         }
     )
 )
-assert manifest["version"] == "3.1.5"
+assert manifest["version"] == "3.1.6"
 assert manifest["size"] == 12345
 
 older_manifest = module.parse_update_manifest(
@@ -201,7 +210,7 @@ try:
     module.parse_update_manifest(
         json.dumps(
             {
-                "version": "3.1.5",
+                "version": "3.1.6",
                 "channel": "stable",
                 "issued_at": (now - timedelta(minutes=1)).isoformat(),
                 "expires_at": (now + timedelta(days=30)).isoformat(),

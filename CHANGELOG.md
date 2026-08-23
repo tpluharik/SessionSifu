@@ -2,6 +2,21 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.1.6
+
+- Added a dedicated encrypted window gallery to the GNOME Recall browser.
+  **Browse N windows** opens every linked window image separately with
+  Previous/Next navigation and window-title context instead of always opening
+  image zero (the display overview).
+- Changed screenshot OCR to Tesseract sparse-text mode, which better fits
+  application interfaces containing scattered controls, labels and document
+  fragments.
+- Added bounded prefix and typo-tolerant OCR fallback matching for recent
+  encrypted history when an exact FTS5 token is unavailable. The fallback is
+  performed only in memory and does not create a plaintext index.
+- Added regressions for gallery ordering, window-first image selection, OCR
+  prefixes and common one/two-character recognition errors.
+
 ## 3.1.5
 
 - Fixed the user-local updater so its matching `recall_engine.py` takes

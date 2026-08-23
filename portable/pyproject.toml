@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sessionsifu-portable"
-version = "3.1.5"
+version = "3.1.6"
 description = "Cross-platform desktop session snapshots for Windows, macOS, KDE and GNOME"
 readme = "README.md"
 requires-python = ">=3.11"
