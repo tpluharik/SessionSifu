@@ -102,7 +102,7 @@ class AwsIndicator extends PanelMenu.Button {
 
     _waitForWindowSettle(metaWindow) {
         if (this._isDestroyed || this._closingWindows.has(metaWindow) ||
-            !mayRestoreApplications())
+            !this._windowSettleWaits || !mayRestoreApplications())
             return Promise.resolve(false);
 
         const pending = this._windowSettleWaits.get(metaWindow);
@@ -117,7 +117,7 @@ class AwsIndicator extends PanelMenu.Button {
             GLib.PRIORITY_LOW,
             NEW_WINDOW_SETTLE_DELAY_MS,
             () => {
-                this._windowSettleWaits.delete(metaWindow);
+                this._windowSettleWaits?.delete(metaWindow);
                 finish(!this._isDestroyed && !this._closingWindows.has(metaWindow) &&
                     mayRestoreApplications());
                 return GLib.SOURCE_REMOVE;
@@ -127,6 +127,8 @@ class AwsIndicator extends PanelMenu.Button {
     }
 
     _cancelWindowSettle(metaWindow) {
+        if (!this._windowSettleWaits)
+            return;
         const pending = this._windowSettleWaits.get(metaWindow);
         if (!pending)
             return;

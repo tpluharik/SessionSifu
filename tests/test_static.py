@@ -31,8 +31,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.1.0"
-assert metadata["version"] == 19
+assert metadata["version-name"] == "3.1.1"
+assert metadata["version"] == 20
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -63,7 +63,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.1.0"' in build_script
+assert 'version="3.1.1"' in build_script
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
@@ -135,11 +135,13 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.1.0"' in app_source
+assert 'CURRENT_VERSION = "3.1.1"' in app_source
 assert 'self.settings.value("recall_enabled", False, type=bool)' in (
     root / "portable" / "sessionsifu_portable" / "ui.py"
 ).read_text()
 assert "class RecallSearchWindow" in app_source
+assert ".get_n_items()" not in app_source
+assert "model.iter_n_children(None)" in app_source
 assert "Gtk.FlowBox" in app_source
 assert "def _window_pixbuf" in app_source
 assert '"matched_window"' in (root / "app" / "recall_engine.py").read_text()
@@ -154,6 +156,9 @@ assert "def reload_extension" in app_source
 assert '["gnome-extensions", "disable", UUID]' in app_source
 assert '"Reload Integration" if live and not integration_current' in app_source
 assert "if not live_extension_current():" in app_source
+indicator_source = (extension / "indicator.js").read_text()
+assert "!this._windowSettleWaits || !mayRestoreApplications()" in indicator_source
+assert "this._windowSettleWaits?.delete(metaWindow)" in indicator_source
 save_source = (extension / "saveSession.js").read_text()
 assert "compact ? 0 : 4" in save_source
 assert "replace_contents_bytes_async" in save_source

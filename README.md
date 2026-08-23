@@ -113,17 +113,17 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_3.1.0_all.deb` from the matching GitHub Release, or build it
+Download `sessionsifu_3.1.1_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_3.1.0_all.deb
+sudo apt install ./sessionsifu_3.1.1_all.deb
 ```
 
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.1.0_all.deb
+sudo apt install ./dist/sessionsifu_3.1.1_all.deb
 ```
 
 After installation:
@@ -139,10 +139,10 @@ After installation:
 
 Tagged releases attach these self-contained artifacts:
 
-- `SessionSifu-3.1.0-windows-x64.zip`;
-- `SessionSifu-3.1.0-macos-arm64.zip`;
-- `SessionSifu-3.1.0-macos-x64.zip`; and
-- `SessionSifu-3.1.0-linux-x64.tar.gz`.
+- `SessionSifu-3.1.1-windows-x64.zip`;
+- `SessionSifu-3.1.1-macos-arm64.zip`;
+- `SessionSifu-3.1.1-macos-x64.zip`; and
+- `SessionSifu-3.1.1-linux-x64.tar.gz`.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -387,7 +387,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.1.0_all.deb
+dist/sessionsifu_3.1.1_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -408,7 +408,7 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v3.1.0` tag publishes the artifacts and `SHA256SUMS` as a GitHub
+A pushed `v3.1.1` tag publishes the artifacts and `SHA256SUMS` as a GitHub
 Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
@@ -435,8 +435,9 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Security audit and remediation plan](docs/SECURITY_AUDIT.md)
 - [Privacy and local-data guide](docs/PRIVACY.md)
 
-The current 3.1.0 release adds individual-window Recall search while
-preserving the mature GNOME 50 backend. Compatibility claims are added only
+The current 3.1.1 release fixes Recall search startup and exact application
+filtering, while hardening GNOME Shell teardown against window-event races.
+Compatibility claims are added only
 after hands-on testing; reports from configurations not listed in the table are
 useful, but are treated as best-effort until support is documented here.
 

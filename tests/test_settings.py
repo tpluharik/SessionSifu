@@ -22,6 +22,11 @@ assert spec is not None
 module = importlib.util.module_from_spec(spec)
 loader.exec_module(module)
 
+list_model = module.Gtk.ListStore.new([str, str])
+assert module.tree_model_row_count(list_model) == 0
+list_model.append(["org.example.Editor", "Editor"])
+assert module.tree_model_row_count(list_model) == 1
+
 settings = module.settings()
 assert settings.get_boolean("show-indicator") is True
 assert settings.get_int("autostart-delay") >= 0
@@ -54,19 +59,19 @@ now = datetime.now(timezone.utc)
 manifest = module.parse_update_manifest(
     json.dumps(
         {
-            "version": "3.1.0",
+            "version": "3.1.1",
             "channel": "stable",
             "issued_at": (now - timedelta(minutes=1)).isoformat(),
             "expires_at": (now + timedelta(days=30)).isoformat(),
             "minimum_version": "2.5.0",
-            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.0_all.deb",
+            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.1_all.deb",
             "sha256": "a" * 64,
             "size": 12345,
             "notes": "Test update",
         }
     )
 )
-assert manifest["version"] == "3.1.0"
+assert manifest["version"] == "3.1.1"
 assert manifest["size"] == 12345
 
 if target.is_dir():
@@ -180,7 +185,7 @@ try:
     module.parse_update_manifest(
         json.dumps(
             {
-                "version": "3.1.0",
+                "version": "3.1.1",
                 "channel": "stable",
                 "issued_at": (now - timedelta(minutes=1)).isoformat(),
                 "expires_at": (now + timedelta(days=30)).isoformat(),

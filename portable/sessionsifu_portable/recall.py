@@ -456,11 +456,12 @@ class RecallStore:
                     continue
 
                 for index, window in windows:
-                    identity = "\n".join((
-                        str(window.get("app_id", "")),
-                        str(window.get("app_name", "")),
-                    )).casefold()
-                    if app and app.casefold() not in identity:
+                    app_token = app.casefold()
+                    identities = {
+                        str(window.get("app_id", "")).casefold(),
+                        str(window.get("app_name", "")).casefold(),
+                    }
+                    if app and app_token not in identities:
                         continue
                     key = f"{path.name}#{index}"
                     if needle and key not in window_candidates:

@@ -83,7 +83,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.1.0")
+        self.assertEqual(VERSION, "3.1.1")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -262,13 +262,20 @@ class PortableTests(unittest.TestCase):
                     geometry=[920, 20, 900, 700],
                 )
             )
+            session.windows.append(
+                WindowSnapshot(
+                    app_id="org.example.VisualStudioBrowser",
+                    app_name="Visual Studio Browser",
+                    title="Project code",
+                )
+            )
             store.save(session)
             results = store.search("Project", semantic=True)
-            self.assertEqual(len(results), 2)
+            self.assertEqual(len(results), 3)
             self.assertTrue(all(item["result_kind"] == "window" for item in results))
             self.assertEqual(
                 {item["matched_window"]["app_name"] for item in results},
-                {"Editor", "Browser"},
+                {"Editor", "Browser", "Visual Studio Browser"},
             )
             browser = store.search("Project", app="Browser", semantic=True)
             self.assertEqual(len(browser), 1)

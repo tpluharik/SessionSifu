@@ -2,6 +2,18 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.1.1
+
+- Fixed the GNOME Recall search window crashing at startup by using the GTK
+  tree-model row API instead of a Gio list-model method.
+- Fixed application filtering on GNOME, Windows, macOS, KDE and portable Linux
+  so selecting an app matches its full name or identifier exactly and cannot
+  leak similarly named application windows into the result list.
+- Hardened GNOME Shell extension teardown so late window events cannot access a
+  released settle-wait map during extension reload, logout or Shell shutdown.
+- Added regressions for GTK model population, colliding app names and teardown
+  guards.
+
 ## 3.1.0
 
 - Changed Recall search from one result per desktop snapshot to one result per

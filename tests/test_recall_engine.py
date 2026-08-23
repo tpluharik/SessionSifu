@@ -105,6 +105,16 @@ class RecallEngineTests(unittest.TestCase):
                         "width": 900, "height": 700,
                     },
                 },
+                {
+                    "app_name": "Visual Studio Browser",
+                    "app_id": "org.example.VisualStudioBrowser.desktop",
+                    "window_title": "Project Gamma code",
+                    "monitor_number": 0,
+                    "window_position": {
+                        "x_offset": 100, "y_offset": 100,
+                        "width": 700, "height": 500,
+                    },
+                },
             ]
             capture.write_text(json.dumps(payload))
             image = root / "recall-20260822-120000-123-display-0.jpg"
@@ -112,19 +122,19 @@ class RecallEngineTests(unittest.TestCase):
             vault = RecallVault(root, test_key=b"w" * 32)
             vault.finalize(capture, RecallPolicy())
             results = vault.search("Project")
-            self.assertEqual(len(results), 2)
+            self.assertEqual(len(results), 3)
             self.assertEqual(results[0]["apps"], ["Browser"])
             self.assertEqual(
                 {result["matched_window"]["title"] for result in results},
-                {"Project Alpha notes", "Project Beta research"},
+                {"Project Alpha notes", "Project Beta research", "Project Gamma code"},
             )
             browser = vault.search("Project", app="Browser")
             self.assertEqual(len(browser), 1)
             self.assertEqual(browser[0]["apps"], ["Browser"])
             redacted = vault.search("Project", excluded_apps=("Editor",))
-            self.assertEqual(len(redacted), 1)
-            self.assertEqual(redacted[0]["apps"], ["Browser"])
-            self.assertEqual(redacted[0]["image_count"], 0)
+            self.assertEqual(len(redacted), 2)
+            self.assertNotIn("Editor", {result["apps"][0] for result in redacted})
+            self.assertTrue(all(result["image_count"] == 0 for result in redacted))
 
 
 if __name__ == "__main__":

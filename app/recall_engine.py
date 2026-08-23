@@ -570,10 +570,12 @@ class RecallVault:
                     continue
 
                 for index, window in windows:
-                    identity = "\n".join(
-                        (str(window.get("app", "")), str(window.get("app_id", "")))
-                    ).casefold()
-                    if app and app.casefold() not in identity:
+                    app_token = app.casefold()
+                    identities = {
+                        str(window.get("app", "")).casefold(),
+                        str(window.get("app_id", "")).casefold(),
+                    }
+                    if app and app_token not in identities:
                         continue
                     key = f"{path.name}#{index}"
                     if needle and key not in window_candidates:

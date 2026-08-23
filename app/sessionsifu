@@ -40,7 +40,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.1.0"
+CURRENT_VERSION = "3.1.1"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -1037,6 +1037,11 @@ def enable_extension() -> tuple[bool, str]:
     return True, "Extension installed and enabled." if installed else "Extension enabled."
 
 
+def tree_model_row_count(model: Gtk.TreeModel) -> int:
+    """Return rows for GTK tree models (which are not Gio list models)."""
+    return int(model.iter_n_children(None))
+
+
 class RecallSearchWindow(Adw.ApplicationWindow):
     """Keyboard-oriented, encrypted visual Recall timeline."""
 
@@ -1178,7 +1183,7 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         self.timeline.set_value(max(0, len(entries) - 1))
         known_apps = sorted({app for entry in entries for app in entry.get("apps", [])}, key=str.casefold)
         active_app = self.app_filter.get_active_id() or ""
-        if self.app_filter.get_model().get_n_items() <= 1 and known_apps:
+        if tree_model_row_count(self.app_filter.get_model()) <= 1 and known_apps:
             for app in known_apps:
                 self.app_filter.append(app, app)
             self.app_filter.set_active_id(active_app)
