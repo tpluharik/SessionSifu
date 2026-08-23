@@ -31,8 +31,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.1.4"
-assert metadata["version"] == 23
+assert metadata["version-name"] == "3.1.5"
+assert metadata["version"] == 24
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -63,7 +63,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.1.4"' in build_script
+assert 'version="3.1.5"' in build_script
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
@@ -135,7 +135,10 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.1.4"' in app_source
+assert 'CURRENT_VERSION = "3.1.5"' in app_source
+assert 'if _module_path in sys.path:' in app_source
+assert 'sys.path.remove(_module_path)' in app_source
+assert 'sys.path.insert(0, _module_path)' in app_source
 assert 'self.settings.value("recall_enabled", False, type=bool)' in (
     root / "portable" / "sessionsifu_portable" / "ui.py"
 ).read_text()

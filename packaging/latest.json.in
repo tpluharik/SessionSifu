@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "SessionSifu 3.1.4 fixes GNOME 50 all-window Recall screenshots by resolving Meta.WindowActor through get_meta_window(), with explicit matched and captured window diagnostics."
+  "notes": "SessionSifu 3.1.5 fixes user-local Recall engine precedence so every captured GNOME window image is encrypted, indexed and displayed instead of only the display screenshot."
 }

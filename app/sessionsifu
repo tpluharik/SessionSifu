@@ -26,8 +26,16 @@ for _module_dir in (
     Path("/usr/lib/sessionsifu"),
     Path(__file__).resolve().parent,
 ):
-    if str(_module_dir) not in sys.path:
-        sys.path.insert(0, str(_module_dir))
+    # A user-local update must load its matching Recall engine instead of an
+    # older distro-owned copy. Python already places the script directory in
+    # sys.path, so merely skipping an existing entry would leave /usr/lib at
+    # the front after it is inserted above.
+    if not (_module_dir / "recall_engine.py").is_file():
+        continue
+    _module_path = str(_module_dir)
+    if _module_path in sys.path:
+        sys.path.remove(_module_path)
+    sys.path.insert(0, _module_path)
 
 from recall_engine import RecallPolicy, RecallVault  # noqa: E402
 
@@ -40,7 +48,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.1.4"
+CURRENT_VERSION = "3.1.5"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"

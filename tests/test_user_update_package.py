@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
+import os
 import pathlib
 import subprocess
 import sys
@@ -44,6 +45,27 @@ with tempfile.TemporaryDirectory(prefix="sessionsifu-package-test-") as director
     installed_module = test_root / "data/sessionsifu/app/recall_engine.py"
     assert installed_app.is_file()
     assert installed_module.is_file()
+
+    # Directly launched Python scripts already contain their own directory in
+    # sys.path. Ensure SessionSifu still moves that directory ahead of the
+    # distro module path, otherwise a user-local update can run an older
+    # /usr/lib/sessionsifu/recall_engine.py against newer extension output.
+    original_module = installed_module.read_text(encoding="utf-8")
+    installed_module.write_text(
+        'raise SystemExit("user-local Recall engine selected")\n',
+        encoding="utf-8",
+    )
+    precedence = subprocess.run(
+        [str(local_app), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+    assert precedence.returncode != 0
+    assert "user-local Recall engine selected" in precedence.stderr
+    installed_module.write_text(original_module, encoding="utf-8")
 
     launched = subprocess.run(
         [str(local_app), "--help"],

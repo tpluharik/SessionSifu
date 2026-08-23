@@ -42,6 +42,10 @@ IMAGE_RE = re.compile(
 VAULT_IMAGE_RE = re.compile(
     r"^recall-\d{8}-\d{6}-\d{3}-(?:display|window)-\d+\.ssimg$"
 )
+PLAINTEXT_IMAGE_RE = re.compile(
+    r"^recall-\d{8}-\d{6}-\d{3}-(?:display-\d+\.jpg|window-\d+\.jpg|"
+    r"raw\.png|window-\d+-raw\.png)$"
+)
 URL_RE = re.compile(r"https?://[^\s<>{}\[\]\"']+", re.IGNORECASE)
 CARD_RE = re.compile(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)")
 SENSITIVE_RE = re.compile(
@@ -802,5 +806,18 @@ class RecallVault:
                 and image.name not in referenced
                 and image.is_file()
                 and not image.is_symlink()
+            ):
+                image.unlink(missing_ok=True)
+        # Interrupted or legacy finalizers may leave compressed screenshots in
+        # the plaintext staging directory. Keep a short grace period for an
+        # overlapping capture, then remove files that can no longer belong to
+        # a live finalization job.
+        plaintext_cutoff = time.time() - 120
+        for image in self.root.glob("recall-*"):
+            if (
+                PLAINTEXT_IMAGE_RE.fullmatch(image.name)
+                and image.is_file()
+                and not image.is_symlink()
+                and image.stat().st_mtime < plaintext_cutoff
             ):
                 image.unlink(missing_ok=True)

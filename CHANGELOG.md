@@ -2,6 +2,18 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.1.5
+
+- Fixed the user-local updater so its matching `recall_engine.py` takes
+  precedence over an older distro-owned module in `/usr/lib/sessionsifu`.
+  This restores encryption and indexing of every captured window image; the
+  stale system engine had finalized only the single display screenshot.
+- Added an installation regression that replaces the user-local Recall engine
+  with a sentinel and verifies the installed launcher imports it.
+- Added conservative cleanup for stale plaintext Recall staging images left
+  by an interrupted or legacy finalizer, while preserving fresh captures and
+  unrelated files.
+
 ## 3.1.4
 
 - Fixed GNOME 50 all-window Recall capture by resolving every

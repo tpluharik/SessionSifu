@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import time
@@ -103,6 +104,24 @@ class RecallEngineTests(unittest.TestCase):
             self.assertEqual(status["state"], "saved")
             self.assertEqual(status["vault_entries"], 1)
             self.assertLess(status["vault_bytes"], 10 * 1024 * 1024)
+
+    def test_prune_removes_stale_plaintext_window_images(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stale = root / "recall-20260822-120000-123-window-7.jpg"
+            fresh = root / "recall-20260822-120001-123-window-8.jpg"
+            unrelated = root / "personal-photo.jpg"
+            for path in (stale, fresh, unrelated):
+                path.write_bytes(b"preview")
+            old = time.time() - 300
+            stale.touch()
+            os.utime(stale, (old, old))
+            vault = RecallVault(root, test_key=b"q" * 32)
+            vault._ensure()
+            vault.prune(64)
+            self.assertFalse(stale.exists())
+            self.assertTrue(fresh.exists())
+            self.assertTrue(unrelated.exists())
 
     def test_search_returns_separate_window_moments_and_honors_app_filter(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

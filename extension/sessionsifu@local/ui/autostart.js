@@ -117,7 +117,7 @@ const AutostartService = GObject.registerClass(
         }
 
         Ping() {
-            return 'SessionSifu 3.1.4 is ready';
+            return 'SessionSifu 3.1.5 is ready';
         }
 
         _validSessionName(sessionName) {
