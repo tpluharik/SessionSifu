@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "Fixes Recall previews being discarded whenever SessionSifu's own manager or search window is visible, while preserving user privacy exclusions."
+  "notes": "SessionSifu 3.0 adds the encrypted visual Recall timeline, time navigation, OCR-powered search, filtered applications and websites, retention controls, and cross-platform desktop builds. Version 3.0.1 also fixes release publishing."
 }

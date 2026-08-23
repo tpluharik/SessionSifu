@@ -1,11 +1,11 @@
 {
-  "version": "2.5.2",
+  "version": "3.0.1",
   "channel": "stable",
-  "issued_at": "2026-08-22T19:27:22Z",
-  "expires_at": "2026-10-06T19:27:22Z",
+  "issued_at": "2026-08-23T05:38:51Z",
+  "expires_at": "2026-10-07T05:38:51Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_2.5.2_all.deb",
-  "sha256": "47601f89e393a11842ea6b45685cde861e6a2b381ab2258d16f04e98f8bdcb32",
-  "size": 267600,
-  "notes": "Fixes Recall previews being discarded whenever SessionSifu's own manager or search window is visible, while preserving user privacy exclusions."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.0.1_all.deb",
+  "sha256": "4f222370d0f37f2ffd412d4c516c30b227c775e190d33febf1e7d6eeb54b9732",
+  "size": 279752,
+  "notes": "SessionSifu 3.0 adds the encrypted visual Recall timeline, time navigation, OCR-powered search, filtered applications and websites, retention controls, and cross-platform desktop builds. Version 3.0.1 also fixes release publishing."
 }
