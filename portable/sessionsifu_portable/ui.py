@@ -67,14 +67,22 @@ def qt_shortcut(shortcut: str) -> QKeySequence:
 
 
 def recall_result_pixmap(controller: SessionController, entry: dict) -> QPixmap:
-    """Decode a local preview and crop it to an individual window result."""
+    """Prefer an encrypted window image and crop the desktop as fallback."""
     if not entry.get("has_preview"):
         return QPixmap()
-    preview = controller.recall_store.preview_bytes(str(entry.get("name", "")))
+    window = entry.get("matched_window")
+    window_image = str(window.get("image") or "") if isinstance(window, dict) else ""
+    preview = controller.recall_store.preview_bytes(
+        str(entry.get("name", "")), image_name=window_image
+    )
+    exact_window_preview = bool(preview and window_image)
+    if not preview:
+        preview = controller.recall_store.preview_bytes(str(entry.get("name", "")))
     pixmap = QPixmap()
     if not preview or not pixmap.loadFromData(preview):
         return QPixmap()
-    window = entry.get("matched_window")
+    if exact_window_preview:
+        return pixmap
     geometry = window.get("geometry", []) if isinstance(window, dict) else []
     screen = QApplication.primaryScreen()
     if len(geometry) != 4 or screen is None:
@@ -499,7 +507,7 @@ class MainWindow(QMainWindow):
                         if value.strip()
                     ],
                     include_file_paths=self.recall_files.isChecked(),
-                    preview=self._capture_recall_preview(),
+                    visual_provider=self._capture_recall_visuals,
                     ocr_enabled=self.recall_ocr.isChecked(),
                     sensitive_filter=self.recall_sensitive.isChecked(),
                     quota_mb=int(self.recall_quota.currentData()),
@@ -558,6 +566,81 @@ class MainWindow(QMainWindow):
         pixmap.save(buffer, "JPEG", 70)
         buffer.close()
         return bytes(data)
+
+    @staticmethod
+    def _jpeg_bytes(pixmap: QPixmap, maximum_edge: int = 960, quality: int = 65) -> bytes | None:
+        if pixmap.isNull():
+            return None
+        if max(pixmap.width(), pixmap.height()) > maximum_edge:
+            pixmap = pixmap.scaled(
+                maximum_edge,
+                maximum_edge,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        data = QByteArray()
+        buffer = QBuffer(data)
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        saved = pixmap.save(buffer, "JPEG", quality)
+        buffer.close()
+        return bytes(data) if saved and 0 < len(data) <= 8 * 1024 * 1024 else None
+
+    def _capture_recall_visuals(self, session) -> tuple[bytes | None, dict[int, bytes]]:
+        """Capture every renderable window, bounded to one image per window."""
+        if not self.recall_screenshots.isChecked():
+            return None, {}
+        screens = []
+        for screen in QApplication.screens():
+            desktop = screen.grabWindow(0)
+            if not desktop.isNull():
+                screens.append((screen.geometry(), desktop, screen))
+        primary = QApplication.primaryScreen()
+        primary_desktop = next(
+            (desktop for _geometry, desktop, screen in screens if screen is primary),
+            screens[0][1] if screens else QPixmap(),
+        )
+        desktop_preview = self._jpeg_bytes(primary_desktop, 1280, 70)
+        window_previews: dict[int, bytes] = {}
+        for index, window in enumerate(session.windows[:64]):
+            pixmap = QPixmap()
+            native_id = str(window.window_id or "")
+            try:
+                if ":" not in native_id:
+                    handle = int(native_id, 0)
+                    if handle:
+                        screen = next(
+                            (item[2] for item in screens if item[0].contains(
+                                int(window.geometry[0] + window.geometry[2] / 2),
+                                int(window.geometry[1] + window.geometry[3] / 2),
+                            )),
+                            QApplication.primaryScreen(),
+                        )
+                        if screen is not None:
+                            pixmap = screen.grabWindow(handle)
+            except (TypeError, ValueError):
+                pass
+            if pixmap.isNull() and not window.minimized:
+                wx, wy, width, height = window.geometry
+                for geometry, desktop, _screen in screens:
+                    left = max(wx, geometry.x())
+                    top = max(wy, geometry.y())
+                    right = min(wx + width, geometry.x() + geometry.width())
+                    bottom = min(wy + height, geometry.y() + geometry.height())
+                    if right <= left or bottom <= top:
+                        continue
+                    scale_x = desktop.width() / max(1, geometry.width())
+                    scale_y = desktop.height() / max(1, geometry.height())
+                    pixmap = desktop.copy(
+                        round((left - geometry.x()) * scale_x),
+                        round((top - geometry.y()) * scale_y),
+                        max(1, round((right - left) * scale_x)),
+                        max(1, round((bottom - top) * scale_y)),
+                    )
+                    break
+            encoded = self._jpeg_bytes(pixmap)
+            if encoded:
+                window_previews[index] = encoded
+        return desktop_preview, window_previews
 
     def open_recall_item(self, *_args) -> None:
         item = self.recall_results.currentItem()

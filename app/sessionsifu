@@ -40,7 +40,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.1.1"
+CURRENT_VERSION = "3.1.2"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -65,11 +65,16 @@ MAX_UPDATE_BYTES = 50 * 1024 * 1024
 MAX_RECALL_SCREENSHOT_BYTES = 8 * 1024 * 1024
 MAX_RECALL_SOURCE_BYTES = 64 * 1024 * 1024
 MAX_RECALL_PREVIEW_EDGE = 1280
+MAX_RECALL_WINDOW_PREVIEW_EDGE = 960
+MAX_RECALL_WINDOW_PREVIEWS = 64
 RECALL_IMAGE_RE = re.compile(
-    r"^recall-\d{8}-\d{6}-\d{3}(?:-display-\d+)?\.(?:png|jpe?g)$",
+    r"^recall-\d{8}-\d{6}-\d{3}(?:-(?:display|window)-\d+)?\.(?:png|jpe?g)$",
     re.IGNORECASE,
 )
 RECALL_STEM_RE = re.compile(r"^recall-\d{8}-\d{6}-\d{3}$")
+RECALL_RAW_WINDOW_RE = re.compile(
+    r"^recall-\d{8}-\d{6}-\d{3}-window-(\d+)-raw\.png$"
+)
 UPDATE_SIGNING_PUBLIC_KEY = b"""-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAEnakL3ds5kGLSASytcdZ2mTmBY7A1R298zO/L5843gY=
 -----END PUBLIC KEY-----
@@ -210,10 +215,17 @@ def _matching_window_picture(
 
 
 def _window_pixbuf(item: dict) -> GdkPixbuf.Pixbuf | None:
-    """Crop the encrypted display preview to one indexed Recall window."""
+    """Prefer a window image, with an encrypted display crop as fallback."""
     match = item.get("matched_window")
     if not isinstance(match, dict):
         return None
+    try:
+        window_image_index = int(match.get("image_index", -1))
+    except (TypeError, ValueError):
+        window_image_index = -1
+    window_pixbuf = item.get("_pixbuf_by_index", {}).get(window_image_index)
+    if window_pixbuf is not None:
+        return window_pixbuf
     display = next(
         (
             value for value in item.get("displays", [])
@@ -258,7 +270,18 @@ def recall_preview(
     if not item.get("_pixbufs") and str(item.get("name", "")).endswith(".ssrec"):
         encrypted = []
         encrypted_by_index = {}
-        for index in range(min(8 if show_all else 2, int(item.get("image_count") or 0))):
+        indices = list(range(min(
+            8 if show_all else 2, int(item.get("image_count") or 0)
+        )))
+        match = item.get("matched_window")
+        if isinstance(match, dict):
+            try:
+                window_index = int(match.get("image_index", -1))
+            except (TypeError, ValueError):
+                window_index = -1
+            if 0 <= window_index < int(item.get("image_count") or 0):
+                indices.append(window_index)
+        for index in dict.fromkeys(indices):
             data = recall_vault().preview_bytes(str(item["name"]), index)
             pixbuf = _pixbuf_from_bytes(data) if data else None
             if pixbuf is not None:
@@ -321,11 +344,12 @@ def recall_preview(
 
 
 def compress_recall_preview(source_value: str, stem_value: str, layout_value: str) -> int:
-    """Crop one trusted Shell grab into bounded, private per-display JPEGs."""
+    """Compress bounded display and independently rendered window previews."""
     configured_recall_dir = Path(GLib.get_user_config_dir()) / "sessionsifu" / "recall"
     source = Path(source_value)
     stem = Path(stem_value)
     temporary_paths: list[Path] = []
+    raw_window_paths: list[Path] = []
     try:
         if configured_recall_dir.is_symlink():
             raise ValueError("Refusing symbolic-link Recall storage")
@@ -337,6 +361,9 @@ def compress_recall_preview(source_value: str, stem_value: str, layout_value: st
             raise ValueError("Recall preview paths must remain in private Recall storage")
         if not RECALL_STEM_RE.fullmatch(stem.name):
             raise ValueError("Recall preview stem is invalid")
+        raw_window_paths = sorted(
+            recall_dir.glob(f"{stem.name}-window-*-raw.png")
+        )[:MAX_RECALL_WINDOW_PREVIEWS]
         if source.name != f"{stem.name}-raw.png":
             raise ValueError("Recall screenshot source does not match its entry")
         source_size = source.stat().st_size
@@ -364,22 +391,21 @@ def compress_recall_preview(source_value: str, stem_value: str, layout_value: st
         coordinate_scale_x = pixbuf.get_width() / virtual_width
         coordinate_scale_y = pixbuf.get_height() / virtual_height
 
-        for index, x, y, display_width, display_height in normalized:
-            crop_x = round((x - min_x) * coordinate_scale_x)
-            crop_y = round((y - min_y) * coordinate_scale_y)
-            crop_width = round(display_width * coordinate_scale_x)
-            crop_height = round(display_height * coordinate_scale_y)
-            crop_x = max(0, min(crop_x, pixbuf.get_width() - 1))
-            crop_y = max(0, min(crop_y, pixbuf.get_height() - 1))
-            crop_width = max(1, min(crop_width, pixbuf.get_width() - crop_x))
-            crop_height = max(1, min(crop_height, pixbuf.get_height() - crop_y))
-            cropped = pixbuf.new_subpixbuf(crop_x, crop_y, crop_width, crop_height)
-            scale = min(1.0, MAX_RECALL_PREVIEW_EDGE / max(crop_width, crop_height))
-            output_width = max(1, round(crop_width * scale))
-            output_height = max(1, round(crop_height * scale))
+        def save_preview(
+            cropped: GdkPixbuf.Pixbuf,
+            target: Path,
+            maximum_edge: int,
+            quality: str,
+        ) -> None:
+            scale = min(
+                1.0,
+                maximum_edge / max(cropped.get_width(), cropped.get_height()),
+            )
             if scale < 1.0:
                 cropped = cropped.scale_simple(
-                    output_width, output_height, GdkPixbuf.InterpType.BILINEAR
+                    max(1, round(cropped.get_width() * scale)),
+                    max(1, round(cropped.get_height() * scale)),
+                    GdkPixbuf.InterpType.BILINEAR,
                 )
             if cropped.get_has_alpha():
                 flattened = GdkPixbuf.Pixbuf.new(
@@ -404,14 +430,48 @@ def compress_recall_preview(source_value: str, stem_value: str, layout_value: st
                     255,
                 )
                 cropped = flattened
-            target = recall_dir / f"{stem.name}-display-{index}.jpg"
-            temporary = recall_dir / f".{stem.name}-display-{index}.tmp"
+            temporary = target.with_name(f".{target.stem}.tmp")
             temporary_paths.append(temporary)
-            cropped.savev(str(temporary), "jpeg", ["quality"], ["70"])
+            cropped.savev(str(temporary), "jpeg", ["quality"], [quality])
             temporary.chmod(0o600)
-            if temporary.stat().st_size > MAX_RECALL_SCREENSHOT_BYTES:
+            if not 0 < temporary.stat().st_size <= MAX_RECALL_SCREENSHOT_BYTES:
                 raise ValueError("Compressed Recall preview exceeds the size limit")
             temporary.replace(target)
+
+        for index, x, y, display_width, display_height in normalized:
+            crop_x = round((x - min_x) * coordinate_scale_x)
+            crop_y = round((y - min_y) * coordinate_scale_y)
+            crop_width = round(display_width * coordinate_scale_x)
+            crop_height = round(display_height * coordinate_scale_y)
+            crop_x = max(0, min(crop_x, pixbuf.get_width() - 1))
+            crop_y = max(0, min(crop_y, pixbuf.get_height() - 1))
+            crop_width = max(1, min(crop_width, pixbuf.get_width() - crop_x))
+            crop_height = max(1, min(crop_height, pixbuf.get_height() - crop_y))
+            cropped = pixbuf.new_subpixbuf(crop_x, crop_y, crop_width, crop_height)
+            target = recall_dir / f"{stem.name}-display-{index}.jpg"
+            save_preview(cropped, target, MAX_RECALL_PREVIEW_EDGE, "70")
+
+        for raw_window in raw_window_paths:
+            match = RECALL_RAW_WINDOW_RE.fullmatch(raw_window.name)
+            if (
+                not match
+                or raw_window.is_symlink()
+                or not raw_window.is_file()
+                or not 0 < raw_window.stat().st_size <= MAX_RECALL_SOURCE_BYTES
+            ):
+                continue
+            window_index = int(match.group(1))
+            if not 0 <= window_index < MAX_RECALL_WINDOW_PREVIEWS:
+                continue
+            window_pixbuf = GdkPixbuf.Pixbuf.new_from_file(str(raw_window))
+            if window_pixbuf.get_width() * window_pixbuf.get_height() > 50_000_000:
+                continue
+            save_preview(
+                window_pixbuf,
+                recall_dir / f"{stem.name}-window-{window_index}.jpg",
+                MAX_RECALL_WINDOW_PREVIEW_EDGE,
+                "65",
+            )
         return 0
     except (GLib.Error, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         print(f"sessionsifu: could not compress Recall preview: {error}", file=sys.stderr)
@@ -426,6 +486,11 @@ def compress_recall_preview(source_value: str, stem_value: str, layout_value: st
             source.unlink(missing_ok=True)
         except OSError:
             pass
+        for raw_window in raw_window_paths:
+            try:
+                raw_window.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def version_tuple(version: str) -> tuple[int, int, int]:
@@ -466,8 +531,6 @@ def parse_update_manifest(contents: bytes | str) -> dict:
     version_tuple(minimum_version)
     if version_tuple(CURRENT_VERSION) < version_tuple(minimum_version):
         raise ValueError("This SessionSifu version cannot safely apply the update")
-    if version_tuple(manifest["version"]) < version_tuple(CURRENT_VERSION):
-        raise ValueError("Update manifest attempts a version rollback")
     return {
         "version": manifest["version"],
         "package_url": manifest["package_url"],
@@ -1127,7 +1190,16 @@ class RecallSearchWindow(Adw.ApplicationWindow):
     def _prepare_previews(self, item: dict) -> None:
         pixbufs = []
         pixbuf_by_index = {}
-        for index in range(min(8, int(item.get("image_count") or 0))):
+        indices = list(range(min(8, int(item.get("image_count") or 0))))
+        match = item.get("matched_window")
+        if isinstance(match, dict):
+            try:
+                window_image_index = int(match.get("image_index", -1))
+            except (TypeError, ValueError):
+                window_image_index = -1
+            if 0 <= window_image_index < int(item.get("image_count") or 0):
+                indices.append(window_image_index)
+        for index in dict.fromkeys(indices):
             data = self._vault.preview_bytes(item["name"], index)
             pixbuf = self._pixbuf(data) if data else None
             if pixbuf is not None:

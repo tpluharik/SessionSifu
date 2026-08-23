@@ -113,17 +113,17 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_3.1.1_all.deb` from the matching GitHub Release, or build it
+Download `sessionsifu_3.1.2_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_3.1.1_all.deb
+sudo apt install ./sessionsifu_3.1.2_all.deb
 ```
 
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.1.1_all.deb
+sudo apt install ./dist/sessionsifu_3.1.2_all.deb
 ```
 
 After installation:
@@ -139,10 +139,10 @@ After installation:
 
 Tagged releases attach these self-contained artifacts:
 
-- `SessionSifu-3.1.1-windows-x64.zip`;
-- `SessionSifu-3.1.1-macos-arm64.zip`;
-- `SessionSifu-3.1.1-macos-x64.zip`; and
-- `SessionSifu-3.1.1-linux-x64.tar.gz`.
+- `SessionSifu-3.1.2-windows-x64.zip`;
+- `SessionSifu-3.1.2-macos-arm64.zip`;
+- `SessionSifu-3.1.2-macos-x64.zip`; and
+- `SessionSifu-3.1.2-linux-x64.tar.gz`.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -329,18 +329,22 @@ plaintext persistent search database is created:
 - portable editions: the platform-specific SessionSifu data directory listed
   above, under `recall/`.
 
-SessionSifu never uploads Recall data. Every edition can optionally store a
-private, downscaled JPEG preview; GNOME records each connected display. Preview
+SessionSifu never uploads Recall data. Every edition can optionally store
+private, downscaled JPEG previews for the desktop and each eligible open
+window; GNOME also records each connected display. Preview
 capture is off by default and is skipped while the session is locked or an
 excluded application is visible. The search browser shows all display previews
-for timeline browsing; after an app, title or opted-in file keyword matches, it
-crops the exact matching window from its display preview in memory. The result
+for timeline browsing; after an app, title, screenshot-text or opted-in file
+keyword matches, it shows the exact independently captured window image. A
+display crop remains a compatibility fallback for old records or platforms
+that cannot capture a particular minimized/unmapped window. The result
 can reopen that window's observable file or URL with its recorded application
-where supported. Portable builds apply the same window-level index and crop
-their bounded primary-display preview when the platform exposes compatible
-geometry.
-No duplicate per-application images are stored, and unchanged GNOME frames are
-deduplicated. Optional local OCR feeds ranked Text, OCR, File, Application and
+where supported. Portable Windows, macOS, KDE and Linux builds first request a
+native window image and use their bounded screen image as a fallback.
+GNOME limits a capture to 64 window previews, 960 pixels on the longest edge at
+JPEG quality 65; display previews remain capped at 1,280 pixels and quality 70.
+Unchanged complete GNOME captures are deduplicated. Optional local OCR is tied
+to each window and feeds ranked Window image text, Text, File, Application and
 Related result classes. Related ranking is deliberately lightweight and local;
 it does not contact a model service.
 
@@ -353,12 +357,12 @@ recursive results. That built-in self-exclusion does not prevent display
 previews while the manager or Recall browser is visible; user-added privacy
 exclusions continue to block the complete preview capture.
 
-Recall capture is designed to stay out of the desktop's critical path. Version
-3.0 performs one asynchronous Shell grab, then uses a separate unprivileged
-process to crop displays, cap the longest edge at 1,280 pixels and encode JPEGs
-at quality 70. Metadata writes start immediately and history summaries are
-cached. If preview encoding is still busy at the next capture, SessionSifu
-preserves the metadata snapshot and skips only that preview.
+Recall capture is designed to stay out of the desktop's critical path. GNOME
+performs one asynchronous desktop grab and bounded compositor-native window
+surface captures, then uses a separate unprivileged process for resizing, JPEG
+encoding, OCR and encryption. Metadata writes start immediately and history
+summaries are cached. If preview encoding is still busy at the next capture,
+SessionSifu preserves the metadata snapshot and skips only that preview.
 
 Because saved launch commands, open-file paths and window titles may contain
 sensitive information, protect backups of the SessionSifu configuration
@@ -387,7 +391,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.1.1_all.deb
+dist/sessionsifu_3.1.2_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -408,7 +412,7 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v3.1.1` tag publishes the artifacts and `SHA256SUMS` as a GitHub
+A pushed `v3.1.2` tag publishes the artifacts and `SHA256SUMS` as a GitHub
 Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
@@ -434,9 +438,10 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Security policy and private reporting](SECURITY.md)
 - [Security audit and remediation plan](docs/SECURITY_AUDIT.md)
 - [Privacy and local-data guide](docs/PRIVACY.md)
+- [Recall research and product decisions](docs/RECALL_RESEARCH.md)
 
-The current 3.1.1 release fixes Recall search startup and exact application
-filtering, while hardening GNOME Shell teardown against window-event races.
+The current 3.1.2 release adds exact, encrypted per-window Recall images and
+window-level OCR search while preserving bounded capture and exclusion rules.
 Compatibility claims are added only
 after hands-on testing; reports from configurations not listed in the table are
 useful, but are treated as best-effort until support is documented here.

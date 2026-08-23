@@ -2,6 +2,19 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.1.2
+
+- Added bounded, compressed and encrypted screenshots for up to 64 eligible
+  open windows in each opt-in Privacy Recall capture on GNOME, Windows, macOS,
+  KDE and portable Linux, with display-crop fallback where a native window
+  surface is unavailable.
+- Linked each window image and its optional local OCR directly to the matching
+  searchable window record, so visual-text queries and result thumbnails no
+  longer depend on an approximate full-display crop.
+- Prevented portable shared-display pixels from being stored when an excluded
+  application is visible, while preserving independently mapped previews for
+  eligible windows.
+
 ## 3.1.1
 
 - Fixed the GNOME Recall search window crashing at startup by using the GTK

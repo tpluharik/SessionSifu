@@ -52,6 +52,33 @@ class RecallEngineTests(unittest.TestCase):
             self.assertEqual(vault.delete(record=record.name), 1)
             self.assertEqual(vault.search(), [])
 
+    def test_window_preview_is_encrypted_linked_and_searchable_by_ocr(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            display = root / "recall-20260822-120000-123-display-0.jpg"
+            window = root / "recall-20260822-120000-123-window-0.jpg"
+            display.write_bytes(b"display-preview")
+            window.write_bytes(b"exact-window-preview")
+            vault = RecallVault(root, test_key=b"v" * 32)
+            vault._ocr = lambda path: (
+                "quarterly falcon figures" if "window-0" in path.name else ""
+            )
+            result = vault.finalize(self.capture(root), RecallPolicy(ocr=True))
+            record = vault.vault / result["record"]
+            payload = vault._load(record)
+            image_index = payload["windows"][0]["image_index"]
+            self.assertGreaterEqual(image_index, 0)
+            self.assertEqual(
+                vault.preview_bytes(record.name, image_index),
+                b"exact-window-preview",
+            )
+            match = vault.search("falcon")[0]
+            self.assertEqual(match["match_type"], "Window image text")
+            self.assertEqual(match["matched_window"]["image_index"], image_index)
+            self.assertIn("falcon", match["ocr_excerpt"])
+            self.assertEqual(vault.delete(record=record.name), 1)
+            self.assertEqual(list(vault.vault.iterdir()), [])
+
     def test_sensitive_and_website_filters_discard_capture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

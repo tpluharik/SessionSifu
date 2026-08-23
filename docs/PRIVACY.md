@@ -14,7 +14,7 @@ tools may independently make their own network requests.
 | Named sessions | Complete restorable session | User action | Until deleted |
 | Portable sessions | Applications, executable/arguments, titles, documents and supported layout | User action/history timer | Named: until deleted; history: five |
 | Privacy Recall vault | Encrypted app identity, title, time, layout and optional document paths/OCR | Off | User retention plus 500-entry/30-day and storage-quota bounds |
-| Recall previews | AES-GCM encrypted compressed display images | Off, separate opt-in | Deleted with entry; changed exclusions delete affected entries |
+| Recall previews | AES-GCM encrypted compressed display and eligible window images | Off, separate opt-in | Deleted with entry; changed exclusions delete affected entries |
 | Update cache | Downloaded Debian package | Created after update download | Until replaced or manually cleared |
 | Logs | Structural operational messages; failures may identify an application | System journal | Operating-system journal policy |
 
@@ -67,7 +67,12 @@ Recall is designed for data minimization, not invisible monitoring:
 - search creates an ephemeral in-memory SQLite FTS5 index and never uploads a
   query, preview or OCR result;
 - text search is indexed per window. A result exposes only that window's app,
-  title and opted-in file targets; full-display OCR is returned separately;
+  title, opted-in file targets and optional window-image OCR; full-display OCR
+  is returned separately;
+- exact window previews are limited to 64 per capture, 960 pixels on the longest
+  edge and quality-65 JPEG; display images use a 1,280-pixel/quality-70 bound;
+- a portable shared desktop image is discarded if any excluded application is
+  present; separately mapped images of eligible windows can still be retained;
 - if an older shared screenshot contains an application that is now excluded,
   SessionSifu withholds the complete preview and its OCR even when another
   non-excluded window in the same entry remains searchable;
@@ -79,7 +84,9 @@ do not reliably expose a browser's private-tab state, current URL or individual
 password widgets. Rapid GNOME transitions are rechecked throughout capture and
 discarded, but screenshots should remain off where display-wide capture is
 unsuitable. Portable capture also depends on the platform's screen-recording
-permission and may return metadata only when permission is denied.
+permission and may return metadata only when permission is denied. Minimized or
+unmapped windows may not expose a renderable surface and therefore remain
+searchable metadata without a window image.
 
 ## Deletion
 

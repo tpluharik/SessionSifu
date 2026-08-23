@@ -13,10 +13,13 @@ deletion, the separate open-file-path opt-in and the
 dedicated customizable search shortcut (`Ctrl+Alt+Space` by default) are
 available on every portable target, including while new capture is paused.
 KDE/Wayland and general Linux request the shortcut through the desktop portal;
-Windows and macOS use their native shortcut APIs. Portable Qt builds can capture
-a compressed display preview through the operating system's standard screen
-permission path, encrypt it locally, index it with optional local OCR and reopen
-an opted-in file from a result.
+Windows and macOS use their native shortcut APIs. Portable Qt builds capture a
+bounded display preview plus up to 64 compressed images mapped to eligible open
+windows through the operating system's standard screen-permission path. A
+native window image is preferred; a geometry crop is used when the platform
+does not expose one. Images are encrypted locally, optional OCR is indexed per
+window, and a result can reopen its opted-in file. Minimized/unmapped windows
+may remain metadata-only.
 
 Vault keys prefer Windows Credential Locker, macOS Keychain and the available
 Linux Secret Service/KWallet backend. A private application-data key is used

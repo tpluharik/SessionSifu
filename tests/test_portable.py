@@ -83,7 +83,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.1.1")
+        self.assertEqual(VERSION, "3.1.2")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -208,6 +208,77 @@ class PortableTests(unittest.TestCase):
             self.assertEqual(store.preview_bytes(path.name), preview)
             self.assertEqual(store.delete(record=path.name), 1)
             self.assertEqual(store.search(), [])
+
+    def test_privacy_recall_stores_exact_window_previews(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RecallStore(Path(directory))
+            session = FakeAdapter().capture()
+            path = store.save(
+                session,
+                preview=b"desktop-preview",
+                window_previews={0: b"exact-window-preview"},
+            )
+            payload = store._load(path)
+            image_name = payload["windows"][0]["image"]
+            self.assertEqual(
+                store.preview_bytes(path.name, image_name=image_name),
+                b"exact-window-preview",
+            )
+            result = store.search("Notes")[0]
+            self.assertTrue(result["has_preview"])
+            self.assertEqual(result["matched_window"]["image"], image_name)
+            self.assertEqual(store.delete(record=path.name), 1)
+            self.assertEqual(list(store.vault_dir.iterdir()), [])
+
+    def test_privacy_recall_searches_each_window_image_ocr(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RecallStore(Path(directory))
+            store._ocr = lambda preview: (
+                "quarterly falcon figures"
+                if preview == b"exact-window-preview" else ""
+            )
+            store.save(
+                FakeAdapter().capture(),
+                window_previews={0: b"exact-window-preview"},
+                ocr_enabled=True,
+            )
+            result = store.search("falcon")[0]
+            self.assertEqual(result["match_type"], "Window image text")
+            self.assertIn("falcon", result["ocr_excerpt"])
+
+    def test_excluded_app_pixels_are_not_persisted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RecallStore(Path(directory))
+            session = FakeAdapter().capture()
+            session.windows.append(
+                WindowSnapshot(
+                    app_id="org.example.Browser",
+                    app_name="Browser",
+                    title="Public research",
+                )
+            )
+            path = store.save(
+                session,
+                excluded_apps=["Editor"],
+                preview=b"desktop-with-private-window",
+                window_previews={
+                    0: b"private-window-preview",
+                    1: b"public-window-preview",
+                },
+            )
+            payload = store._load(path)
+            self.assertEqual(payload["image"], "")
+            self.assertEqual(len(payload["windows"]), 1)
+            image_name = payload["windows"][0]["image"]
+            self.assertEqual(
+                store.preview_bytes(path.name, image_name=image_name),
+                b"public-window-preview",
+            )
+            self.assertEqual(len(list(store.vault_dir.iterdir())), 2)
+            self.assertNotIn(
+                b"private-window-preview",
+                b"".join(item.read_bytes() for item in store.vault_dir.iterdir()),
+            )
 
     def test_privacy_recall_filters_sensitive_text_and_excluded_websites(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

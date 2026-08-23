@@ -31,8 +31,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.1.1"
-assert metadata["version"] == 20
+assert metadata["version-name"] == "3.1.2"
+assert metadata["version"] == 21
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -63,7 +63,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.1.1"' in build_script
+assert 'version="3.1.2"' in build_script
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
@@ -135,7 +135,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.1.1"' in app_source
+assert 'CURRENT_VERSION = "3.1.2"' in app_source
 assert 'self.settings.value("recall_enabled", False, type=bool)' in (
     root / "portable" / "sessionsifu_portable" / "ui.py"
 ).read_text()
@@ -149,7 +149,12 @@ assert "recall_windows" in (root / "app" / "recall_engine.py").read_text()
 assert "recall_screenshot_path" in app_source
 assert "def compress_recall_preview" in app_source
 assert "MAX_RECALL_PREVIEW_EDGE = 1280" in app_source
-assert 'cropped.savev(str(temporary), "jpeg", ["quality"], ["70"])' in app_source
+assert "MAX_RECALL_WINDOW_PREVIEW_EDGE = 960" in app_source
+assert 'save_preview(cropped, target, MAX_RECALL_PREVIEW_EDGE, "70")' in app_source
+assert 'MAX_RECALL_WINDOW_PREVIEW_EDGE,\n                "65"' in app_source
+assert "paint_to_content(null)" in source_text
+assert "Shell.Screenshot.composite_to_stream" in source_text
+assert "_captureWindowActors(name)" in source_text
 assert "sync_gnome_recall_shortcut" in app_source
 assert "def live_extension_current" in app_source
 assert "def reload_extension" in app_source
@@ -197,6 +202,7 @@ assert '["dpkg-deb", "--extract"' in app_source
 assert "launch_default_for_uri" in app_source
 assert "RecallVault" in app_source
 assert (root / "app" / "recall_engine.py").is_file()
+assert (root / "docs" / "RECALL_RESEARCH.md").is_file()
 
 assert "open_files" in source_text
 assert "`/proc/${pid}/fd`" in source_text

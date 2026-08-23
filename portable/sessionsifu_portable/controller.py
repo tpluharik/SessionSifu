@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 from .adapters import PlatformAdapter, select_adapter
+from .model import SessionSnapshot
 from .recall import RecallStore
 from .storage import SessionStore
 
@@ -55,11 +57,17 @@ class SessionController:
         excluded_websites: list[str] | tuple[str, ...] = (),
         include_file_paths: bool = False,
         preview: bytes | None = None,
+        visual_provider: Callable[
+            [SessionSnapshot], tuple[bytes | None, dict[int, bytes]]
+        ] | None = None,
         ocr_enabled: bool = False,
         sensitive_filter: bool = True,
         quota_mb: int = 512,
     ) -> Path:
         session = self.adapter.capture(include_files=include_file_paths)
+        window_previews: dict[int, bytes] = {}
+        if visual_provider is not None:
+            preview, window_previews = visual_provider(session)
         return self.recall_store.save(
             session,
             retention_hours=retention_hours,
@@ -67,6 +75,7 @@ class SessionController:
             excluded_websites=excluded_websites,
             include_file_paths=include_file_paths,
             preview=preview,
+            window_previews=window_previews,
             ocr_enabled=ocr_enabled,
             sensitive_filter=sensitive_filter,
             quota_mb=quota_mb,

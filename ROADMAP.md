@@ -111,6 +111,9 @@ reopening, timed pauses, quotas, sensitive-text filtering, capture diagnostics
 and granular deletion. Version 3.1 adds individual-window search results,
 GNOME focused-window ranking, app filters, window-cropped encrypted previews and
 window-specific reopen targets across the GNOME and portable interfaces.
+The next implementation increment replaces approximate crops with separately
+captured, encrypted and OCR-indexed images for up to 64 renderable windows,
+while retaining display crops as a compatibility fallback.
 Future work remains for stronger native credential-store
 integration in every portable bundle, browser cooperation for reliable private
 tab/domain detection and optional packaged local embedding models.

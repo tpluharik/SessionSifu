@@ -36,8 +36,12 @@ except ImportError:  # pragma: no cover - package dependency, exercised by diagn
 
 RECORD_RE = re.compile(r"^recall-\d{8}-\d{6}-\d{3}\.json$")
 VAULT_RE = re.compile(r"^recall-\d{8}-\d{6}-\d{3}\.ssrec$")
-IMAGE_RE = re.compile(r"^recall-\d{8}-\d{6}-\d{3}-display-(\d+)\.jpg$")
-VAULT_IMAGE_RE = re.compile(r"^recall-\d{8}-\d{6}-\d{3}-display-\d+\.ssimg$")
+IMAGE_RE = re.compile(
+    r"^recall-\d{8}-\d{6}-\d{3}-(display|window)-(\d+)\.jpg$"
+)
+VAULT_IMAGE_RE = re.compile(
+    r"^recall-\d{8}-\d{6}-\d{3}-(?:display|window)-\d+\.ssimg$"
+)
 URL_RE = re.compile(r"https?://[^\s<>{}\[\]\"']+", re.IGNORECASE)
 CARD_RE = re.compile(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)")
 SENSITIVE_RE = re.compile(
@@ -49,6 +53,8 @@ MAGIC = b"SSRF1\0"
 MAX_RECORD_BYTES = 2 * 1024 * 1024
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_OCR_BYTES = 1024 * 1024
+MAX_WINDOW_OCR_BYTES = 16 * 1024
+MAX_TOTAL_WINDOW_OCR_BYTES = 512 * 1024
 MAX_ENTRIES = 500
 SERVICE = "org.gnome.SessionSifu.Recall"
 ACCOUNT = "local-vault-v1"
@@ -245,9 +251,13 @@ class RecallVault:
             raise ValueError("Recall capture path is outside owned storage")
         payload = _safe_json(capture, MAX_RECORD_BYTES)
         stem = capture.stem
-        image_paths = sorted(self.root.glob(f"{stem}-display-*.jpg"))[:8]
+        image_paths = [
+            *sorted(self.root.glob(f"{stem}-display-*.jpg"))[:8],
+            *sorted(self.root.glob(f"{stem}-window-*.jpg"))[:64],
+        ]
         valid_images = []
-        ocr_parts = []
+        display_ocr_parts = []
+        window_ocr: dict[int, str] = {}
         for image in image_paths:
             if image.is_symlink() or not IMAGE_RE.fullmatch(image.name):
                 continue
@@ -257,7 +267,11 @@ class RecallVault:
             if policy.ocr:
                 text = self._ocr(image)
                 if text:
-                    ocr_parts.append(text)
+                    match = IMAGE_RE.fullmatch(image.name)
+                    if match and match.group(1) == "window":
+                        window_ocr[int(match.group(2))] = text[:MAX_WINDOW_OCR_BYTES]
+                    else:
+                        display_ocr_parts.append(text)
 
         windows = payload.get("windows")
         if not isinstance(windows, list):
@@ -290,7 +304,9 @@ class RecallVault:
             if Path(value).is_absolute() and Path(value).is_file()
         )
         targets.extend(urls)
-        searchable = "\n".join([*apps, *titles, *files, *ocr_parts])
+        searchable = "\n".join([
+            *apps, *titles, *files, *display_ocr_parts, *window_ocr.values()
+        ])
         excluded_domains = tuple(value.strip().casefold().lstrip(".") for value in policy.excluded_websites if value.strip())
         if any(any(domain == excluded or domain.endswith(f".{excluded}") for excluded in excluded_domains) for domain in map(_domain, urls) if domain):
             self._discard_legacy(capture, image_paths)
@@ -342,22 +358,35 @@ class RecallVault:
             return {"saved": False, "reason": "screen unchanged"}
         image_hashes = []
         image_index_by_display = {}
-        for image in valid_images:
-            raw = image.read_bytes()
-            target = self.vault / f"{image.stem}.ssimg"
-            self._atomic_encrypted(target, raw)
-            match = IMAGE_RE.fullmatch(image.name)
-            if match:
-                image_index_by_display[int(match.group(1))] = len(image_names)
-            image_names.append(target.name)
-            image_hashes.append(hashlib.sha256(raw).hexdigest())
+        image_index_by_window = {}
+        try:
+            for image in valid_images:
+                raw = image.read_bytes()
+                target = self.vault / f"{image.stem}.ssimg"
+                self._atomic_encrypted(target, raw)
+                match = IMAGE_RE.fullmatch(image.name)
+                if match:
+                    index = int(match.group(2))
+                    if match.group(1) == "display":
+                        image_index_by_display[index] = len(image_names)
+                    else:
+                        image_index_by_window[index] = len(image_names)
+                image_names.append(target.name)
+                image_hashes.append(hashlib.sha256(raw).hexdigest())
+        except Exception:
+            for name in image_names:
+                (self.vault / name).unlink(missing_ok=True)
+            raise
         for display in normalized_displays:
             display["image_index"] = image_index_by_display.get(display["index"], -1)
         normalized_windows = []
-        for window in windows[:512]:
+        remaining_window_ocr = MAX_TOTAL_WINDOW_OCR_BYTES
+        for window_index, window in enumerate(windows[:512]):
             if not isinstance(window, dict):
                 continue
             position = window.get("window_position") or {}
+            ocr_text = window_ocr.get(window_index, "")[:remaining_window_ocr]
+            remaining_window_ocr -= len(ocr_text)
             normalized_windows.append({
                 "app": str(window.get("app_name") or window.get("app_id") or window.get("desktop_file_id") or "")[:512],
                 "app_id": str(window.get("app_id") or window.get("desktop_file_id") or "")[:512],
@@ -370,6 +399,8 @@ class RecallVault:
                 "y": int(position.get("y_offset", (window.get("geometry") or [0, 0, 0, 0])[1]) or 0),
                 "width": int(position.get("width", (window.get("geometry") or [0, 0, 0, 0])[2]) or 0),
                 "height": int(position.get("height", (window.get("geometry") or [0, 0, 0, 0])[3]) or 0),
+                "image_index": image_index_by_window.get(window_index, -1),
+                "ocr_text": ocr_text,
             })
         record = {
             "schema": 3,
@@ -382,20 +413,35 @@ class RecallVault:
             "files": files,
             "urls": urls,
             "targets": targets[:128],
-            "ocr_text": "\n".join(ocr_parts)[:MAX_OCR_BYTES],
+            "ocr_text": "\n".join(display_ocr_parts)[:MAX_OCR_BYTES],
             "windows": normalized_windows,
             "displays": normalized_displays,
             "images": image_names,
             "image_hashes": image_hashes,
         }
         record_target = self.vault / f"{stem}.ssrec"
-        self._atomic_encrypted(record_target, json.dumps(record, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        record_bytes = json.dumps(
+            record, ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
+        if len(record_bytes) > MAX_RECORD_BYTES:
+            for name in image_names:
+                (self.vault / name).unlink(missing_ok=True)
+            raise ValueError("Privacy Recall entry exceeds the metadata safety limit")
+        try:
+            self._atomic_encrypted(record_target, record_bytes)
+        except Exception:
+            for name in image_names:
+                (self.vault / name).unlink(missing_ok=True)
+            raise
         self._discard_legacy(capture, image_paths)
         self.prune(policy.quota_mb, policy.retention_hours)
         duration = round((time.monotonic() - started) * 1000)
+        ocr_characters = len(record["ocr_text"]) + sum(
+            len(str(window.get("ocr_text", ""))) for window in normalized_windows
+        )
         self._write_status(
             state="saved", duration_ms=duration, screenshots=len(image_names),
-            ocr_characters=len(record["ocr_text"]), record=record_target.name,
+            ocr_characters=ocr_characters, record=record_target.name,
         )
         return {"saved": True, "record": record_target.name, "duration_ms": duration, "screenshots": len(image_names)}
 
@@ -447,7 +493,7 @@ class RecallVault:
         try:
             connection.execute(
                 "CREATE VIRTUAL TABLE recall_windows USING fts5("
-                "key UNINDEXED, app, title, files)"
+                "key UNINDEXED, app, title, files, ocr)"
             )
             connection.execute(
                 "CREATE VIRTUAL TABLE recall_visual USING fts5(name UNINDEXED, ocr)"
@@ -470,12 +516,13 @@ class RecallVault:
                         continue
                     visible_windows.append((index, window))
                     connection.execute(
-                        "INSERT INTO recall_windows VALUES (?, ?, ?, ?)",
+                        "INSERT INTO recall_windows VALUES (?, ?, ?, ?, ?)",
                         (
                             f"{path.name}#{index}",
                             str(window.get("app", "")),
                             str(window.get("title", "")),
                             "\n".join(str(item) for item in window.get("files", [])),
+                            str(window.get("ocr_text", "")),
                         ),
                     )
                 if not visible_windows:
@@ -497,7 +544,7 @@ class RecallVault:
                 if expression:
                     with contextlib.suppress(sqlite3.OperationalError):
                         for key, rank in connection.execute(
-                            "SELECT key, bm25(recall_windows, 0, 6, 5, 3) "
+                            "SELECT key, bm25(recall_windows, 0, 6, 5, 3, 2) "
                             "FROM recall_windows WHERE recall_windows MATCH ? "
                             "ORDER BY 2 LIMIT 500",
                             (expression,),
@@ -521,6 +568,7 @@ class RecallVault:
                                 str(window.get("app", "")),
                                 str(window.get("title", "")),
                                 *(str(item) for item in window.get("files", [])),
+                                str(window.get("ocr_text", "")),
                             ]).casefold(),
                         ))
                         related = len(query_terms & text_terms) / max(
@@ -565,7 +613,9 @@ class RecallVault:
                         "rank": 0.0,
                         "match_type": "Timeline",
                         "result_kind": "timeline",
-                        "ocr_excerpt": "",
+                        "ocr_excerpt": self._excerpt(
+                            str(value.get("ocr_text", "")), needle
+                        ),
                     })
                     continue
 
@@ -600,7 +650,9 @@ class RecallVault:
                         "rank": round(rank, 4),
                         "match_type": self._window_match_type(window, needle),
                         "result_kind": "window",
-                        "ocr_excerpt": "",
+                        "ocr_excerpt": self._excerpt(
+                            str(window.get("ocr_text", "")), needle
+                        ),
                     })
 
                 if needle and not app and path.name in visual_candidates:
@@ -651,6 +703,8 @@ class RecallVault:
             return "Window text"
         if any(needle in str(value).casefold() for value in window.get("files", [])):
             return "Window file"
+        if needle in str(window.get("ocr_text", "")).casefold():
+            return "Window image text"
         if needle in "\n".join(
             (str(window.get("app", "")), str(window.get("app_id", "")))
         ).casefold():
@@ -689,7 +743,7 @@ class RecallVault:
         if not 0 <= index < len(images):
             return None
         image_name = str(images[index])
-        if not re.fullmatch(r"recall-\d{8}-\d{6}-\d{3}-display-\d+\.ssimg", image_name):
+        if not VAULT_IMAGE_RE.fullmatch(image_name):
             return None
         with contextlib.suppress(OSError, ValueError):
             return self._read_encrypted(self.vault / image_name, MAX_IMAGE_BYTES + 128)

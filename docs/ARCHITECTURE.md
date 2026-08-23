@@ -186,23 +186,24 @@ document state can be observed.
 Privacy Recall data is separate from named/restorable sessions. Version 3.0
 moves persistent entries into an AES-GCM vault. GNOME Shell writes a short-lived
 private metadata/image capture and invokes the unprivileged manager finalizer;
-the finalizer applies domain/sensitive policy, optional OCR, deduplication,
+the finalizer applies domain/sensitive policy, optional per-window OCR, deduplication,
 authenticated encryption, retention and quota pruning, then removes plaintext
-temporary files. GNOME uses one encrypted image per display. Portable Qt builds
-use the standard screen API to create one bounded preview after user permission.
+temporary files. GNOME stores one encrypted image per display plus up to 64
+independently rendered window images. Portable Qt builds use the native window
+handle where available and fall back to a bounded screen crop after user
+permission.
 
 Search decrypts bounded records into process memory and creates separate
 ephemeral SQLite FTS5 tables for individual windows and display-wide OCR. Each
 window row has a stable record/window identity and independently weighted
-application, title and opted-in file fields; optional related matching adds
+application, title, opted-in file and window-OCR fields; optional related matching adds
 local token-similarity candidates and the focused window receives a small rank
 boost. An empty query remains a desktop-level chronological timeline.
-Persistent plaintext OCR or search indexes are never created. GNOME stores the
-display's logical geometry beside its encrypted image, allowing the GTK browser
-to crop the matching window only after decryption and only in memory. The
-portable Qt browser applies the same result model and crops its bounded primary
-display preview when compatible geometry is available. Reopen actions use only
-that window's validated file or observable URL targets.
+Persistent plaintext OCR or search indexes are never created. Each window row
+links directly to its encrypted preview. GNOME also stores display geometry so
+the GTK browser can crop a display image in memory for older/fallback records.
+The portable Qt browser follows the same exact-window-first model. Reopen
+actions use only that window's validated file or observable URL targets.
 
 Changing exclusions deletes affected vault records because previously captured
 pixels cannot be reliably redacted. As an additional query-time boundary, a
@@ -212,11 +213,11 @@ OCR are withheld so pixels from the excluded application cannot leak.
 
 Recall's hot path uses compact atomic asynchronous writes. Open-file discovery is
 bounded and avoids redundant target probes; paths are validated before restore.
-GNOME Shell performs one asynchronous desktop grab and never overlaps another
-Recall image capture. The unprivileged manager helper loads that temporary PNG
-once, crops every display, downsizes the longest edge to at most 1,280 pixels and
-writes quality-70 JPEG previews through private temporary files. Encryption,
-OCR, FTS and decoded images execute outside GNOME Shell. Capture status contains
+GNOME Shell performs one asynchronous desktop grab, then serializes compositor
+window actors into private streams without starting overlapping captures. The
+unprivileged manager helper downsizes displays to at most 1,280 pixels/quality
+70 and windows to 960 pixels/quality 65 through private temporary files.
+Encryption, OCR, FTS and decoded images execute outside GNOME Shell. Capture status contains
 only structural diagnostics such as duration, preview count, skip reason and
 vault size.
 

@@ -72,6 +72,15 @@ works. OCR is never inferred from the main Recall switch. If diagnostics report
 the private fallback key, install/configure a Secret Service-compatible keyring
 and restart SessionSifu before enabling visual capture.
 
+New captures normally contain display previews and a separate image for each
+eligible open window. An individual card can still say that no preview is
+available when the window was minimized/unmapped, the platform denied screen
+recording, the 64-window safety limit was reached, or privacy checks discarded
+its pixels. Older entries are not retroactively upgraded; they continue to use
+an in-memory crop of their display preview. If every new entry is metadata-only,
+check **Capture screenshot previews**, session-lock state, application
+exclusions and the last **Capture diagnostics** reason.
+
 ## The Recall search shortcut does not open
 
 The shortcut is independent of Recall capture, so it can search existing

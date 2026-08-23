@@ -8,6 +8,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import * as FileUtils from './utils/fileUtils.js';
 import * as Log from './utils/log.js';
+import * as MetaWindowUtils from './utils/metaWindowUtils.js';
 import * as SaveSession from './saveSession.js';
 import {recallActivity} from './recallActivity.js';
 import {recallExclusions, screenshotBlockingExclusions} from './recallPrivacy.js';
@@ -18,6 +19,7 @@ export const RECALL_LIMIT = 500;
 const MAX_RECALL_BYTES = 2 * 1024 * 1024;
 const MAX_SCREENSHOT_BYTES = 64 * 1024 * 1024;
 const MAX_DISPLAYS = 8;
+const MAX_WINDOW_PREVIEWS = 64;
 const PRUNE_INTERVAL_US = 5 * 60 * 1000 * 1000;
 const _summaryCache = new Map();
 
@@ -83,6 +85,13 @@ function _displayScreenshotPath(name, index) {
         FileUtils.recall_path, name.replace(/\.json$/, `-display-${index}.jpg`)]);
 }
 
+function _windowScreenshotPath(name, index, raw = false) {
+    return GLib.build_filenamev([
+        FileUtils.recall_path,
+        name.replace(/\.json$/, `-window-${index}${raw ? '-raw.png' : '.jpg'}`),
+    ]);
+}
+
 function _removeFile(path) {
     try {
         Gio.File.new_for_path(path).delete(null);
@@ -97,6 +106,10 @@ function _removeScreenshots(name) {
     _removeFile(_rawScreenshotPath(name));
     for (let index = 0; index < MAX_DISPLAYS; index++)
         _removeFile(_displayScreenshotPath(name, index));
+    for (let index = 0; index < MAX_WINDOW_PREVIEWS; index++) {
+        _removeFile(_windowScreenshotPath(name, index));
+        _removeFile(_windowScreenshotPath(name, index, true));
+    }
 }
 
 function _invalidateSummary(name) {
@@ -162,6 +175,93 @@ function _captureScreenshot(path) {
             reject(error);
         }
     });
+}
+
+function _captureWindowActor(path, actor) {
+    return new Promise((resolve, reject) => {
+        let stream;
+        try {
+            if (!actor || actor.is_destroyed?.())
+                throw new Error('Recall window actor is no longer available');
+            const content = actor.paint_to_content(null);
+            const texture = content?.get_texture?.();
+            if (!texture)
+                throw new Error('Recall window has no renderable surface');
+            stream = Gio.File.new_for_path(path).replace(
+                null, false, Gio.FileCreateFlags.PRIVATE, null);
+            Shell.Screenshot.composite_to_stream(
+                texture, 0, 0, -1, -1, 1.0,
+                null, 0, 0, 1.0, stream,
+                (_source, result) => {
+                    try {
+                        const pixbuf = Shell.Screenshot.composite_to_stream_finish(result);
+                        stream.close(null);
+                        if (!pixbuf)
+                            throw new Error('GNOME Shell could not render the Recall window');
+                        const size = Gio.File.new_for_path(path).query_info(
+                            'standard::size', Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null)
+                            .get_size();
+                        if (size <= 0 || size > MAX_SCREENSHOT_BYTES)
+                            throw new Error(`Recall window screenshot has an unsafe size: ${size}`);
+                        GLib.chmod(path, 0o600);
+                        resolve(true);
+                    } catch (error) {
+                        try {
+                            stream.close(null);
+                        } catch (_) {
+                            // The callback may already have closed the stream.
+                        }
+                        _removeFile(path);
+                        reject(error);
+                    }
+                });
+        } catch (error) {
+            try {
+                stream?.close(null);
+            } catch (_) {
+                // Ignore cleanup failures while reporting the original error.
+            }
+            _removeFile(path);
+            reject(error);
+        }
+    });
+}
+
+async function _captureWindowActors(name) {
+    const path = GLib.build_filenamev([FileUtils.recall_path, name]);
+    const file = Gio.File.new_for_path(path);
+    const [ok, contents] = file.load_contents(null);
+    if (!ok)
+        return 0;
+    const payload = JSON.parse(new TextDecoder().decode(contents));
+    const windowIndexes = new Map(
+        (payload.x_session_config_objects ?? [])
+            .slice(0, MAX_WINDOW_PREVIEWS)
+            .map((window, index) => [String(window.window_id ?? ''), index])
+            .filter(([windowId]) => windowId));
+    if (!windowIndexes.size)
+        return 0;
+    const jobs = [];
+    for (const actor of global.get_window_actors()) {
+        if (jobs.length >= MAX_WINDOW_PREVIEWS)
+            break;
+        const metaWindow = actor?.meta_window;
+        if (!metaWindow)
+            continue;
+        const index = windowIndexes.get(MetaWindowUtils.getStableWindowId(metaWindow));
+        if (index === undefined)
+            continue;
+        jobs.push([index, actor]);
+    }
+    let captured = 0;
+    // Small batches reduce latency without flooding Mutter with paint requests.
+    for (let offset = 0; offset < jobs.length; offset += 4) {
+        const results = await Promise.allSettled(
+            jobs.slice(offset, offset + 4).map(([index, actor]) =>
+                _captureWindowActor(_windowScreenshotPath(name, index, true), actor)));
+        captured += results.filter(result => result.status === 'fulfilled').length;
+    }
+    return captured;
 }
 
 function _compressScreenshot(rawPath, name, displays) {
@@ -383,6 +483,10 @@ export function deleteRecallScreenshots() {
         const candidates = [_screenshotPath(entry.name), _rawScreenshotPath(entry.name)];
         for (let index = 0; index < MAX_DISPLAYS; index++)
             candidates.push(_displayScreenshotPath(entry.name, index));
+        for (let index = 0; index < MAX_WINDOW_PREVIEWS; index++) {
+            candidates.push(_windowScreenshotPath(entry.name, index));
+            candidates.push(_windowScreenshotPath(entry.name, index, true));
+        }
         for (const path of candidates) {
             if (!GLib.file_test(path, GLib.FileTest.IS_REGULAR))
                 continue;
@@ -535,6 +639,7 @@ export const RecallRecorder = class {
                 throw new Error('No active displays are available for Recall preview capture');
             const rawPath = _rawScreenshotPath(name);
             await _captureScreenshot(rawPath);
+            await _captureWindowActors(name);
             if (this._destroyed || screenshotGeneration !== this._screenshotGeneration ||
                 Main.sessionMode.isLocked || _excludedApplicationVisible(exclusions)) {
                 _removeScreenshots(name);

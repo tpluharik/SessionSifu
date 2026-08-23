@@ -28,12 +28,18 @@ RECALL_SCHEMA = 3
 RECALL_MAX_ENTRIES = 500
 MAX_RECALL_BYTES = 3 * 1024 * 1024
 MAX_PREVIEW_BYTES = 8 * 1024 * 1024
+MAX_WINDOW_PREVIEWS = 64
+MAX_WINDOW_OCR_BYTES = 16 * 1024
+MAX_TOTAL_WINDOW_OCR_BYTES = 512 * 1024
 DEFAULT_RETENTION_HOURS = 24
 DEFAULT_EXCLUSIONS = ("sessionsifu",)
 MAGIC = b"SSRF1\0"
 KEYRING_SERVICE = "org.sessionsifu.RecallVault"
 KEYRING_ACCOUNT = "default"
 RECORD_RE = re.compile(r"^recall-\d{8}-\d{6}-\d{6}\.ssrec$")
+IMAGE_RE = re.compile(
+    r"^recall-\d{8}-\d{6}-\d{6}(?:-window-\d{1,3})?\.ssimg$"
+)
 SENSITIVE_RE = re.compile(
     r"\b(?:password|passcode|security code|cvv|cvc|secret key|private key)\b",
     re.IGNORECASE,
@@ -172,14 +178,24 @@ class RecallStore:
         excluded_websites: list[str] | tuple[str, ...] = (),
         include_file_paths: bool = False,
         preview: bytes | None = None,
+        window_previews: dict[int, bytes] | None = None,
         ocr_enabled: bool = False,
         sensitive_filter: bool = True,
         quota_mb: int = 512,
     ) -> Path:
         self._ensure_directory()
         exclusions = self._exclusions(excluded_apps)
+        window_previews = window_previews or {}
+        has_excluded_window = any(
+            _matches_exclusion(window, exclusions) for window in session.windows
+        )
+        # A desktop image may contain pixels from an excluded window. Individual
+        # window images can be retained safely because they are mapped before save.
+        if has_excluded_window:
+            preview = None
         windows = []
-        for window in session.windows:
+        remaining_window_ocr = MAX_TOTAL_WINDOW_OCR_BYTES
+        for source_index, window in enumerate(session.windows):
             if _matches_exclusion(window, exclusions):
                 continue
             item = {
@@ -192,6 +208,19 @@ class RecallStore:
             }
             if include_file_paths:
                 item["open_files"] = list(window.open_files)
+            image = window_previews.get(source_index)
+            if image is not None:
+                if not isinstance(image, bytes) or len(image) > MAX_PREVIEW_BYTES:
+                    raise ValueError("Recall window preview exceeds the safety limit")
+                item["_preview"] = image
+                if ocr_enabled and remaining_window_ocr:
+                    text = self._ocr(image).encode("utf-8")[
+                        :min(MAX_WINDOW_OCR_BYTES, remaining_window_ocr)
+                    ].decode("utf-8", "ignore")
+                    if text:
+                        item["ocr_text"] = text
+                        remaining_window_ocr -= len(text.encode("utf-8"))
+            item["_source_index"] = source_index
             windows.append(item)
         if not windows:
             raise RuntimeError("No non-excluded windows were available for Privacy Recall")
@@ -200,7 +229,12 @@ class RecallStore:
         search_text = "\n".join(
             str(value)
             for item in windows
-            for value in (item.get("app_name"), item.get("title"), *item.get("open_files", []))
+            for value in (
+                item.get("app_name"),
+                item.get("title"),
+                *item.get("open_files", []),
+                item.get("ocr_text"),
+            )
             if value
         ) + "\n" + ocr_text
         files = list(dict.fromkeys(
@@ -229,7 +263,19 @@ class RecallStore:
             if len(preview) > MAX_PREVIEW_BYTES:
                 raise ValueError("Recall preview exceeds the safety limit")
             image_name = f"{stamp}.ssimg"
-            self._write_encrypted(self.vault_dir / image_name, preview)
+        image_writes: list[tuple[str, bytes]] = []
+        if image_name and preview:
+            image_writes.append((image_name, preview))
+        for window_index, item in enumerate(windows[:MAX_WINDOW_PREVIEWS]):
+            window_preview = item.pop("_preview", None)
+            item.pop("_source_index")
+            if window_preview:
+                window_image_name = f"{stamp}-window-{window_index}.ssimg"
+                item["image"] = window_image_name
+                image_writes.append((window_image_name, window_preview))
+        for item in windows[MAX_WINDOW_PREVIEWS:]:
+            item.pop("_preview", None)
+            item.pop("_source_index", None)
         payload = {
             "recall_schema": RECALL_SCHEMA,
             "captured_at": session.captured_at,
@@ -250,7 +296,17 @@ class RecallStore:
         if len(contents) > MAX_RECALL_BYTES:
             raise ValueError("Privacy Recall entry is too large to store safely")
         path = self.vault_dir / f"{stamp}.ssrec"
-        self._write_encrypted(path, contents)
+        written_images: list[Path] = []
+        try:
+            for name, data in image_writes:
+                image_path = self.vault_dir / name
+                self._write_encrypted(image_path, data)
+                written_images.append(image_path)
+            self._write_encrypted(path, contents)
+        except Exception:
+            for image_path in written_images:
+                image_path.unlink(missing_ok=True)
+            raise
         self.prune(retention_hours, quota_mb)
         return path
 
@@ -300,14 +356,15 @@ class RecallStore:
             if index >= RECALL_MAX_ENTRIES or modified < cutoff or self.storage_bytes() > quota:
                 self._delete_path(path)
         referenced = {
-            str(payload.get("image"))
+            name
             for path in self._paths()
             for payload in [self._load(path)]
-            if payload and payload.get("image")
+            if payload
+            for name in self._payload_images(payload)
         }
         for image in self.vault_dir.glob("*.ssimg"):
             if (
-                re.fullmatch(r"recall-\d{8}-\d{6}-\d{6}\.ssimg", image.name)
+                IMAGE_RE.fullmatch(image.name)
                 and image.name not in referenced
                 and image.is_file()
                 and not image.is_symlink()
@@ -316,9 +373,20 @@ class RecallStore:
 
     def _delete_path(self, path: Path) -> None:
         payload = self._load(path)
-        if payload and payload.get("image"):
-            (self.vault_dir / str(payload["image"])).unlink(missing_ok=True)
+        if payload:
+            for name in self._payload_images(payload):
+                (self.vault_dir / name).unlink(missing_ok=True)
         path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _payload_images(payload: dict) -> set[str]:
+        names = {str(payload.get("image") or "")}
+        names.update(
+            str(window.get("image") or "")
+            for window in payload.get("windows", [])
+            if isinstance(window, dict)
+        )
+        return {name for name in names if IMAGE_RE.fullmatch(name)}
 
     def search(
         self,
@@ -335,7 +403,7 @@ class RecallStore:
         try:
             connection.execute(
                 "CREATE VIRTUAL TABLE recall_windows USING fts5("
-                "key UNINDEXED, app, title, files)"
+                "key UNINDEXED, app, title, files, ocr)"
             )
             connection.execute(
                 "CREATE VIRTUAL TABLE recall_visual USING fts5(name UNINDEXED, ocr)"
@@ -359,12 +427,13 @@ class RecallStore:
                         continue
                     visible_windows.append((index, window))
                     connection.execute(
-                        "INSERT INTO recall_windows VALUES (?, ?, ?, ?)",
+                        "INSERT INTO recall_windows VALUES (?, ?, ?, ?, ?)",
                         (
                             f"{path.name}#{index}",
                             str(window.get("app_name") or window.get("app_id") or ""),
                             str(window.get("title") or ""),
                             "\n".join(str(value) for value in window.get("open_files", [])),
+                            str(window.get("ocr_text") or ""),
                         ),
                     )
                 if not visible_windows:
@@ -385,7 +454,7 @@ class RecallStore:
                 if expression:
                     with contextlib.suppress(sqlite3.OperationalError):
                         for key, rank in connection.execute(
-                            "SELECT key, bm25(recall_windows,0,6,5,3) "
+                            "SELECT key, bm25(recall_windows,0,6,5,3,4) "
                             "FROM recall_windows WHERE recall_windows MATCH ? ORDER BY 2",
                             (expression,),
                         ):
@@ -407,6 +476,7 @@ class RecallStore:
                                 str(window.get("app_name") or window.get("app_id") or ""),
                                 str(window.get("title") or ""),
                                 *(str(value) for value in window.get("open_files", [])),
+                                str(window.get("ocr_text") or ""),
                             ]).casefold(),
                         ))
                         related = len(query_terms & text_terms) / max(
@@ -471,6 +541,7 @@ class RecallStore:
                     urls = list(dict.fromkeys(URL_RE.findall(title)))
                     results.append({
                         **common,
+                        "has_preview": bool(window.get("image")) or common["has_preview"],
                         "apps": [str(window.get("app_name") or window.get("app_id") or "")],
                         "titles": [title] if title else [],
                         "files": files,
@@ -481,7 +552,9 @@ class RecallStore:
                         "result_kind": "window",
                         "matched_window": window,
                         "window_index": index,
-                        "ocr_excerpt": "",
+                        "ocr_excerpt": " ".join(
+                            str(window.get("ocr_text") or "").split()
+                        )[:320],
                     })
 
                 if needle and not app and path.name in visual_candidates:
@@ -532,14 +605,19 @@ class RecallStore:
             str(window.get("app_name") or ""), str(window.get("app_id") or "")
         )).casefold():
             return "Application"
+        if needle in str(window.get("ocr_text") or "").casefold():
+            return "Window image text"
         return "Related window"
 
-    def preview_bytes(self, record: str) -> bytes | None:
+    def preview_bytes(self, record: str, *, image_name: str = "") -> bytes | None:
         if not RECORD_RE.fullmatch(record):
             return None
         payload = self._load(self.vault_dir / record)
-        name = str(payload.get("image") or "") if payload else ""
-        if not re.fullmatch(r"recall-\d{8}-\d{6}-\d{6}\.ssimg", name):
+        if not payload:
+            return None
+        allowed = self._payload_images(payload)
+        name = image_name or str(payload.get("image") or "")
+        if name not in allowed:
             return None
         with contextlib.suppress(OSError, ValueError):
             return self._decrypt((self.vault_dir / name).read_bytes(), name)
