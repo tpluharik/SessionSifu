@@ -1,18 +1,24 @@
-[restore-symbolic.svg](How can I get the absolute path from a St.Icon object? I don't find a method to do that in the doc https://gjs-docs.gnome.org/st10~1.0_api/st.icon#method-get_icon_name, any suggestion?)
+# GNOME Shell symbolic icons
 
-`sessionsifu-symbolic.svg` is the original monochrome yin-yang SessionSifu
-mark. Its source and design notes are documented in `branding/README.md`.
+`sessionsifu-symbolic.svg` is the production monochrome yin-yang mark used by
+the top-bar indicator. `autorestore-symbolic.svg`, `restore-symbolic.svg` and the
+other local SVGs provide actions and state inside the extension UI.
 
-[move-symbolic.svg](https://iconduck.com/icons/21634/alternate-arrows)
+The icons are kept as simple symbolic SVGs so GNOME Shell can recolor them and
+they remain legible at panel size. The recording state is drawn as a separate
+badge by the extension; it does not require a second full-color tray asset.
 
-[close-symbolic.svg](https://iconduck.com/icons/47700/close)
+## Attribution
 
-[save-symbolic.svg](https://iconduck.com/icons/21869/download)
+- `move-symbolic.svg`, `close-symbolic.svg`, `save-symbolic.svg`,
+  `separator-symbolic.svg` and `choose-window-symbolic.svg` originated from
+  public Iconduck assets retained by the inherited extension.
+- `toggle-off-autorestore-symbolic.svg` and
+  `toggle-on-autorestore-symbolic.svg` are based on GNOME Shell symbolic toggle
+  artwork.
+- SessionSifu-specific artwork and its license/design notes are documented in
+  the [branding guide](../../../branding/README.md).
 
-[separator-symbolic.svg](https://iconduck.com/icons/59149/separator)
-
-[toggle-off-symbolic.svg modified based on toggle-off.svg](https://gitlab.gnome.org/GNOME/gnome-shell/-/blob/main/data/theme/toggle-off.svg)
-
-[toggle-on-symbolic.svg modified based on toggle-on.svg](https://gitlab.gnome.org/GNOME/gnome-shell/-/blob/main/data/theme/toggle-on.svg)
-
-[choose-window-symbolic.svg](https://iconduck.com/icons/230732/choose-your-profession)
+All redistributed assets ship under the licensing and attribution terms stated
+in the project [NOTICE](../../../NOTICE) and extension
+[LICENSE](../LICENSE).

@@ -1,6 +1,6 @@
 # Contributing to SessionSifu
 
-SessionSifu 2 targets Ubuntu 26.04/GNOME Shell 50, KDE Plasma 6, Windows and
+SessionSifu 3.1 targets Ubuntu 26.04/GNOME Shell 50, KDE Plasma 6, Windows and
 macOS. Changes should preserve the separation between the GNOME Shell
 extension, portable core, platform adapters, unprivileged managers and
 distribution layers.
@@ -48,16 +48,21 @@ crash dumps, credentials, editor state or unrelated generated files.
 ## Local validation
 
 Install the build-time tools used by `packaging/build-deb.sh`, including Python
-3, GJS, Node.js, `desktop-file-validate`, `glib-compile-schemas`, `zip` and
-`dpkg-deb`. Then run:
+3 with Pillow, GJS, Node.js, Tesseract 4+, `desktop-file-validate`,
+`glib-compile-schemas`, `zip` and `dpkg-deb`. Then run:
 
 ```sh
 ./packaging/build-deb.sh
 ```
 
 The script is the canonical validation entry point. It checks source syntax,
-desktop files, schema lookup, D-Bus method declarations, update-manifest safety
+desktop files, schema lookup, D-Bus method declarations, update-manifest safety,
 portable storage/model behavior and package assembly.
+
+Documentation-only changes should run `python3 tests/test_docs.py`. Media under
+`docs/media/` must use synthetic titles, paths and screenshots; never publish a
+real contributor desktop or Recall vault. Rebuild the walkthrough with
+`python3 tools/render-recall-demo.py` after changing its source script.
 
 Portable-only work can be checked quickly with:
 

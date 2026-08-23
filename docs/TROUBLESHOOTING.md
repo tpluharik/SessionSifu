@@ -78,6 +78,17 @@ locally. OCR is never inferred from the main Recall switch. If diagnostics repor
 the private fallback key, install/configure a Secret Service-compatible keyring
 and restart SessionSifu before enabling visual capture.
 
+For a system installation, verify the bundled models with:
+
+```sh
+tesseract --tessdata-dir /usr/share/sessionsifu/tessdata --list-langs
+```
+
+For an in-app user-local update, use
+`~/.local/share/sessionsifu/tessdata` instead. The output should include `ces`
+and `eng`. If the directory is absent, install/update to 3.1.9 or newer rather
+than downloading an unverified model manually.
+
 New captures normally contain display previews and a separate image for each
 eligible open window. An individual card can still say that no preview is
 available when the window was minimized/unmapped, the platform denied screen

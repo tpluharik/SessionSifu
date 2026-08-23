@@ -1,4 +1,4 @@
-# Security audit — 22 August 2026
+# Security audit — 22 August 2026 (documentation verified for 3.1.9)
 
 ## Version 3.0 Recall security delta
 

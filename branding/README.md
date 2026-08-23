@@ -13,10 +13,16 @@ remaining one continuous session.
 - `../app/org.gnome.SessionSifu.svg` is the production application icon.
 - `../extension/sessionsifu@local/icons/sessionsifu-symbolic.svg` is the
   monochrome GNOME top-bar icon.
+- `../docs/media/recall-demo.webp` is the lightweight synthetic README
+  walkthrough; `recall-demo.mp4` is its downloadable video counterpart.
 
 The SVG assets are intentionally simple enough to remain legible at launcher
 and panel sizes. They are part of SessionSifu and distributed under the same
 GPL-3.0 license as the application.
+
+The Recall walkthrough is rendered from synthetic UI content by
+`../tools/render-recall-demo.py`; it deliberately contains no real desktop,
+window title, account or document path.
 
 ## Source concept prompt
 

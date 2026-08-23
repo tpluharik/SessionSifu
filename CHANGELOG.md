@@ -2,6 +2,18 @@
 
 All notable SessionSifu changes are documented here.
 
+## Unreleased
+
+- Reorganized the complete documentation set around a new index and dedicated
+  Privacy Recall workflow guide. Corrected stale project names, updater/OCR
+  behavior and shipped per-window capture claims.
+- Modernized the roadmap into a shipped 3.1.9 foundation, two next priorities,
+  eight planned/research tracks, continuous engineering gates and explicit
+  privacy non-goals.
+- Added a reproducible synthetic Recall walkthrough as an animated WebP,
+  downloadable H.264 MP4 and static poster, plus documentation/media link
+  regression checks.
+
 ## 3.1.9
 
 - Bundled pinned Czech and English fast Tesseract models so Recall recognizes

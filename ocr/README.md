@@ -5,6 +5,9 @@ models so mixed Czech/English desktop text works immediately after a normal
 installation, a user-local in-app update, or a portable installation. OCR is
 performed locally and does not download language data at runtime.
 
+See the [Recall workflow](../docs/RECALL_GUIDE.md) for enabling OCR and the
+[privacy guide](../docs/PRIVACY.md) for storage and processing boundaries.
+
 The models come from the official
 [`tesseract-ocr/tessdata_fast`](https://github.com/tesseract-ocr/tessdata_fast)
 repository at commit `87416418657359cb625c412a48b6e1d6d41c29bd`.

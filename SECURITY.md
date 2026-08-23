@@ -37,6 +37,9 @@ supported security branches.
   document paths, and other sensitive desktop metadata. They are not encrypted.
 - Recall is disabled by default. Screenshot previews and open-file paths have
   separate opt-ins. Recall storage is local and is not uploaded by SessionSifu.
+- Czech and English OCR models are pinned, hash-checked release resources.
+  Recognition runs locally; the signed updater fails closed when its bundled
+  model/configuration set is incomplete.
 - A restorable session is active configuration, not a passive interchange
   document. Restore only sessions created by a trusted SessionSifu installation;
   do not restore downloaded or shared JSON files.

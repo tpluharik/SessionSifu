@@ -16,10 +16,10 @@ SessionSifu saves and reconstructs desktop layouts. It records running
 applications, documents and windows, then can relaunch applications and rebuild
 the supported parts of their layout.
 
-Version 3.0 retains the full Ubuntu 26.04/GNOME Shell 50 integration and adds an
-encrypted, OCR-capable visual activity timeline across GNOME, Windows, macOS,
-KDE Plasma 6 and other Linux desktops. The project is open source under
-GPL-3.0.
+Version 3.1.9 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
+encrypted, per-window OCR activity timeline across GNOME, Windows, macOS, KDE
+Plasma 6 and other Linux desktops. Czech and English OCR data ships with the
+installer and verified update. The project is open source under GPL-3.0.
 
 ## Features
 
@@ -51,6 +51,17 @@ GPL-3.0.
   and related-match ranking remain separate opt-ins.
 - A live recording badge on the GNOME top-bar or portable tray icon while a
   Privacy Recall snapshot is being written.
+
+## Recall walkthrough
+
+![Privacy Recall search walkthrough](docs/media/recall-demo.webp)
+
+The short walkthrough uses synthetic window titles and documents. It shows a
+local capture, per-window OCR search, matching-word highlighting and gallery
+navigation without publishing a real user's desktop. Download the
+[MP4 version](docs/media/recall-demo.mp4), or read the
+[Recall workflow guide](docs/RECALL_GUIDE.md) for the complete controls and
+privacy boundary.
 
 ## Compatibility
 
@@ -203,7 +214,9 @@ repository. A newer Debian package is downloaded only from the SessionSifu
 repository on `raw.githubusercontent.com`. Before installing it, the application
 verifies:
 
+- the Ed25519 signature over the exact manifest bytes;
 - that the manifest version is valid;
+- that its issue/expiry window and minimum version are valid;
 - that the URL uses HTTPS and belongs to this repository;
 - the declared package size;
 - a 50 MiB maximum download size; and
@@ -211,8 +224,9 @@ verifies:
 
 The checksum-verified package is extracted—not registered with `apt` or installed with
 `dpkg -i`—and its application, companion Recall engine, desktop entry, autostart
-entry, icon and GNOME extension are installed below the current user's XDG
-directories. Supporting files are written first; `~/.local/bin/sessionsifu` is
+entry, icon, GNOME extension and bundled Czech/English OCR data are installed
+below the current user's XDG directories. Supporting files are written first;
+`~/.local/bin/sessionsifu` is
 atomically switched to the complete user-local application last. No root
 privileges or system package manager are used. A logout and login is still
 required to load a replaced GNOME Shell extension on Wayland.
@@ -220,8 +234,8 @@ The Debian package remains the supported initial installation method because it
 provides SessionSifu's runtime dependencies.
 
 Portable Windows, macOS and Linux builds are currently updated by downloading a
-new checksummed artifact from the repository's Releases page. Native
-verified in-app replacement for those bundles is roadmap item 2; the interface
+new checksummed artifact from the repository's Releases page. Native verified
+in-app replacement for those bundles is roadmap item 5; the interface
 does not silently invoke a system package manager.
 
 ## Command line
@@ -271,7 +285,8 @@ Session data stays on the local computer under `~/.config/sessionsifu/`:
 ~/.config/sessionsifu/
 ├── currentSession/   continuously observed current-window state
 ├── history/          five rolling automatic snapshots
-└── sessions/         named sessions and their backups
+├── sessions/         named sessions and their backups
+└── recall/           encrypted optional Recall records and previews
 ```
 
 Downloaded update packages are cached under
@@ -423,12 +438,10 @@ Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
 
-The public [SessionSifu roadmap](ROADMAP.md) contains eleven scoped improvements
-covering signed builds, native portable updates, Wayland protocol support,
-application-specific document restoration, monitor mapping, browser and
-terminal integrations, recovery previews, accessibility/localization,
-performance/security, optional encrypted export and privacy-first local
-activity recall.
+The modernized [SessionSifu roadmap](ROADMAP.md) separates the shipped 3.1.9
+foundation from two near-term priorities and eight planned/research tracks.
+Each entry states its privacy boundary and a testable completion condition; the
+roadmap also records explicit non-goals.
 
 ## Community and development
 
@@ -444,7 +457,9 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Security policy and private reporting](SECURITY.md)
 - [Security audit and remediation plan](docs/SECURITY_AUDIT.md)
 - [Privacy and local-data guide](docs/PRIVACY.md)
+- [Recall workflow guide](docs/RECALL_GUIDE.md)
 - [Recall research and product decisions](docs/RECALL_RESEARCH.md)
+- [Documentation index](docs/README.md)
 
 The current 3.1.9 release includes verified Czech and English fast Tesseract
 models in the Debian package, signed in-app update and portable artifacts. Mixed

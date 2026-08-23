@@ -1,5 +1,8 @@
 # Architecture
 
+This document describes the 3.1.9 runtime and release layout. User-facing
+Recall steps live in [RECALL_GUIDE.md](RECALL_GUIDE.md).
+
 SessionSifu 3 has a full GNOME runtime, a portable runtime shared by Windows,
 macOS and Linux desktops, and platform-specific distribution layers.
 

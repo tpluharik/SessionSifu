@@ -31,6 +31,7 @@ gjs -m "$project_dir/tests/recall-privacy-smoke.js"
 python3 "$project_dir/tests/test_static.py" "$project_dir"
 python3 "$project_dir/tests/test_portable.py"
 python3 "$project_dir/tests/test_recall_engine.py"
+python3 "$project_dir/tests/test_docs.py" "$project_dir"
 
 mkdir -p "$stage/DEBIAN"
 mkdir -p "$stage/usr/bin"

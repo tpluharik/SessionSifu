@@ -1,125 +1,173 @@
 # SessionSifu roadmap
 
-SessionSifu 3.0 establishes an encrypted visual Recall engine in addition to the shared session format, portable desktop manager,
-platform adapters and release automation. The following eleven improvements are
-ordered by safety and user impact rather than promised release date.
+This roadmap describes product direction after 3.1.9. It is ordered by user
+impact, privacy risk and platform feasibility; it is not a release-date promise.
+Operating-system security boundaries take precedence over feature parity.
 
-## 1. Signed and notarized release artifacts
+Status labels used below:
 
-Add Windows code signing, Apple Developer ID signing/notarization and Linux
-artifact attestations. Keep SHA-256 sums and publish reproducible build metadata
-so users can verify both origin and contents.
+- **Shipped** — available in the current stable source and signed update;
+- **Next** — intended for the next focused development cycle;
+- **Planned** — accepted direction that still needs design or platform work;
+- **Research** — useful goal without a dependable cross-platform API yet.
 
-## 2. Verified native updates for portable editions
+## Shipped foundation — 3.1.9
 
-Extend the existing verified updater to Windows, macOS and portable Linux
-bundles. Downloads must be repository-scoped, size-limited, checksum-verified,
-atomic and rollback-capable without invoking a system package manager.
+SessionSifu currently provides:
 
-## 3. Standard Wayland session-management protocol
+- GNOME Shell 50 session capture and restoration for Ubuntu 26.04;
+- named sessions and five-entry rolling automatic history;
+- best-effort document reopening and conservative window-layout restoration;
+- portable Windows, macOS, KDE Plasma and generic Linux managers;
+- signed, repository-scoped user-local updates for the GNOME edition;
+- Privacy Recall as an off-by-default, encrypted local visual timeline;
+- separately captured and searchable images for up to 64 eligible windows;
+- per-window OCR search, screenshot word highlighting and gallery navigation;
+- app/site exclusions, timed pauses, quotas, capture diagnostics and granular
+  deletion; and
+- pinned Czech and English OCR data in installation and update artifacts.
 
-Adopt the standardized Wayland session-management protocol as support lands in
-KWin, Mutter, Qt, GTK and applications. Prefer it over compositor-specific
-automation, while retaining safe fallbacks for older desktops.
+The [feature overview](README.md#features),
+[architecture](docs/ARCHITECTURE.md), and
+[privacy guide](docs/PRIVACY.md) define the exact shipped boundary.
 
-## 4. Application-specific document restoration
+## 1. Recall correctness and capture health — Next
 
-Add opt-in adapters for LibreOffice, VS Code, JetBrains IDEs and document-based
-macOS applications. Use supported application APIs and recent-document stores
-instead of guessing from titles whenever possible.
+Make capture failures and weak OCR easier to understand without exposing user
+content in logs.
 
-## 5. Stable multi-monitor topology mapping
+- Show per-capture counts for eligible, captured, excluded, unavailable and
+  OCR-indexed windows.
+- Add a local OCR diagnostics view with active language models, Tesseract
+  version, recognition duration and confidence distribution.
+- Build a synthetic Czech/English UI-text corpus covering scaling, dark mode,
+  small fonts and mixed-language windows.
+- Add an explicit retry for metadata-only or partially captured moments without
+  silently weakening exclusions.
 
-Record monitor identity, scale, rotation and relative topology. Restore windows
-conservatively when displays are missing or rearranged, with an interactive map
-instead of moving windows off-screen.
+Completion means users can distinguish permission, compositor, exclusion,
+timeout and recognition problems from the UI alone.
 
-## 6. Browser and terminal session bridges
+## 2. Restore preview and crash-safe journal — Next
 
-Integrate browser profile/session APIs and terminal workspace exports where
-available. Never capture private tabs, shell history or commands without an
-explicit per-application opt-in.
+Add a dry-run page showing which applications, files and windows will be
+started, reused, moved or skipped. Record restoration operations in a bounded
+owner-private journal so interrupted restores can be inspected and safely
+retried.
 
-## 7. Restore preview, diff and crash-safe journal
+Completion requires no saved command to reach a shell, no automatic overwrite
+of a newer desktop state, and a clear partial-success report.
 
-Show what applications, files and windows will change before restoration. Add
-an append-only operation journal so interrupted restores can be inspected,
-retried or rolled back without corrupting saved sessions.
+## 3. Application-specific document adapters — Planned
 
-## 8. Accessibility, localization and keyboard workflows
+Add opt-in adapters for applications whose public APIs can restore more than a
+generic file launch, beginning with LibreOffice, VS Code and JetBrains IDEs.
+Document-based macOS applications should use supported restoration APIs where
+available.
 
-Complete screen-reader labels, full keyboard navigation, high-contrast icon
-checks and localized user-facing text. Start with Czech, English and German and
-provide a documented translation workflow.
+Adapters must declare exactly what they observe and restore. Unsaved buffers,
+private tabs and terminal commands remain the application's responsibility
+unless an explicit, reviewed integration exists.
 
-## 9. Performance and security hardening
+## 4. Stable multi-monitor topology mapping — Planned
 
-Move slow process and window inspection off UI/compositor threads, add bounded
-parallelism and fuzz the JSON/update parsers. Introduce platform sandbox and
-permission audits plus automated long-running capture/restore stress tests.
+Record monitor identity, scale, rotation and relative topology, then reconcile
+saved layouts when displays are missing, renamed or rearranged. Provide a
+previewable mapping instead of moving windows off-screen.
 
-The 22 August 2026 [security audit](docs/SECURITY_AUDIT.md) produced the ordered
-hardening program below. Version 2.5.0 completes items 1, 2, 4, 5 and 6, adds
-rate limiting/log reduction for item 7, and pins action/direct dependency inputs
-for item 3:
+Completion requires tests for docking/undocking, mixed scaling, portrait
+rotation and a single-display fallback.
 
-1. remove shell interpretation from GNOME restore and distrust imported session
-   launch data;
-2. migrate all session storage to owned `0700` directories and `0600` files;
-3. pin release actions and build dependencies, then publish SBOM/provenance;
-4. verify updates with signed, expiring and rollback-resistant metadata;
-5. close asynchronous Recall exclusion/lock races before preview publication;
-6. replace compositor-thread regular expressions with bounded matching;
-7. reduce same-user D-Bus and diagnostic-log exposure; and
-8. add parser fuzzing plus adversarial GNOME, Windows and macOS restore tests.
+## 5. Verified native updates for portable editions — Planned
 
-Remaining work is fully hashed transitive platform locks, SBOM/provenance,
-interactive authorization for destructive same-user calls, sanitized diagnostic
-export and sustained live-platform fuzz/stress testing.
+Extend the signed update model to Windows, macOS and portable Linux artifacts.
+Every implementation must be repository-scoped, size-limited,
+signature/checksum verified, atomic and rollback-capable without invoking a
+system package manager.
 
-## 10. Encrypted export and optional user-controlled sync
+The current GNOME `.deb` updater is the reference design; portable editions
+continue to use checksummed GitHub Release downloads until this milestone is
+complete.
 
-Support portable encrypted session archives for backup or transfer between the
-same user's devices. Sync must remain off by default, end-to-end encrypted and
-independent of any mandatory hosted SessionSifu service.
+## 6. Release trust and reproducibility — Planned
 
-## 11. Privacy-first local activity recall — delivered in 3.0
+Add Windows Authenticode signing, Apple Developer ID signing/notarization,
+Linux provenance attestations, SBOMs and fully hashed transitive dependency
+locks. Publish enough metadata to audit which source tree produced every
+artifact.
 
-SessionSifu 3.0 delivers an optional, Recall-style activity timeline that helps users find and
-resume earlier work through periodic desktop snapshots, on-device OCR and local
-semantic search. The feature must be disabled by default and show a persistent,
-unambiguous indicator whenever capture is active.
+These controls complement, rather than replace, SessionSifu's Ed25519 update
+signature and pinned CI actions.
 
-Design it around data minimization and a published threat model: let users
-exclude applications, windows, websites, displays and private/incognito
-contexts; detect and redact password fields and other sensitive content where
-platform APIs permit; support an immediate pause control; and provide short,
-configurable retention with deletion by time range, application or website.
-Snapshots, extracted text and indexes must be encrypted at rest with keys held
-in the operating-system credential store. Processing stays on the device by
-default, with no advertising use, model-training upload or hidden telemetry.
-Any export or synchronization requires a separate explicit opt-in, end-to-end
-encryption and a clear preview of exactly what will leave the device. Security
-review, storage quotas, crash-safe deletion and automated privacy regression
-tests are release requirements rather than follow-up work.
+## 7. Standard Wayland session management — Research
 
-The 3.0 implementation remains off by default and separates screenshot, OCR,
-file-path and related-match opt-ins. Persistent records, previews and extracted
-text use authenticated encryption; search uses an ephemeral in-memory FTS5
-database. It provides visual timeline navigation, local OCR, related ranking,
-reopening, timed pauses, quotas, sensitive-text filtering, capture diagnostics
-and granular deletion. Version 3.1 adds individual-window search results,
-GNOME focused-window ranking, app filters, window-cropped encrypted previews and
-window-specific reopen targets across the GNOME and portable interfaces.
-The next implementation increment replaces approximate crops with separately
-captured, encrypted and OCR-indexed images for up to 64 renderable windows,
-while retaining display crops as a compatibility fallback.
-Future work remains for stronger native credential-store
-integration in every portable bundle, browser cooperation for reliable private
-tab/domain detection and optional packaged local embedding models.
+Adopt a standardized Wayland session-management protocol when dependable
+support exists across compositors, toolkits and applications. Prefer that path
+over compositor automation while retaining truthful capability reporting and
+safe fallbacks.
+
+Until then, GNOME full integration uses its version-matched Shell extension and
+KDE Plasma uses `kdotool` where available. Generic Wayland builds do not claim
+window geometry they cannot observe.
+
+## 8. Browser and terminal cooperation — Research
+
+Explore browser profile/session and terminal workspace APIs that can restore
+user-selected state. Private/incognito content, shell history, commands and
+terminal output must never be captured by inference or enabled through the
+general Recall switch.
+
+Any integration requires a separate per-application opt-in, a data preview and
+a documented deletion path.
+
+## 9. Accessibility, localization and keyboard workflows — Planned
+
+Complete screen-reader labels, keyboard-only operation, focus order, reduced
+motion and high-contrast checks. Introduce a translation workflow beginning
+with English, Czech and German, including localized OCR diagnostics rather than
+localized model assumptions.
+
+The manager, Recall search popup, tray/top-bar menus and restore preview must be
+usable without a pointer.
+
+## 10. Encrypted export and user-controlled sync — Planned
+
+Support portable encrypted archives for backup or transfer between the same
+user's devices. Export and sync stay off by default, require an explicit
+destination and key decision, preview the included data, and never depend on a
+mandatory SessionSifu cloud account.
+
+Cross-device import must treat session launch data as active configuration and
+require review before restoration.
+
+## Continuous engineering gates
+
+Every roadmap item remains subject to these release gates:
+
+- no telemetry, advertising use or hidden upload of session/Recall data;
+- screenshot, OCR, file-path and related-match controls remain separate opt-ins;
+- bounded parsing, capture, retention, memory and subprocess execution;
+- exclusion and lock-state checks before and after asynchronous image work;
+- regression tests for GNOME Shell stability and applications closing during
+  capture or restoration;
+- private local permissions, symlink rejection and atomic replacement; and
+- documentation that distinguishes tested support from best effort.
+
+The open hardening record is maintained in
+[docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md).
+
+## Explicit non-goals
+
+SessionSifu does not plan to serialize arbitrary application memory, bypass
+Wayland/macOS permission models, capture audio or keystrokes, restore private
+browser tabs by inference, or provide covert employee monitoring. “Recall-like”
+means a user-controlled local activity aid, not feature parity at the cost of
+privacy.
 
 ## Contributing to the roadmap
 
-Use the repository's feature-request form to discuss scope and platform APIs
-before implementation. A roadmap entry describes direction, not a promise to
-bypass operating-system security boundaries or claim unsupported fidelity.
+Use the repository's
+[feature-request form](https://github.com/tpluharik/SessionSifu/issues/new?template=feature_request.yml)
+to discuss scope and platform APIs before implementation. Useful proposals
+include a concrete workflow, affected platforms, permission boundary, failure
+behavior and a testable completion condition.

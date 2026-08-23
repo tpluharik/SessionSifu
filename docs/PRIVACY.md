@@ -52,6 +52,9 @@ Portable editions:
 
 ## Recall protections and limits
 
+For the user-facing sequence behind these controls, see the
+[Privacy Recall workflow](RECALL_GUIDE.md).
+
 Recall is designed for data minimization, not invisible monitoring:
 
 - capture and screenshot controls are off by default;

@@ -27,6 +27,12 @@ Inspect the generated version, channel, issue/expiry time, minimum version, URL,
 size and SHA-256 before committing the package, manifest and signature together.
 Do not put the private key in a repository secret merely to automate signing.
 
+Confirm that the package contains `ces.traineddata`, `eng.traineddata`, the TSV
+configuration, provenance README and Apache-2.0 license under
+`/usr/share/sessionsifu/tessdata/`. The static checks bind these vendored files
+to their reviewed SHA-256 digests, and the user-local package test verifies that
+the updater copies them before activating the launcher.
+
 ## Rotation
 
 Key rotation needs a bridge release authenticated by the old key. That release

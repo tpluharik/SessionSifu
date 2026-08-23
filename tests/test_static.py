@@ -92,6 +92,7 @@ assert "tests/recall-activity-smoke.js" in build_script
 assert "tests/recall-privacy-smoke.js" in build_script
 assert "tests/test_portable.py" in build_script
 assert "ROADMAP.md" in build_script
+assert "tests/test_docs.py" in build_script
 assert 'ocr/tessdata/ces.traineddata' in build_script
 assert 'ocr/tessdata/eng.traineddata' in build_script
 
@@ -308,7 +309,9 @@ for required in (
     assert required.is_file(), required
 
 roadmap = (root / "ROADMAP.md").read_text()
-assert len(re.findall(r"^## \d+\.", roadmap, re.MULTILINE)) == 11
+assert len(re.findall(r"^## \d+\.", roadmap, re.MULTILINE)) == 10
+assert "## Shipped foundation — 3.1.9" in roadmap
+assert "## Explicit non-goals" in roadmap
 
 workflow = (root / ".github" / "workflows" / "release.yml").read_text()
 for runner in ("ubuntu-26.04", "windows-2025", "macos-15", "macos-15-intel"):

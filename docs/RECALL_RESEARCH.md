@@ -48,6 +48,11 @@ SessionSifu's corresponding decisions are:
   deletion; and
 - apply exclusions both when recording and when searching old history.
 
+Version 3.1.9 implements the window-first design with separately rendered GNOME
+window surfaces, encrypted per-window previews, Czech/English OCR, word-box
+highlighting and a complete moment gallery. Metadata-only entries remain an
+intentional, visible fallback when a window has no capturable surface.
+
 ## Open alternatives
 
 [OpenRecall](https://github.com/openrecall/openrecall) demonstrates a
