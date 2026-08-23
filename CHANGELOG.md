@@ -2,6 +2,11 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.0.1
+
+- Fixed the tag-only publisher by checking out the tagged repository before
+  `gh release --verify-tag`; every platform artifact already built successfully.
+
 ## 3.0.0
 
 - Rebuilt Privacy Recall as an AES-256-GCM encrypted vault. GNOME prefers the
