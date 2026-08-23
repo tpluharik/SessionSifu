@@ -1,11 +1,11 @@
 {
-  "version": "3.1.2",
+  "version": "3.1.3",
   "channel": "stable",
-  "issued_at": "2026-08-23T16:07:03Z",
-  "expires_at": "2026-10-07T16:07:03Z",
+  "issued_at": "2026-08-23T16:49:57Z",
+  "expires_at": "2026-10-07T16:49:57Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.2_all.deb",
-  "sha256": "29868fbed11fc0a2a47e657d604a7975dd3ecd579297f967395111bb57ee8612",
-  "size": 287646,
-  "notes": "SessionSifu 3.1.2 adds bounded encrypted screenshots and OCR indexing for individual open windows in Privacy Recall, with privacy-preserving display fallbacks."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.3_all.deb",
+  "sha256": "a0ea8022a6a85d795430ec6e4e4de8982eeea7c23d2bdbf8da698069991a314c",
+  "size": 288416,
+  "notes": "SessionSifu 3.1.3 fixes GNOME/Wayland per-window Recall screenshots by normalizing Mutter window IDs and avoids misleading display-crop previews for inactive windows."
 }

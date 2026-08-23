@@ -227,6 +227,14 @@ function _captureWindowActor(path, actor) {
     });
 }
 
+function _stableWindowKey(value) {
+    // Meta.Window.get_id() is exposed as a number on Wayland, while JSON
+    // round-tripping and older X11 captures can produce either numbers or
+    // strings. Normalize both sides so every saved window can be paired with
+    // its live compositor actor.
+    return String(value ?? '');
+}
+
 async function _captureWindowActors(name) {
     const path = GLib.build_filenamev([FileUtils.recall_path, name]);
     const file = Gio.File.new_for_path(path);
@@ -237,20 +245,24 @@ async function _captureWindowActors(name) {
     const windowIndexes = new Map(
         (payload.x_session_config_objects ?? [])
             .slice(0, MAX_WINDOW_PREVIEWS)
-            .map((window, index) => [String(window.window_id ?? ''), index])
+            .map((window, index) => [_stableWindowKey(window.window_id), index])
             .filter(([windowId]) => windowId));
     if (!windowIndexes.size)
-        return 0;
+        return {eligible: 0, captured: 0};
     const jobs = [];
+    const scheduledIndexes = new Set();
     for (const actor of global.get_window_actors()) {
         if (jobs.length >= MAX_WINDOW_PREVIEWS)
             break;
         const metaWindow = actor?.meta_window;
         if (!metaWindow)
             continue;
-        const index = windowIndexes.get(MetaWindowUtils.getStableWindowId(metaWindow));
-        if (index === undefined)
+        const windowId = _stableWindowKey(
+            MetaWindowUtils.getStableWindowId(metaWindow));
+        const index = windowIndexes.get(windowId);
+        if (index === undefined || scheduledIndexes.has(index))
             continue;
+        scheduledIndexes.add(index);
         jobs.push([index, actor]);
     }
     let captured = 0;
@@ -261,7 +273,7 @@ async function _captureWindowActors(name) {
                 _captureWindowActor(_windowScreenshotPath(name, index, true), actor)));
         captured += results.filter(result => result.status === 'fulfilled').length;
     }
-    return captured;
+    return {eligible: jobs.length, captured};
 }
 
 function _compressScreenshot(rawPath, name, displays) {
@@ -639,7 +651,10 @@ export const RecallRecorder = class {
                 throw new Error('No active displays are available for Recall preview capture');
             const rawPath = _rawScreenshotPath(name);
             await _captureScreenshot(rawPath);
-            await _captureWindowActors(name);
+            const windowCapture = await _captureWindowActors(name);
+            this._log.info(
+                `Captured ${windowCapture.captured} of ${windowCapture.eligible} ` +
+                'eligible Recall window previews');
             if (this._destroyed || screenshotGeneration !== this._screenshotGeneration ||
                 Main.sessionMode.isLocked || _excludedApplicationVisible(exclusions)) {
                 _removeScreenshots(name);

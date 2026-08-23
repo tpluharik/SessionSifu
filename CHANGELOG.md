@@ -2,6 +2,18 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.1.3
+
+- Fixed GNOME/Wayland per-window Recall capture by normalizing numeric live
+  Mutter window IDs and JSON window IDs before matching compositor actors.
+- Added duplicate scheduling protection and capture-count diagnostics for the
+  bounded per-window screenshot batch.
+- Stopped substituting an unrelated full-display crop when an inactive
+  window's exact compositor image is unavailable; such results now show the
+  privacy-safe unavailable-preview state.
+- Added regression checks for Wayland ID normalization and exact-window
+  preview fallback behavior.
+
 ## 3.1.2
 
 - Added bounded, compressed and encrypted screenshots for up to 64 eligible

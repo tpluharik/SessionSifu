@@ -31,8 +31,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.1.2"
-assert metadata["version"] == 21
+assert metadata["version-name"] == "3.1.3"
+assert metadata["version"] == 22
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -63,7 +63,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.1.2"' in build_script
+assert 'version="3.1.3"' in build_script
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
@@ -135,7 +135,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.1.2"' in app_source
+assert 'CURRENT_VERSION = "3.1.3"' in app_source
 assert 'self.settings.value("recall_enabled", False, type=bool)' in (
     root / "portable" / "sessionsifu_portable" / "ui.py"
 ).read_text()
@@ -148,6 +148,18 @@ assert '"matched_window"' in (root / "app" / "recall_engine.py").read_text()
 assert "recall_windows" in (root / "app" / "recall_engine.py").read_text()
 assert "recall_screenshot_path" in app_source
 assert "def compress_recall_preview" in app_source
+recorder_source = (
+    root / "extension" / "sessionsifu@local" / "recallRecorder.js"
+).read_text()
+assert "function _stableWindowKey(value)" in recorder_source
+assert "windowIndexes.get(windowId)" in recorder_source
+assert "MetaWindowUtils.getStableWindowId(metaWindow));" in recorder_source
+assert (
+    "windowIndexes.get(MetaWindowUtils.getStableWindowId(metaWindow))"
+    not in recorder_source
+)
+assert "Captured ${windowCapture.captured} of ${windowCapture.eligible}" in recorder_source
+assert 'if not bool(match.get("focused", False)):' in app_source
 assert "MAX_RECALL_PREVIEW_EDGE = 1280" in app_source
 assert "MAX_RECALL_WINDOW_PREVIEW_EDGE = 960" in app_source
 assert 'save_preview(cropped, target, MAX_RECALL_PREVIEW_EDGE, "70")' in app_source
