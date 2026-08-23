@@ -2,6 +2,19 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.1.9
+
+- Bundled pinned Czech and English fast Tesseract models so Recall recognizes
+  mixed Czech/English application text without a separate language-pack
+  installation. Recognition remains fully local and opt-in.
+- Included the models, TSV configuration, license and provenance in Debian,
+  signed user-local update and PyInstaller portable layouts. The in-app updater
+  now validates and atomically installs the OCR directory before activating the
+  new application launcher.
+- Added immutable SHA-256 checks for every vendored OCR resource plus regression
+  coverage for system/source discovery and real package extraction into a
+  user-local install.
+
 ## 3.1.8
 
 - Improved screenshot OCR before recognition without enlarging the encrypted

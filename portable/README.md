@@ -21,6 +21,10 @@ does not expose one. Images are encrypted locally, optional OCR is indexed per
 window, and a result can reopen its opted-in file. Minimized/unmapped windows
 may remain metadata-only.
 
+Version 3.1.9 bundles the pinned Czech and English Tesseract language models in
+portable artifacts. OCR still requires a compatible local Tesseract executable;
+the language data itself is no longer a separate download.
+
 Vault keys prefer Windows Credential Locker, macOS Keychain and the available
 Linux Secret Service/KWallet backend. A private application-data key is used
 when no usable credential backend exists and remains authoritative for that

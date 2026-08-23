@@ -43,8 +43,13 @@ with tempfile.TemporaryDirectory(prefix="sessionsifu-package-test-") as director
     )
     installed_app = test_root / "data/sessionsifu/app/sessionsifu"
     installed_module = test_root / "data/sessionsifu/app/recall_engine.py"
+    installed_tessdata = test_root / "data/sessionsifu/tessdata"
     assert installed_app.is_file()
     assert installed_module.is_file()
+    assert (installed_tessdata / "ces.traineddata").stat().st_size > 1_000_000
+    assert (installed_tessdata / "eng.traineddata").stat().st_size > 1_000_000
+    assert (installed_tessdata / "configs/tsv").is_file()
+    assert (installed_tessdata / "LICENSE").is_file()
 
     # Directly launched Python scripts already contain their own directory in
     # sys.path. Ensure SessionSifu still moves that directory ahead of the

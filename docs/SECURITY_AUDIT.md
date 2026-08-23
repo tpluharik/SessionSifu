@@ -14,6 +14,9 @@ the principal invariants:
   compositor.
 - Record, preview, OCR, query, entry-count, retention and quota sizes are
   bounded. Symlinked roots, vaults, keys, captures and assets are rejected.
+- Bundled Czech/English OCR data is pinned to reviewed upstream revisions and
+  verified byte-for-byte by committed SHA-256 regression checks. The signed
+  updater requires the complete model/configuration set before activation.
 - Application/domain exclusions, lock/generation checks and default-on
   sensitive-text filtering precede vault publication. Changing an application
   exclusion deletes affected entries because stored pixels cannot be redacted.

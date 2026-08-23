@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import pathlib
 import re
 import sys
@@ -10,6 +11,22 @@ import xml.etree.ElementTree as ET
 
 root = pathlib.Path(sys.argv[1])
 extension = root / "extension" / "sessionsifu@local"
+
+ocr_files = {
+    "ces.traineddata": "934bcaf97ef3348413263331131c9fa7f55f30db333c711929c124fb635f7e1b",
+    "eng.traineddata": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
+    "configs/tsv": "59d079bb75d8b3d7c839a3564580cb559e362c93a9d70f234e421c0c3e767e04",
+    "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+}
+for relative, expected_sha256 in ocr_files.items():
+    model = root / "ocr" / "tessdata" / relative
+    assert model.is_file() and not model.is_symlink()
+    assert hashlib.sha256(model.read_bytes()).hexdigest() == expected_sha256
+assert (root / "ocr/tessdata/ces.traineddata").stat().st_size > 1_000_000
+assert (root / "ocr/tessdata/eng.traineddata").stat().st_size > 1_000_000
+assert "87416418657359cb625c412a48b6e1d6d41c29bd" in (
+    root / "ocr/README.md"
+).read_text()
 
 app_icon = root / "app" / "org.gnome.SessionSifu.svg"
 project_logo = root / "branding" / "sessionsifu-logo.svg"
@@ -31,8 +48,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.1.8"
-assert metadata["version"] == 27
+assert metadata["version-name"] == "3.1.9"
+assert metadata["version"] == 28
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -63,7 +80,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.1.8"' in build_script
+assert 'version="3.1.9"' in build_script
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
@@ -75,6 +92,8 @@ assert "tests/recall-activity-smoke.js" in build_script
 assert "tests/recall-privacy-smoke.js" in build_script
 assert "tests/test_portable.py" in build_script
 assert "ROADMAP.md" in build_script
+assert 'ocr/tessdata/ces.traineddata' in build_script
+assert 'ocr/tessdata/eng.traineddata' in build_script
 
 dbus = ET.parse(
     extension
@@ -135,7 +154,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.1.8"' in app_source
+assert 'CURRENT_VERSION = "3.1.9"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -165,6 +184,7 @@ assert '"--dpi", "180"' in recall_engine_source
 assert '"ocr_boxes": ocr_boxes' in recall_engine_source
 assert '"highlight_boxes": self._matching_ocr_boxes(window, needle)' in recall_engine_source
 assert "MIN_OCR_CONFIDENCE = 30.0" in recall_engine_source
+assert '"--tessdata-dir", str(bundled), "-l", "ces+eng"' in recall_engine_source
 assert "def _draw_ocr_highlights" in app_source
 assert "def _highlighted_picture" in app_source
 assert "highlight_layer.queue_draw()" in app_source

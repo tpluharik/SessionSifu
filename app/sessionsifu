@@ -48,7 +48,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E4
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.1.8"
+CURRENT_VERSION = "3.1.9"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -811,9 +811,9 @@ def _replace_desktop_exec(contents: str, executable: Path, arguments: str = "") 
     return "\n".join(lines) + "\n"
 
 
-def _replace_extension_tree(source: Path, target: Path) -> None:
+def _replace_directory_tree(source: Path, target: Path, label: str) -> None:
     if any(path.is_symlink() for path in source.rglob("*")):
-        raise ValueError("Update extension contains an unsupported symbolic link")
+        raise ValueError(f"Update {label} contains an unsupported symbolic link")
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".sessionsifu-extension-", dir=target.parent) as temp:
         temporary_root = Path(temp)
@@ -849,6 +849,13 @@ def install_user_payload(
     source_icon = payload_root / "usr/share/icons/hicolor/scalable/apps/org.gnome.SessionSifu.svg"
     source_extension = payload_root / "usr/share/gnome-shell/extensions" / UUID
     source_bundle = payload_root / "usr/share/sessionsifu/sessionsifu@local.shell-extension.zip"
+    source_tessdata = payload_root / "usr/share/sessionsifu/tessdata"
+    source_ocr_files = [
+        source_tessdata / "ces.traineddata",
+        source_tessdata / "eng.traineddata",
+        source_tessdata / "configs/tsv",
+        source_tessdata / "LICENSE",
+    ]
     required_files = [
         source_app,
         source_recall_module,
@@ -861,6 +868,8 @@ def install_user_payload(
         raise ValueError("Update package is missing a required SessionSifu file")
     if not source_extension.is_dir() or source_extension.is_symlink():
         raise ValueError("Update package is missing the GNOME Shell extension")
+    if any(not path.is_file() or path.is_symlink() for path in source_ocr_files):
+        raise ValueError("Update package is missing bundled Czech OCR data")
 
     local_app = user_bin_dir / "sessionsifu"
     installed_app_dir = user_data_dir / "sessionsifu/app"
@@ -890,9 +899,15 @@ def install_user_payload(
         user_data_dir / "sessionsifu/sessionsifu@local.shell-extension.zip",
         0o644,
     )
-    _replace_extension_tree(
+    _replace_directory_tree(
         source_extension,
         user_data_dir / "gnome-shell/extensions" / UUID,
+        "extension",
+    )
+    _replace_directory_tree(
+        source_tessdata,
+        user_data_dir / "sessionsifu/tessdata",
+        "OCR data",
     )
     _atomic_copy(source_app, installed_app, 0o755)
     _atomic_write_text(

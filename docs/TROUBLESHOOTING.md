@@ -70,13 +70,11 @@ If OCR results are absent, confirm **Capture screenshot previews** and **Index
 screenshot text with local OCR** are both enabled and that `tesseract --version`
 works. OCR applies to new captures and cannot be added retroactively. Search
 accepts exact words, useful word prefixes and small OCR substitutions; a word
-that Tesseract omitted entirely still cannot be found. Install the appropriate
-Tesseract language data when searching non-English text (for example,
-`sudo apt install tesseract-ocr-ces` for Czech). The default Debian dependency
-provides English recognition; language packs are intentionally optional because
-they are large and user-specific. SessionSifu automatically combines an
-installed model matching the desktop locale with English. OCR is never inferred
-from the main Recall switch. If diagnostics report
+that Tesseract omitted entirely still cannot be found. SessionSifu 3.1.9 and
+newer include verified Czech and English recognition data in the installation
+and signed in-app update package; no separate `tesseract-ocr-ces` package is
+needed. The models are selected together for mixed-language interfaces and run
+locally. OCR is never inferred from the main Recall switch. If diagnostics report
 the private fallback key, install/configure a Secret Service-compatible keyring
 and restart SessionSifu before enabling visual capture.
 
@@ -92,7 +90,7 @@ exclusions and the last **Capture diagnostics** reason.
 Use **Browse N windows** on a Recall card to inspect each captured window
 separately. The gallery lists linked window images first and display overviews
 after them; Previous/Next does not decrypt images until they are selected.
-Version 3.1.8 preprocesses a private OCR-only copy with grayscale contrast,
+Version 3.1.8 and newer preprocess a private OCR-only copy with grayscale contrast,
 bounded upscaling and sharpening, then deletes it immediately. The compressed
 encrypted preview itself is not enlarged. Version 3.1.7 and newer store
 confidence-filtered OCR word coordinates with new

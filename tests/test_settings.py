@@ -68,19 +68,19 @@ now = datetime.now(timezone.utc)
 manifest = module.parse_update_manifest(
     json.dumps(
         {
-            "version": "3.1.8",
+            "version": "3.1.9",
             "channel": "stable",
             "issued_at": (now - timedelta(minutes=1)).isoformat(),
             "expires_at": (now + timedelta(days=30)).isoformat(),
             "minimum_version": "2.5.0",
-            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.8_all.deb",
+            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.9_all.deb",
             "sha256": "a" * 64,
             "size": 12345,
             "notes": "Test update",
         }
     )
 )
-assert manifest["version"] == "3.1.8"
+assert manifest["version"] == "3.1.9"
 assert manifest["size"] == 12345
 
 older_manifest = module.parse_update_manifest(
@@ -145,6 +145,13 @@ with tempfile.TemporaryDirectory() as install_root:
     source_icon = payload_root / "usr/share/icons/hicolor/scalable/apps/org.gnome.SessionSifu.svg"
     source_extension = payload_root / "usr/share/gnome-shell/extensions/sessionsifu@local"
     source_bundle = payload_root / "usr/share/sessionsifu/sessionsifu@local.shell-extension.zip"
+    source_tessdata = payload_root / "usr/share/sessionsifu/tessdata"
+    source_ocr_files = [
+        source_tessdata / "ces.traineddata",
+        source_tessdata / "eng.traineddata",
+        source_tessdata / "configs/tsv",
+        source_tessdata / "LICENSE",
+    ]
     for path in [
         source_app,
         source_recall_module,
@@ -152,6 +159,7 @@ with tempfile.TemporaryDirectory() as install_root:
         source_autostart,
         source_icon,
         source_bundle,
+        *source_ocr_files,
     ]:
         path.parent.mkdir(parents=True, exist_ok=True)
     source_extension.mkdir(parents=True)
@@ -165,6 +173,10 @@ with tempfile.TemporaryDirectory() as install_root:
     source_autostart.write_text("[Desktop Entry]\nType=Application\nExec=sessionsifu --autostart\n")
     source_icon.write_text("<svg/>\n")
     source_bundle.write_bytes(b"extension bundle")
+    (source_tessdata / "ces.traineddata").write_bytes(b"czech model")
+    (source_tessdata / "eng.traineddata").write_bytes(b"english model")
+    (source_tessdata / "configs/tsv").write_text("tessedit_create_tsv 1\n")
+    (source_tessdata / "LICENSE").write_text("Apache-2.0\n")
     (source_extension / "metadata.json").write_text('{"version-name":"1.2.2"}\n')
 
     data_dir = install_root / "data"
@@ -184,6 +196,10 @@ with tempfile.TemporaryDirectory() as install_root:
     assert installed_app.stat().st_mode & 0o111
     installed_module = data_dir / "sessionsifu/app/recall_engine.py"
     assert installed_module.read_text() == source_recall_module.read_text()
+    installed_tessdata = data_dir / "sessionsifu/tessdata"
+    for source in source_ocr_files:
+        installed = installed_tessdata / source.relative_to(source_tessdata)
+        assert installed.read_bytes() == source.read_bytes()
     launched = subprocess.run(
         [str(local_app)],
         check=False,
@@ -210,7 +226,7 @@ try:
     module.parse_update_manifest(
         json.dumps(
             {
-                "version": "3.1.8",
+                "version": "3.1.9",
                 "channel": "stable",
                 "issued_at": (now - timedelta(minutes=1)).isoformat(),
                 "expires_at": (now + timedelta(days=30)).isoformat(),

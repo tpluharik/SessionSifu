@@ -5,7 +5,7 @@ project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 extension_dir="$project_dir/extension/sessionsifu@local"
 dist_dir="$project_dir/dist"
 updates_dir="$project_dir/updates"
-version="3.1.8"
+version="3.1.9"
 package="$dist_dir/sessionsifu_${version}_all.deb"
 update_package="$updates_dir/sessionsifu_${version}_all.deb"
 stage=$(mktemp -d /tmp/sessionsifu-package.XXXXXX)
@@ -41,6 +41,7 @@ mkdir -p "$stage/usr/share/icons/hicolor/scalable/apps"
 mkdir -p "$stage/usr/share/gnome-shell/extensions/sessionsifu@local"
 mkdir -p "$stage/usr/share/glib-2.0/schemas"
 mkdir -p "$stage/usr/share/sessionsifu"
+mkdir -p "$stage/usr/share/sessionsifu/tessdata/configs"
 mkdir -p "$stage/usr/share/doc/sessionsifu"
 mkdir -p "$stage/usr/share/doc/sessionsifu/docs"
 
@@ -53,6 +54,11 @@ install -m 0644 "$project_dir/app/org.gnome.SessionSifu.desktop" "$stage/usr/sha
 install -m 0644 "$project_dir/app/org.gnome.SessionSifu.Autostart.desktop" "$stage/etc/xdg/autostart/org.gnome.SessionSifu.desktop"
 install -m 0644 "$project_dir/app/org.gnome.SessionSifu.svg" "$stage/usr/share/icons/hicolor/scalable/apps/org.gnome.SessionSifu.svg"
 install -m 0644 "$project_dir/packaging/update-signing-public.pem" "$stage/usr/share/sessionsifu/update-signing-public.pem"
+install -m 0644 "$project_dir/ocr/tessdata/ces.traineddata" "$stage/usr/share/sessionsifu/tessdata/ces.traineddata"
+install -m 0644 "$project_dir/ocr/tessdata/eng.traineddata" "$stage/usr/share/sessionsifu/tessdata/eng.traineddata"
+install -m 0644 "$project_dir/ocr/tessdata/configs/tsv" "$stage/usr/share/sessionsifu/tessdata/configs/tsv"
+install -m 0644 "$project_dir/ocr/tessdata/LICENSE" "$stage/usr/share/sessionsifu/tessdata/LICENSE"
+install -m 0644 "$project_dir/ocr/README.md" "$stage/usr/share/sessionsifu/tessdata/README.md"
 install -m 0644 "$extension_dir/schemas/org.gnome.shell.extensions.sessionsifu.gschema.xml" "$stage/usr/share/glib-2.0/schemas/org.gnome.shell.extensions.sessionsifu.gschema.xml"
 cp -a "$extension_dir/." "$stage/usr/share/gnome-shell/extensions/sessionsifu@local/"
 (cd "$extension_dir" && zip -qr "$stage/usr/share/sessionsifu/sessionsifu@local.shell-extension.zip" .)

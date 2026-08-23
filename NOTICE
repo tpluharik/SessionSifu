@@ -1,4 +1,4 @@
-SessionSifu 3.1.8
+SessionSifu 3.1.9
 
 The GNOME Shell session engine is derived from Another Window Session Manager:
   https://github.com/nlpsuge/gnome-shell-extension-another-window-session-manager
@@ -15,4 +15,11 @@ Both the upstream project and this derivative are licensed under GNU GPL v3.
 
 Smart Auto Move NG was evaluated as a possible foundation at revision
 b4a55a7b15439eb8f6bd94d7d559154143c3b20f. No Smart Auto Move NG source code is
-included in SessionSifu 3.1.8.
+included in SessionSifu 3.1.9.
+
+Czech and English fast Tesseract language data is redistributed from the
+official tesseract-ocr/tessdata_fast repository at revision
+87416418657359cb625c412a48b6e1d6d41c29bd. The TSV configuration is from
+tesseract-ocr/tessconfigs revision
+3decf1c8252ba6dbeef0bf908f4b0aab7f18d113. These resources are licensed under
+Apache-2.0; the license and exact checksums are included under ocr/.

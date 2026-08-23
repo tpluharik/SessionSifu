@@ -1,11 +1,11 @@
 {
-  "version": "3.1.8",
+  "version": "3.1.9",
   "channel": "stable",
-  "issued_at": "2026-08-23T19:32:20Z",
-  "expires_at": "2026-10-07T19:32:20Z",
+  "issued_at": "2026-08-23T20:07:22Z",
+  "expires_at": "2026-10-07T20:07:22Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.8_all.deb",
-  "sha256": "407595b8cee2463971f520e10e6925c186284f1e4edc7405532a9e68fbf08e89",
-  "size": 295820,
-  "notes": "SessionSifu 3.1.8 improves small-text OCR with private high-contrast preprocessing and simplifies Recall browsing with debounced search and a compact result layout."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.9_all.deb",
+  "sha256": "4c2a52420f6ca795b910a9bfea7134ce5c1a9957ff05552fb76705f3b3acadca",
+  "size": 3694432,
+  "notes": "SessionSifu 3.1.9 bundles verified Czech and English OCR models for normal installs, portable builds and the signed user-local updater."
 }

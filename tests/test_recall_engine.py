@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -162,11 +163,29 @@ class RecallEngineTests(unittest.TestCase):
             stdout=b"List of available languages in /tmp (2):\neng\nces\n",
         )
         with mock.patch.object(recall_engine, "_TESSERACT_LANGUAGE_ARGS", None), \
+                mock.patch.object(recall_engine, "_bundled_tessdata_dir", return_value=None), \
                 mock.patch.dict(os.environ, {"LANG": "cs_CZ.UTF-8"}, clear=True), \
                 mock.patch("recall_engine.subprocess.run", return_value=completed):
             self.assertEqual(
                 recall_engine._tesseract_language_args(), ("-l", "ces+eng")
             )
+
+    def test_ocr_prefers_bundled_czech_and_english_models(self) -> None:
+        bundled = ROOT / "ocr" / "tessdata"
+        with mock.patch.object(recall_engine, "_TESSERACT_LANGUAGE_ARGS", None):
+            self.assertEqual(
+                recall_engine._tesseract_language_args(),
+                ("--tessdata-dir", str(bundled), "-l", "ces+eng"),
+            )
+        result = subprocess.run(
+            ["tesseract", "--tessdata-dir", str(bundled), "--list-langs"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue({"ces", "eng"} <= set(result.stdout.splitlines()))
 
     def test_sensitive_and_website_filters_discard_capture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

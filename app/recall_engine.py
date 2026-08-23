@@ -18,6 +18,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import time
 import unicodedata
@@ -81,6 +82,7 @@ TESSERACT_LANGUAGE_ALIASES = {
     "cs": "ces", "de": "deu", "es": "spa", "fr": "fra", "it": "ita",
     "nl": "nld", "pl": "pol", "pt": "por", "sk": "slk", "uk": "ukr",
 }
+MAX_BUNDLED_MODEL_BYTES = 16 * 1024 * 1024
 
 
 def _private(path: Path, mode: int) -> None:
@@ -131,6 +133,12 @@ def _tesseract_language_args() -> tuple[str, ...]:
     global _TESSERACT_LANGUAGE_ARGS
     if _TESSERACT_LANGUAGE_ARGS is not None:
         return _TESSERACT_LANGUAGE_ARGS
+    bundled = _bundled_tessdata_dir()
+    if bundled is not None:
+        _TESSERACT_LANGUAGE_ARGS = (
+            "--tessdata-dir", str(bundled), "-l", "ces+eng",
+        )
+        return _TESSERACT_LANGUAGE_ARGS
     installed: set[str] = set()
     try:
         result = subprocess.run(
@@ -153,6 +161,38 @@ def _tesseract_language_args() -> tuple[str, ...]:
     languages = list(dict.fromkeys(languages))
     _TESSERACT_LANGUAGE_ARGS = ("-l", "+".join(languages)) if languages else ()
     return _TESSERACT_LANGUAGE_ARGS
+
+
+def _bundled_tessdata_dir() -> Path | None:
+    """Find the signed Czech/English models in every supported install layout."""
+    module = Path(__file__).resolve()
+    candidates = [
+        Path(os.environ["SESSIONSIFU_TESSDATA_DIR"])
+        if os.environ.get("SESSIONSIFU_TESSDATA_DIR") else None,
+        Path(getattr(sys, "_MEIPASS", "")) / "tessdata"
+        if getattr(sys, "_MEIPASS", "") else None,
+        Path("/usr/share/sessionsifu/tessdata"),
+        module.parent.parent / "tessdata",
+        module.parents[1] / "ocr/tessdata",
+    ]
+    for directory in candidates:
+        if directory is None or directory.is_symlink() or not directory.is_dir():
+            continue
+        required = (
+            directory / "ces.traineddata",
+            directory / "eng.traineddata",
+            directory / "configs/tsv",
+        )
+        try:
+            if all(
+                path.is_file() and not path.is_symlink()
+                and 0 < path.stat().st_size <= MAX_BUNDLED_MODEL_BYTES
+                for path in required
+            ):
+                return directory
+        except OSError:
+            continue
+    return None
 
 
 def _luhn(value: str) -> bool:

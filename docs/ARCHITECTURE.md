@@ -207,8 +207,11 @@ compact JPEG, but recognition receives a temporary `0600` grayscale copy with
 automatic contrast, bounded 3× Lanczos upscaling, sharpening and a 180-DPI hint.
 That working image is deleted immediately after Tesseract exits and is never
 encrypted or retained because the vault already contains the source preview.
-The engine queries installed Tesseract models once per process and combines a
-model matching the desktop locale with English when both are available.
+Version 3.1.9 bundles pinned Czech and English fast Tesseract models and their
+TSV configuration. The engine locates the signed resources in the system,
+user-local, source or frozen portable layout and selects `ces+eng` together.
+It falls back to installed locale models only when a bundled resource is not
+available.
 Only words meeting the confidence floor enter the index; their text, confidence
 and normalized image rectangle are stored inside the encrypted record. Search
 returns at most 64 matching
@@ -245,7 +248,8 @@ vault size.
 ## Debian package and update channel
 
 `packaging/build-deb.sh` assembles the manager, desktop files, extension,
-compiled schema, extension bundle, documentation and package metadata. It copies
+compiled schema, extension bundle, pinned Czech/English OCR resources,
+documentation and package metadata. It copies
 the result into `updates/` and generates `updates/latest.json` from the final
 package size and SHA-256 digest.
 
@@ -253,7 +257,9 @@ The signed manifest and package live on the same `main` revision. The updater ac
 only HTTPS package URLs under `tpluharik/SessionSifu` on
 `raw.githubusercontent.com`. The Debian package remains necessary for initial
 dependency installation; later application updates are unprivileged and local
-to the user.
+to the user. A user-local update validates all Czech/English model and TSV files,
+then atomically replaces `~/.local/share/sessionsifu/tessdata` before activating
+the new launcher.
 
 `latest.json.sig` authenticates the exact manifest bytes with a dedicated
 Ed25519 release key whose public half is embedded in the manager and published

@@ -5,6 +5,10 @@ telemetry upload. Its desktop observations are stored locally. Checking for
 updates and downloading releases contacts GitHub; operating systems and package
 tools may independently make their own network requests.
 
+The Czech and English OCR models shipped since 3.1.9 are static local resources.
+They do not contact a recognition service and no screenshot or recognized text
+is transmitted for OCR.
+
 ## Data inventory
 
 | Feature | Data | Default | Retention |

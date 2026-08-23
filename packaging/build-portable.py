@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PORTABLE = ROOT / "portable"
-VERSION = "3.1.8"
+VERSION = "3.1.9"
 
 
 def parse_args() -> argparse.Namespace:
@@ -65,6 +65,8 @@ def main() -> int:
         str(PORTABLE),
         "--add-data",
         f"{ROOT / 'app' / 'org.gnome.SessionSifu.svg'}{separator}app",
+        "--add-data",
+        f"{ROOT / 'ocr' / 'tessdata'}{separator}tessdata",
         "--distpath",
         str(work / "dist"),
         "--workpath",
