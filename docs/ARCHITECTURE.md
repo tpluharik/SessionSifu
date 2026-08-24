@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.2.2 runtime and release layout. User-facing
+This document describes the 3.2.3 runtime and release layout. User-facing
 Recall steps live in [RECALL_GUIDE.md](RECALL_GUIDE.md).
 
 SessionSifu 3 has a full GNOME runtime, a portable runtime shared by Windows,
@@ -210,7 +210,7 @@ compact JPEG, but recognition receives a temporary `0600` grayscale copy with
 automatic contrast, bounded 3× Lanczos upscaling, sharpening and a 180-DPI hint.
 That working image is deleted immediately after Tesseract exits and is never
 encrypted or retained because the vault already contains the source preview.
-Version 3.2.2 bundles pinned Czech and English fast Tesseract models and their
+Version 3.2.3 bundles pinned Czech and English fast Tesseract models and their
 TSV configuration. The engine locates the signed resources in the system,
 user-local, source or frozen portable layout and selects `ces+eng` together.
 It falls back to installed locale models only when a bundled resource is not

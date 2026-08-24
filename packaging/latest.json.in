@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "SessionSifu 3.2.2 routes OCR highlights to the matching large Recall screenshot on GNOME, Windows, macOS, KDE Plasma and generic Linux."
+  "notes": "SessionSifu 3.2.3 keeps capturing eligible application windows when another application is excluded, while suppressing the shared display preview for privacy."
 }

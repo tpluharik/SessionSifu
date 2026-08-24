@@ -16,7 +16,7 @@ SessionSifu saves and reconstructs desktop layouts. It records running
 applications, documents and windows, then can relaunch applications and rebuild
 the supported parts of their layout.
 
-Version 3.2.2 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
+Version 3.2.3 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
 encrypted, per-window OCR activity timeline across GNOME, Windows, macOS, KDE
 Plasma 6 and other Linux desktops. Czech and English OCR data ships with the
 installer and verified update. Recall previews support two-finger panning,
@@ -129,17 +129,17 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_3.2.2_all.deb` from the matching GitHub Release, or build it
+Download `sessionsifu_3.2.3_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_3.2.2_all.deb
+sudo apt install ./sessionsifu_3.2.3_all.deb
 ```
 
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.2.2_all.deb
+sudo apt install ./dist/sessionsifu_3.2.3_all.deb
 ```
 
 After installation:
@@ -155,10 +155,10 @@ After installation:
 
 Tagged releases attach these self-contained artifacts:
 
-- `SessionSifu-3.2.2-windows-x64.zip`;
-- `SessionSifu-3.2.2-macos-arm64.zip`;
-- `SessionSifu-3.2.2-macos-x64.zip`; and
-- `SessionSifu-3.2.2-linux-x64.tar.gz`.
+- `SessionSifu-3.2.3-windows-x64.zip`;
+- `SessionSifu-3.2.3-macos-arm64.zip`;
+- `SessionSifu-3.2.3-macos-x64.zip`; and
+- `SessionSifu-3.2.3-linux-x64.tar.gz`.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -351,9 +351,11 @@ plaintext persistent search database is created:
 
 SessionSifu never uploads Recall data. Every edition can optionally store
 private, downscaled JPEG previews for the desktop and each eligible open
-window; GNOME also records each connected display. Preview
-capture is off by default and is skipped while the session is locked or an
-excluded application is visible. Snapshot cards provide a window-first gallery
+window; GNOME also records each connected display. Preview capture is off by
+default and is skipped while the session is locked. When a user-excluded
+application is visible, SessionSifu omits that application and suppresses the
+shared display overview, but continues saving independently rendered previews
+of eligible applications. Snapshot cards provide a window-first gallery
 with Previous/Next navigation through every independently captured window and
 then each display overview. After an app, title, screenshot-text or opted-in
 file keyword matches, the result shows the exact matching window image. For
@@ -380,8 +382,9 @@ captured before a new exclusion cannot be reliably redacted after the fact.
 
 SessionSifu excludes its own windows from searchable Recall metadata to avoid
 recursive results. That built-in self-exclusion does not prevent display
-previews while the manager or Recall browser is visible; user-added privacy
-exclusions continue to block the complete preview capture.
+previews while the manager or Recall browser is visible. A user-added privacy
+exclusion suppresses the shared display preview without disabling safe
+per-window capture.
 
 Recall capture is designed to stay out of the desktop's critical path. GNOME
 performs one asynchronous desktop grab and bounded compositor-native window
@@ -417,7 +420,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.2.2_all.deb
+dist/sessionsifu_3.2.3_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -438,12 +441,12 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v3.2.2` tag publishes the artifacts and `SHA256SUMS` as a GitHub
+A pushed `v3.2.3` tag publishes the artifacts and `SHA256SUMS` as a GitHub
 Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
 
-The modernized [SessionSifu roadmap](ROADMAP.md) separates the shipped 3.2.2
+The modernized [SessionSifu roadmap](ROADMAP.md) separates the shipped 3.2.3
 foundation from two near-term priorities and eight planned/research tracks.
 Each entry states its privacy boundary and a testable completion condition; the
 roadmap also records explicit non-goals.
@@ -466,7 +469,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Recall research and product decisions](docs/RECALL_RESEARCH.md)
 - [Documentation index](docs/README.md)
 
-The current 3.2.2 release includes verified Czech and English fast Tesseract
+The current 3.2.3 release includes verified Czech and English fast Tesseract
 models in the Debian package, signed in-app update and portable artifacts. Mixed
 Czech/English desktop text therefore works without installing a separate
 language package, while recognition stays completely local. Recall search is

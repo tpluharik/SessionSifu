@@ -11,7 +11,11 @@ import * as Log from './utils/log.js';
 import * as MetaWindowUtils from './utils/metaWindowUtils.js';
 import * as SaveSession from './saveSession.js';
 import {recallActivity} from './recallActivity.js';
-import {recallExclusions, screenshotBlockingExclusions} from './recallPrivacy.js';
+import {
+    recallExclusions,
+    screenshotBlockingExclusions,
+    screenshotCaptureMode,
+} from './recallPrivacy.js';
 
 
 export const RECALL_PATTERN = /^recall-\d{8}-\d{6}-\d{3}\.json$/;
@@ -130,6 +134,17 @@ function _metaWindowForActor(actor) {
     }
 }
 
+function _windowMatchesExclusions(window, exclusions, tracker) {
+    if (!window || !exclusions.length)
+        return false;
+    const app = tracker.get_window_app(window);
+    const identity = [
+        app?.get_id?.(), app?.get_name?.(), window.get_wm_class?.(),
+        window.get_wm_class_instance?.(),
+    ].map(value => String(value ?? '').toLowerCase()).join('\n');
+    return exclusions.some(value => identity.includes(value));
+}
+
 function _excludedApplicationVisible(excludedApps = []) {
     const exclusions = screenshotBlockingExclusions(excludedApps);
     if (!exclusions.length)
@@ -139,12 +154,7 @@ function _excludedApplicationVisible(excludedApps = []) {
         const window = _metaWindowForActor(actor);
         if (!window || !window.showing_on_its_workspace?.())
             continue;
-        const app = tracker.get_window_app(window);
-        const identity = [
-            app?.get_id?.(), app?.get_name?.(), window.get_wm_class?.(),
-            window.get_wm_class_instance?.(),
-        ].map(value => String(value ?? '').toLowerCase()).join('\n');
-        if (exclusions.some(value => identity.includes(value)))
+        if (_windowMatchesExclusions(window, exclusions, tracker))
             return true;
     }
     return false;
@@ -249,7 +259,7 @@ function _stableWindowKey(value) {
     return String(value ?? '');
 }
 
-async function _captureWindowActors(name) {
+async function _captureWindowActors(name, excludedApps = []) {
     const path = GLib.build_filenamev([FileUtils.recall_path, name]);
     const file = Gio.File.new_for_path(path);
     const [ok, contents] = file.load_contents(null);
@@ -265,11 +275,13 @@ async function _captureWindowActors(name) {
         return {expected: 0, matched: 0, captured: 0};
     const jobs = [];
     const scheduledIndexes = new Set();
+    const exclusions = screenshotBlockingExclusions(excludedApps);
+    const tracker = Shell.WindowTracker.get_default();
     for (const actor of global.get_window_actors()) {
         if (jobs.length >= MAX_WINDOW_PREVIEWS)
             break;
         const metaWindow = _metaWindowForActor(actor);
-        if (!metaWindow)
+        if (!metaWindow || _windowMatchesExclusions(metaWindow, exclusions, tracker))
             continue;
         const windowId = _stableWindowKey(
             MetaWindowUtils.getStableWindowId(metaWindow));
@@ -290,12 +302,14 @@ async function _captureWindowActors(name) {
     return {expected: windowIndexes.size, matched: jobs.length, captured};
 }
 
-function _compressScreenshot(rawPath, name, displays, quality = 'storage') {
+function _compressScreenshot(
+    rawPath, name, displays, quality = 'storage', windowOnly = false
+) {
     return new Promise((resolve, reject) => {
         try {
             const stem = GLib.build_filenamev([
                 FileUtils.recall_path, name.replace(/\.json$/, '')]);
-            const process = Gio.Subprocess.new([
+            const command = [
                 FileUtils.getManagerExecutable(),
                 '--compress-recall-preview',
                 rawPath,
@@ -304,7 +318,11 @@ function _compressScreenshot(rawPath, name, displays, quality = 'storage') {
                 JSON.stringify(displays),
                 '--preview-quality',
                 quality,
-            ], Gio.SubprocessFlags.STDERR_PIPE);
+            ];
+            if (windowOnly)
+                command.push('--window-only');
+            const process = Gio.Subprocess.new(
+                command, Gio.SubprocessFlags.STDERR_PIPE);
             process.communicate_utf8_async(null, null, (source, result) => {
                 try {
                     const [, , stderr] = source.communicate_utf8_finish(result);
@@ -623,10 +641,9 @@ export const RecallRecorder = class {
             if (this._settings.get_boolean('recall-capture-screenshots')) {
                 const screenshotGeneration = this._screenshotGeneration;
                 const screenshotExclusions = this._settings.get_strv('recall-excluded-apps');
-                if (Main.sessionMode.isLocked ||
-                    _excludedApplicationVisible(screenshotExclusions)) {
+                if (Main.sessionMode.isLocked) {
                     this._log.info(
-                        'Skipped Recall screenshot because the session is locked or an excluded app is visible');
+                        'Skipped Recall screenshots because the session is locked');
                 } else if (this._screenshotSaving) {
                     this._log.info(
                         'Skipped Recall screenshot because the previous preview is still encoding');
@@ -666,8 +683,7 @@ export const RecallRecorder = class {
             if (!displays.length)
                 throw new Error('No active displays are available for Recall preview capture');
             const rawPath = _rawScreenshotPath(name);
-            await _captureScreenshot(rawPath);
-            const windowCapture = await _captureWindowActors(name);
+            const windowCapture = await _captureWindowActors(name, exclusions);
             const captureSummary =
                 `Captured ${windowCapture.captured} of ${windowCapture.expected} ` +
                 `saved Recall window previews (${windowCapture.matched} live actors matched)`;
@@ -676,16 +692,32 @@ export const RecallRecorder = class {
             else
                 this._log.info(captureSummary);
             if (this._destroyed || screenshotGeneration !== this._screenshotGeneration ||
-                Main.sessionMode.isLocked || _excludedApplicationVisible(exclusions)) {
+                Main.sessionMode.isLocked) {
                 _removeScreenshots(name);
                 return;
             }
+            // Whole-display screenshots can include pixels from an excluded
+            // app. Keep capturing the independently rendered allowed windows,
+            // but never create that shared display image in this case.
+            const windowOnly = screenshotCaptureMode(
+                _excludedApplicationVisible(exclusions)) === 'windows-only';
+            if (!windowOnly)
+                await _captureScreenshot(rawPath);
             await _compressScreenshot(
                 rawPath, name, displays,
-                this._settings.get_string('recall-preview-quality'));
+                this._settings.get_string('recall-preview-quality'),
+                windowOnly);
             if (this._destroyed || screenshotGeneration !== this._screenshotGeneration ||
-                Main.sessionMode.isLocked || _excludedApplicationVisible(exclusions))
+                Main.sessionMode.isLocked)
                 _removeScreenshots(name);
+            else if (!windowOnly && _excludedApplicationVisible(exclusions)) {
+                // An excluded app appeared while Mutter was producing the
+                // desktop image. Remove only shared display previews; the
+                // per-window files still contain allowed windows exclusively.
+                _removeFile(rawPath);
+                for (let index = 0; index < MAX_DISPLAYS; index++)
+                    _removeFile(_displayScreenshotPath(name, index));
+            }
             _invalidateSummary(name);
         } catch (error) {
             _removeScreenshots(name);

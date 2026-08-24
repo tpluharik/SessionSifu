@@ -179,13 +179,13 @@ References: [GitHub secure use](https://docs.github.com/en/actions/reference/sec
 **Status:** Fixed in 2.5.0
 **Affected code:** `extension/sessionsifu@local/recallRecorder.js`
 
-Recall skips image capture when an excluded application is visible before the
-asynchronous desktop grab. It does not repeat that visibility check after the
-grab and before publishing compressed JPEGs. An excluded application that
-appears during that interval can be present in the stored full-display preview.
-Changing exclusions later purges previews, but it cannot prevent the initial
-write. Application matching is also best effort and cannot identify sensitive
-content inside a permitted application.
+Recall previously skipped every image when an excluded application was visible
+before the asynchronous desktop grab. Current capture omits the shared display
+image while retaining independently rendered allowed-window previews. It also
+repeats the visibility check after compression and deletes shared display files
+if an excluded application appeared during capture. Application matching is
+still best effort and cannot identify sensitive content inside a permitted
+application.
 
 **Proposed fix:** take a generation-stamped exclusion snapshot, check visibility
 immediately before capture, immediately after capture, and again before each

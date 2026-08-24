@@ -35,6 +35,9 @@ enabled, SessionSifu stores a compressed display overview and attempts a
 separate image for every eligible open window. A window can remain
 metadata-only when it is minimized, unmapped, closed during capture, excluded,
 over the 64-window limit or unavailable through the platform capture API.
+If a user-excluded application is visible, the shared display overview is not
+stored because it could contain excluded pixels. Eligible non-excluded windows
+continue to receive their own separately rendered previews and OCR indexes.
 
 GNOME image processing, OCR, encryption and indexing run outside GNOME Shell.
 The encrypted vault stores the accepted preview and OCR coordinates; the
@@ -75,7 +78,7 @@ rendered highlights are not written to a persistent search database.
 
 ## Czech and English OCR
 
-Version 3.2.2 ships pinned Czech and English fast Tesseract models in the Debian
+Version 3.2.3 ships pinned Czech and English fast Tesseract models in the Debian
 package, signed in-app update and portable artifacts. SessionSifu selects both
 models together so mixed-language application interfaces can be searched.
 Recognition is local; the model never sends screenshots or text to a service.

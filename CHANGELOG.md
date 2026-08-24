@@ -4,6 +4,16 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.2.3
+
+- Fixed GNOME Privacy Recall so one visible user-excluded application no longer
+  cancels screenshots for every other open application.
+- Kept capturing and OCR-indexing the independently rendered windows of allowed
+  applications while suppressing the shared display overview that could expose
+  pixels from an excluded application.
+- Added a compositor-independent regression for the all-images versus
+  privacy-safe windows-only capture policy.
+
 ## 3.2.2
 
 - Fixed GNOME window-OCR results so the large right-hand Recall screenshot

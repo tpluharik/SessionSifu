@@ -1,11 +1,11 @@
 {
-  "version": "3.2.2",
+  "version": "3.2.3",
   "channel": "stable",
-  "issued_at": "2026-08-24T06:28:41Z",
-  "expires_at": "2026-10-08T06:28:41Z",
+  "issued_at": "2026-08-24T14:16:08Z",
+  "expires_at": "2026-10-08T14:16:08Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.2.2_all.deb",
-  "sha256": "0bfa08d007baa4a65a967c0b8129fecb48e7c104d5ea72b39015adeae8d01706",
-  "size": 3700618,
-  "notes": "SessionSifu 3.2.2 routes OCR highlights to the matching large Recall screenshot on GNOME, Windows, macOS, KDE Plasma and generic Linux."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.2.3_all.deb",
+  "sha256": "16bb5a72e5ebd39162209075e857421f67463d8a4a761ed43e1beeccc5947f50",
+  "size": 3701592,
+  "notes": "SessionSifu 3.2.3 keeps capturing eligible application windows when another application is excluded, while suppressing the shared display preview for privacy."
 }

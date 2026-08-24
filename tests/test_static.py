@@ -48,8 +48,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.2.2"
-assert metadata["version"] == 31
+assert metadata["version-name"] == "3.2.3"
+assert metadata["version"] == 32
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -82,7 +82,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.2.2"' in build_script
+assert 'version="3.2.3"' in build_script
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
@@ -145,9 +145,14 @@ assert "screenshot.screenshot(false, stream" in source_text
 assert "recall_displays" in source_text
 assert "-display-${index}.jpg" in source_text
 assert "--compress-recall-preview" in source_text
+assert "--window-only" in source_text
+assert "windowOnly" in source_text
+assert "Skipped Recall screenshots because the session is locked" in source_text
+assert "excluded app is visible" not in source_text
 assert "result.matches" in source_text
 assert "_excludedApplicationVisible" in source_text
 assert "screenshotBlockingExclusions" in source_text
+assert "screenshotCaptureMode" in source_text
 assert "PRUNE_INTERVAL_US" in source_text
 assert "_screenshotSaving" in source_text
 assert "--recall-search" in source_text
@@ -157,7 +162,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.2.2"' in app_source
+assert 'CURRENT_VERSION = "3.2.3"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -226,7 +231,8 @@ assert "def _touchpad_scroll" in app_source
 assert "def _restore_scroll_center" in app_source
 assert "paint_to_content(null)" in source_text
 assert "Shell.Screenshot.composite_to_stream" in source_text
-assert "_captureWindowActors(name)" in source_text
+assert "_captureWindowActors(name, exclusions)" in source_text
+assert "_windowMatchesExclusions(metaWindow, exclusions, tracker)" in source_text
 assert "sync_gnome_recall_shortcut" in app_source
 assert "def live_extension_current" in app_source
 assert "def reload_extension" in app_source
@@ -332,7 +338,7 @@ for required in (
 
 roadmap = (root / "ROADMAP.md").read_text()
 assert len(re.findall(r"^## \d+\.", roadmap, re.MULTILINE)) == 10
-assert "## Shipped foundation — 3.2.2" in roadmap
+assert "## Shipped foundation — 3.2.3" in roadmap
 assert "## Explicit non-goals" in roadmap
 
 workflow = (root / ".github" / "workflows" / "release.yml").read_text()

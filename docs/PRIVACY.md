@@ -63,14 +63,16 @@ Recall is designed for data minimization, not invisible monitoring:
   encrypted records when changed;
 - observable website-domain exclusions apply when a browser exposes its URL;
 - file paths are removed unless separately enabled;
-- screenshots are skipped while locked or when an excluded application is
-  detected before capture, after capture or after compression;
+- screenshots are skipped while locked; when a user-excluded application is
+  visible, its metadata/window image and the shared display image are omitted,
+  while independently rendered images of allowed windows can still be saved;
 - OCR preprocessing uses a private temporary grayscale image that is deleted
   immediately after local Tesseract recognition; only the compact preview and
   accepted OCR words/coordinates enter the encrypted vault;
 - SessionSifu's built-in self-exclusion removes its windows from searchable
   metadata but does not suppress display previews merely because the manager or
-  Recall browser is open; user-configured exclusions still block previews;
+  Recall browser is open; user-configured exclusions suppress shared display
+  previews without stopping safe per-window capture;
 - screenshots, OCR and related-match ranking require separate opt-ins;
 - likely passwords, payment-card numbers and security codes discard a capture
   when default-on sensitive filtering recognizes them;
@@ -84,8 +86,9 @@ Recall is designed for data minimization, not invisible monitoring:
   writes neither plaintext coordinates nor rendered highlight images to disk;
 - exact window previews are limited to 64 per capture, 960 pixels on the longest
   edge and quality-65 JPEG; display images use a 1,280-pixel/quality-70 bound;
-- a portable shared desktop image is discarded if any excluded application is
-  present; separately mapped images of eligible windows can still be retained;
+- a shared desktop image is discarded if any excluded application is present;
+  separately rendered images of eligible windows can still be retained on
+  GNOME and portable editions;
 - if an older shared screenshot contains an application that is now excluded,
   SessionSifu withholds the complete preview and its OCR even when another
   non-excluded window in the same entry remains searchable;

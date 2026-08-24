@@ -189,8 +189,8 @@
       <default>false</default>
       <summary>Capture local screenshot previews for Privacy Recall</summary>
       <description>
-        Separate opt-in for compressed per-display previews. Capture is skipped
-        while an excluded application is visible, and previews never leave this device.
+        Separate opt-in for compressed previews. While an excluded application
+        is visible, only eligible per-window previews are saved; previews never leave this device.
       </description>
     </key>
 

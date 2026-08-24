@@ -49,7 +49,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E4
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.2.2"
+CURRENT_VERSION = "3.2.3"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -515,9 +515,19 @@ def recall_preview_profile(value: str) -> tuple[int, int]:
 
 
 def compress_recall_preview(
-    source_value: str, stem_value: str, layout_value: str, quality_value: str = "storage"
+    source_value: str,
+    stem_value: str,
+    layout_value: str,
+    quality_value: str = "storage",
+    *,
+    window_only: bool = False,
 ) -> int:
-    """Compress bounded display and independently rendered window previews."""
+    """Compress bounded display and independently rendered window previews.
+
+    When an excluded application is visible, ``window_only`` avoids creating a
+    whole-desktop image while still encoding the individually rendered,
+    non-excluded windows selected by the Shell integration.
+    """
     configured_recall_dir = Path(GLib.get_user_config_dir()) / "sessionsifu" / "recall"
     source = Path(source_value)
     stem = Path(stem_value)
@@ -527,10 +537,7 @@ def compress_recall_preview(
         if configured_recall_dir.is_symlink():
             raise ValueError("Refusing symbolic-link Recall storage")
         recall_dir = configured_recall_dir.resolve()
-        if source.is_symlink() or not source.is_file():
-            raise ValueError("Recall screenshot source is not a regular file")
-        source = source.resolve(strict=True)
-        if source.parent != recall_dir or stem.parent.resolve() != recall_dir:
+        if source.parent.resolve() != recall_dir or stem.parent.resolve() != recall_dir:
             raise ValueError("Recall preview paths must remain in private Recall storage")
         if not RECALL_STEM_RE.fullmatch(stem.name):
             raise ValueError("Recall preview stem is invalid")
@@ -539,31 +546,27 @@ def compress_recall_preview(
         )[:MAX_RECALL_WINDOW_PREVIEWS]
         if source.name != f"{stem.name}-raw.png":
             raise ValueError("Recall screenshot source does not match its entry")
-        source_size = source.stat().st_size
-        if source_size <= 0 or source_size > MAX_RECALL_SOURCE_BYTES:
-            raise ValueError("Recall screenshot source is outside the size limit")
-        displays = json.loads(layout_value)
-        if not isinstance(displays, list) or not 1 <= len(displays) <= 8:
-            raise ValueError("Recall display layout is invalid")
         normalized = []
-        for fallback_index, display in enumerate(displays):
-            index = int(display.get("index", fallback_index))
-            x, y = int(display["x"]), int(display["y"])
-            display_width, display_height = int(display["width"]), int(display["height"])
-            if not 0 <= index < 8 or display_width <= 0 or display_height <= 0:
-                raise ValueError("Recall display geometry is invalid")
-            normalized.append((index, x, y, display_width, display_height))
+        if not window_only:
+            if source.is_symlink() or not source.is_file():
+                raise ValueError("Recall screenshot source is not a regular file")
+            source = source.resolve(strict=True)
+            source_size = source.stat().st_size
+            if source_size <= 0 or source_size > MAX_RECALL_SOURCE_BYTES:
+                raise ValueError("Recall screenshot source is outside the size limit")
+            displays = json.loads(layout_value)
+            if not isinstance(displays, list) or not 1 <= len(displays) <= 8:
+                raise ValueError("Recall display layout is invalid")
+            for fallback_index, display in enumerate(displays):
+                index = int(display.get("index", fallback_index))
+                x, y = int(display["x"]), int(display["y"])
+                display_width = int(display["width"])
+                display_height = int(display["height"])
+                if not 0 <= index < 8 or display_width <= 0 or display_height <= 0:
+                    raise ValueError("Recall display geometry is invalid")
+                normalized.append((index, x, y, display_width, display_height))
 
         preview_edge, jpeg_quality = recall_preview_profile(quality_value)
-        pixbuf = GdkPixbuf.Pixbuf.new_from_file(str(source))
-        if pixbuf.get_width() * pixbuf.get_height() > 150_000_000:
-            raise ValueError("Recall screenshot dimensions are outside the safety limit")
-        min_x = min(value[1] for value in normalized)
-        min_y = min(value[2] for value in normalized)
-        virtual_width = max(value[1] + value[3] for value in normalized) - min_x
-        virtual_height = max(value[2] + value[4] for value in normalized) - min_y
-        coordinate_scale_x = pixbuf.get_width() / virtual_width
-        coordinate_scale_y = pixbuf.get_height() / virtual_height
 
         def save_preview(
             cropped: GdkPixbuf.Pixbuf,
@@ -612,18 +615,28 @@ def compress_recall_preview(
                 raise ValueError("Compressed Recall preview exceeds the size limit")
             temporary.replace(target)
 
-        for index, x, y, display_width, display_height in normalized:
-            crop_x = round((x - min_x) * coordinate_scale_x)
-            crop_y = round((y - min_y) * coordinate_scale_y)
-            crop_width = round(display_width * coordinate_scale_x)
-            crop_height = round(display_height * coordinate_scale_y)
-            crop_x = max(0, min(crop_x, pixbuf.get_width() - 1))
-            crop_y = max(0, min(crop_y, pixbuf.get_height() - 1))
-            crop_width = max(1, min(crop_width, pixbuf.get_width() - crop_x))
-            crop_height = max(1, min(crop_height, pixbuf.get_height() - crop_y))
-            cropped = pixbuf.new_subpixbuf(crop_x, crop_y, crop_width, crop_height)
-            target = recall_dir / f"{stem.name}-display-{index}.jpg"
-            save_preview(cropped, target, preview_edge, str(jpeg_quality))
+        if not window_only:
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file(str(source))
+            if pixbuf.get_width() * pixbuf.get_height() > 150_000_000:
+                raise ValueError("Recall screenshot dimensions are outside the safety limit")
+            min_x = min(value[1] for value in normalized)
+            min_y = min(value[2] for value in normalized)
+            virtual_width = max(value[1] + value[3] for value in normalized) - min_x
+            virtual_height = max(value[2] + value[4] for value in normalized) - min_y
+            coordinate_scale_x = pixbuf.get_width() / virtual_width
+            coordinate_scale_y = pixbuf.get_height() / virtual_height
+            for index, x, y, display_width, display_height in normalized:
+                crop_x = round((x - min_x) * coordinate_scale_x)
+                crop_y = round((y - min_y) * coordinate_scale_y)
+                crop_width = round(display_width * coordinate_scale_x)
+                crop_height = round(display_height * coordinate_scale_y)
+                crop_x = max(0, min(crop_x, pixbuf.get_width() - 1))
+                crop_y = max(0, min(crop_y, pixbuf.get_height() - 1))
+                crop_width = max(1, min(crop_width, pixbuf.get_width() - crop_x))
+                crop_height = max(1, min(crop_height, pixbuf.get_height() - crop_y))
+                cropped = pixbuf.new_subpixbuf(crop_x, crop_y, crop_width, crop_height)
+                target = recall_dir / f"{stem.name}-display-{index}.jpg"
+                save_preview(cropped, target, preview_edge, str(jpeg_quality))
 
         for raw_window in raw_window_paths:
             match = RECALL_RAW_WINDOW_RE.fullmatch(raw_window.name)
@@ -656,10 +669,11 @@ def compress_recall_preview(
                 temporary.unlink(missing_ok=True)
             except OSError:
                 pass
-        try:
-            source.unlink(missing_ok=True)
-        except OSError:
-            pass
+        if not window_only:
+            try:
+                source.unlink(missing_ok=True)
+            except OSError:
+                pass
         for raw_window in raw_window_paths:
             try:
                 raw_window.unlink(missing_ok=True)
@@ -3223,6 +3237,7 @@ def main() -> int:
     )
     parser.add_argument("--display-layout", default="[]", help=argparse.SUPPRESS)
     parser.add_argument("--preview-quality", default="storage", help=argparse.SUPPRESS)
+    parser.add_argument("--window-only", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     if args.compress_recall_preview:
@@ -3231,6 +3246,7 @@ def main() -> int:
             args.compress_recall_preview[1],
             args.display_layout,
             args.preview_quality,
+            window_only=args.window_only,
         )
     harden_local_storage()
     if args.finalize_recall:
