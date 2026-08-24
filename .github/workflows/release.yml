@@ -84,7 +84,7 @@ jobs:
       - name: Install GNOME build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y desktop-file-utils dpkg-dev gjs gir1.2-adw-1 gir1.2-gdkpixbuf-2.0 gir1.2-gtk-4.0 gir1.2-gtop-2.0 gnome-shell libglib2.0-bin nodejs python3-cryptography python3-gi python3-keyring tesseract-ocr zip
+          sudo apt-get install -y desktop-file-utils dpkg-dev gjs gir1.2-adw-1 gir1.2-gdkpixbuf-2.0 gir1.2-gtk-4.0 gir1.2-gtop-2.0 gnome-shell libglib2.0-bin nodejs python3-cryptography python3-gi python3-keyring python3-pil tesseract-ocr zip
       - name: Build and validate Debian package
         run: ./packaging/build-deb.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
