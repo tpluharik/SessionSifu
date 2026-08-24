@@ -1,4 +1,301 @@
-e_recall_shortcut)
+"""Qt desktop manager and system-tray interface shared by portable builds."""
+
+from __future__ import annotations
+
+import json
+import sys
+import time
+from pathlib import Path
+
+from PySide6.QtCore import QByteArray, QBuffer, QEvent, QIODevice, QSettings, QSize, QTimer, Qt, QUrl
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QListView,
+    QMainWindow,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSplitter,
+    QSystemTrayIcon,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from . import VERSION
+from .controller import SessionController
+from .hotkey import RecallHotkey, SHORTCUT_LABEL
+from .shortcut import DEFAULT_SHORTCUT, normalize_shortcut
+
+INTERVALS = [30, 60, 300, 600, 900, 1800]
+RECALL_INTERVALS = [60, 300, 900, 1800]
+RECALL_RETENTION_HOURS = [1, 6, 24, 72, 168]
+RECALL_QUOTA_MB = [128, 512, 1024, 2048, 4096]
+RECALL_PREVIEW_PROFILES = {
+    "storage": (960, 68),
+    "readable": (1440, 74),
+    "high": (1920, 80),
+}
+RECALL_PREVIEW_STORAGE_HINTS = {
+    "storage": "Estimated 60–160 KiB/window",
+    "readable": "Estimated 120–350 KiB/window",
+    "high": "Estimated 220–650 KiB/window; watch the quota",
+}
+
+
+def recall_preview_profile(value: str) -> tuple[int, int]:
+    return RECALL_PREVIEW_PROFILES.get(value, RECALL_PREVIEW_PROFILES["storage"])
+
+
+def recall_entry_images(entry: dict) -> list[tuple[str, str]]:
+    """List every encrypted application-window preview and its readable label."""
+    images: list[tuple[str, str]] = []
+    matched = entry.get("matched_window") if isinstance(entry.get("matched_window"), dict) else None
+    windows = ([matched] if matched else []) + list(entry.get("windows", []))
+    for window in windows:
+        if not isinstance(window, dict) or not window.get("image"):
+            continue
+        pair = (
+            str(window["image"]),
+            str(window.get("title") or window.get("app_name") or window.get("app_id") or "Window"),
+        )
+        if pair[0] not in {value[0] for value in images}:
+            images.append(pair)
+    if entry.get("has_preview"):
+        images.append(("", "Display overview"))
+    return images
+
+
+def recall_highlight_image_name(entry: dict) -> str | None:
+    """Resolve the preview whose pixels match the result's OCR coordinates."""
+    if "highlight_image" in entry:
+        return str(entry.get("highlight_image") or "")
+    matched = entry.get("matched_window")
+    if isinstance(matched, dict) and matched.get("image"):
+        return str(matched["image"])
+    if str(entry.get("result_kind") or "") == "visual":
+        return ""
+    return None
+
+
+def icon_path() -> Path:
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
+    return base / "app" / "org.gnome.SessionSifu.svg"
+
+
+def recall_saving_icon() -> QIcon:
+    """Add a high-contrast recording badge without another bundled asset."""
+    pixmap = QIcon(str(icon_path())).pixmap(64, 64)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor("#e85d75"))
+    painter.drawEllipse(40, 2, 22, 22)
+    painter.setBrush(QColor("#ffffff"))
+    painter.drawEllipse(47, 9, 8, 8)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def qt_shortcut(shortcut: str) -> QKeySequence:
+    """Translate the portable Super spelling to Qt's Meta spelling."""
+
+    return QKeySequence(shortcut.replace("Super", "Meta"))
+
+
+def highlight_recall_pixmap(
+    pixmap: QPixmap, boxes: list[dict], active_index: int = 0
+) -> QPixmap:
+    """Overlay matching normalized OCR word boxes on a Recall preview."""
+    if pixmap.isNull() or not boxes:
+        return pixmap
+    highlighted = pixmap.copy()
+    painter = QPainter(highlighted)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    for box_index, box in enumerate(boxes[:64]):
+        if not isinstance(box, dict):
+            continue
+        try:
+            x = round(float(box["x"]) * highlighted.width() / 10000)
+            y = round(float(box["y"]) * highlighted.height() / 10000)
+            width = max(2, round(float(box["w"]) * highlighted.width() / 10000))
+            height = max(2, round(float(box["h"]) * highlighted.height() / 10000))
+        except (KeyError, TypeError, ValueError):
+            continue
+        active = box_index == active_index
+        painter.setPen(QColor(255, 132, 0, 245 if active else 150))
+        painter.setBrush(QColor(255, 199, 20, 120 if active else 55))
+        painter.drawRect(x, y, width, height)
+    painter.end()
+    return highlighted
+
+
+def recall_result_pixmap(controller: SessionController, entry: dict) -> QPixmap:
+    """Prefer an encrypted window image and crop the desktop as fallback."""
+    if not entry.get("has_preview"):
+        return QPixmap()
+    window = entry.get("matched_window")
+    window_image = str(window.get("image") or "") if isinstance(window, dict) else ""
+    preview = controller.recall_store.preview_bytes(
+        str(entry.get("name", "")), image_name=window_image
+    )
+    exact_window_preview = bool(preview and window_image)
+    if not preview:
+        preview = controller.recall_store.preview_bytes(str(entry.get("name", "")))
+    pixmap = QPixmap()
+    if not preview or not pixmap.loadFromData(preview):
+        return QPixmap()
+    if exact_window_preview:
+        return highlight_recall_pixmap(pixmap, entry.get("highlight_boxes", []))
+    geometry = window.get("geometry", []) if isinstance(window, dict) else []
+    screen = QApplication.primaryScreen()
+    if len(geometry) != 4 or screen is None:
+        return highlight_recall_pixmap(pixmap, entry.get("highlight_boxes", []))
+    try:
+        screen_geometry = screen.geometry()
+        scale_x = pixmap.width() / max(1, screen_geometry.width())
+        scale_y = pixmap.height() / max(1, screen_geometry.height())
+        x = round((float(geometry[0]) - screen_geometry.x()) * scale_x)
+        y = round((float(geometry[1]) - screen_geometry.y()) * scale_y)
+        width = round(float(geometry[2]) * scale_x)
+        height = round(float(geometry[3]) * scale_y)
+        x = max(0, min(x, pixmap.width() - 1))
+        y = max(0, min(y, pixmap.height() - 1))
+        width = max(1, min(width, pixmap.width() - x))
+        height = max(1, min(height, pixmap.height() - y))
+        return highlight_recall_pixmap(
+            pixmap.copy(x, y, width, height), entry.get("highlight_boxes", [])
+        )
+    except (TypeError, ValueError):
+        return highlight_recall_pixmap(pixmap, entry.get("highlight_boxes", []))
+
+
+class MainWindow(QMainWindow):
+    def __init__(self, controller: SessionController) -> None:
+        super().__init__()
+        self.controller = controller
+        self.settings = QSettings("SessionSifu", "SessionSifu")
+        self.setWindowTitle(f"SessionSifu {VERSION}")
+        self.setWindowIcon(QIcon(str(icon_path())))
+        self.resize(760, 560)
+        self._recall_state_callback = None
+        self._recall_saving = False
+
+        root = QWidget()
+        layout = QVBoxLayout(root)
+        heading = QLabel(f"<h1>SessionSifu</h1><p>{controller.adapter.desktop} session restoration</p>")
+        heading.setTextFormat(Qt.RichText)
+        layout.addWidget(heading)
+
+        self.status = QLabel()
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+
+        save_row = QHBoxLayout()
+        self.name = QLineEdit()
+        self.name.setPlaceholderText("Session name")
+        save = QPushButton("Save named session")
+        save.clicked.connect(self.save_named)
+        snapshot = QPushButton("Save snapshot now")
+        snapshot.clicked.connect(self.save_history)
+        save_row.addWidget(self.name, 1)
+        save_row.addWidget(save)
+        save_row.addWidget(snapshot)
+        layout.addLayout(save_row)
+
+        form = QFormLayout()
+        self.interval = QComboBox()
+        for seconds in INTERVALS:
+            label = f"{seconds} seconds" if seconds < 60 else f"{seconds // 60} minute(s)"
+            self.interval.addItem(label, seconds)
+        selected = int(self.settings.value("snapshot_interval", 300))
+        self.interval.setCurrentIndex(max(0, self.interval.findData(selected)))
+        self.interval.currentIndexChanged.connect(self.update_interval)
+        form.addRow("Automatic snapshot interval", self.interval)
+        layout.addLayout(form)
+
+        recall_box = QWidget()
+        recall_layout = QVBoxLayout(recall_box)
+        self.recall_enabled = QCheckBox("Enable Privacy Recall")
+        self.recall_enabled.setToolTip(
+            "Disabled by default. Records searchable app/window metadata locally; no screenshots are taken."
+        )
+        self.recall_enabled.setChecked(
+            self.settings.value("recall_enabled", False, type=bool)
+        )
+        self.recall_enabled.toggled.connect(self.toggle_recall)
+        recall_layout.addWidget(self.recall_enabled)
+        recall_notice = QLabel(
+            "Off by default · metadata only · local storage · no network upload. "
+            "Window titles can still contain sensitive information."
+        )
+        recall_notice.setWordWrap(True)
+        recall_layout.addWidget(recall_notice)
+
+        recall_form = QFormLayout()
+        self.recall_interval = QComboBox()
+        for seconds in RECALL_INTERVALS:
+            self.recall_interval.addItem(
+                f"{seconds // 60} minute(s)", seconds
+            )
+        configured_recall_interval = int(self.settings.value("recall_interval", 300))
+        self.recall_interval.setCurrentIndex(
+            max(0, self.recall_interval.findData(configured_recall_interval))
+        )
+        self.recall_interval.currentIndexChanged.connect(self.update_recall_timer)
+        recall_form.addRow("Capture interval", self.recall_interval)
+
+        self.recall_retention = QComboBox()
+        for hours in RECALL_RETENTION_HOURS:
+            label = f"{hours} hour(s)" if hours < 24 else f"{hours // 24} day(s)"
+            self.recall_retention.addItem(label, hours)
+        configured_retention = int(self.settings.value("recall_retention_hours", 24))
+        self.recall_retention.setCurrentIndex(
+            max(0, self.recall_retention.findData(configured_retention))
+        )
+        self.recall_retention.currentIndexChanged.connect(self.recall_settings_changed)
+        recall_form.addRow("Retention", self.recall_retention)
+
+        self.recall_exclusions = QLineEdit()
+        self.recall_exclusions.setPlaceholderText("private-browser, password-manager")
+        self.recall_exclusions.setText(str(self.settings.value("recall_excluded_apps", "")))
+        self.recall_exclusions.editingFinished.connect(self.recall_privacy_exclusions_changed)
+        recall_form.addRow("Excluded apps", self.recall_exclusions)
+
+        self.recall_websites = QLineEdit()
+        self.recall_websites.setPlaceholderText("bank.example, health.example")
+        self.recall_websites.setText(str(self.settings.value("recall_excluded_websites", "")))
+        self.recall_websites.editingFinished.connect(self.recall_privacy_exclusions_changed)
+        recall_form.addRow("Excluded websites", self.recall_websites)
+
+        self.recall_quota = QComboBox()
+        for megabytes in RECALL_QUOTA_MB:
+            label = f"{megabytes} MiB" if megabytes < 1024 else f"{megabytes // 1024} GiB"
+            self.recall_quota.addItem(label, megabytes)
+        configured_quota = int(self.settings.value("recall_quota_mb", 512))
+        self.recall_quota.setCurrentIndex(max(0, self.recall_quota.findData(configured_quota)))
+        self.recall_quota.currentIndexChanged.connect(self.recall_settings_changed)
+        recall_form.addRow("Encrypted storage quota", self.recall_quota)
+        recall_layout.addLayout(recall_form)
+
+        self.recall_shortcut = QCheckBox(
+            "Enable global Recall search shortcut"
+        )
+        self.recall_shortcut.setChecked(
+            self.settings.value("recall_shortcut_enabled", True, type=bool)
+        )
+        self.recall_shortcut.toggled.connect(self.toggle_recall_shortcut)
         recall_layout.addWidget(self.recall_shortcut)
         self.recall_shortcut_value = QLineEdit()
         self.recall_shortcut_value.setPlaceholderText(DEFAULT_SHORTCUT)
