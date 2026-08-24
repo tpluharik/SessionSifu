@@ -14,6 +14,9 @@ not automatically enable screenshots, file paths, OCR or related matching.
 Choose each separately:
 
 1. Enable screenshot previews if visual history is useful.
+   Choose **Storage saver (960 px)**, **Readable text (1440 px)** or **High
+   detail (1920 px)**. Higher levels make small text easier to inspect and
+   recognize, but consume more of the encrypted local quota.
 2. Enable local OCR only when screenshot text should become searchable.
 3. Enable file paths only when reopening recorded documents is worth recording
    their locations.
@@ -44,13 +47,20 @@ customizable search shortcut (`Ctrl+Alt+Space` by default).
 
 - Enter a title, application, opted-in filename or visible screenshot word.
 - Narrow results by application or date when needed.
-- A matching card explains whether the match came from window text, OCR, file,
-  application or related local ranking.
-- **View screenshots** opens the captured windows from that moment, beginning
-  with the matching window. **Previous** and **Next** continue through window
-  images and display overviews.
-- A word found by OCR is highlighted on new captures that contain word
-  coordinates.
+- **Visual** mode uses screenshot cards; **Compact** mode favors denser text.
+  The choice is remembered. Selecting a result keeps a large preview visible
+  beside the result list.
+- The filmstrip below the preview contains every separately captured window,
+  followed by the display overview. A single click selects a window, a double
+  click or Space opens the full gallery, and the arrow keys move between
+  images.
+- **Fit**, **100%** and **Zoom to match** control screenshot size. `+`, `-` and
+  `0` provide equivalent keyboard controls.
+- OCR results show a match counter. **Previous match** and **Next match** move
+  through recognized occurrences, center the selected word and pulse its
+  highlight.
+- Each preview clearly identifies an exact window image, display-overview
+  fallback, metadata-only capture, disabled screenshots or compositor limits.
 - **Open** asks the recorded application to reopen that window's validated file
   or observable URL when the platform and application support it.
 
@@ -59,7 +69,7 @@ rendered highlights are not written to a persistent search database.
 
 ## Czech and English OCR
 
-Version 3.1.9 ships pinned Czech and English fast Tesseract models in the Debian
+Version 3.2.0 ships pinned Czech and English fast Tesseract models in the Debian
 package, signed in-app update and portable artifacts. SessionSifu selects both
 models together so mixed-language application interfaces can be searched.
 Recognition is local; the model never sends screenshots or text to a service.

@@ -20,10 +20,13 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QListView,
     QMainWindow,
     QMenu,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QSplitter,
     QSystemTrayIcon,
     QTabWidget,
     QVBoxLayout,
@@ -39,6 +42,39 @@ INTERVALS = [30, 60, 300, 600, 900, 1800]
 RECALL_INTERVALS = [60, 300, 900, 1800]
 RECALL_RETENTION_HOURS = [1, 6, 24, 72, 168]
 RECALL_QUOTA_MB = [128, 512, 1024, 2048, 4096]
+RECALL_PREVIEW_PROFILES = {
+    "storage": (960, 68),
+    "readable": (1440, 74),
+    "high": (1920, 80),
+}
+RECALL_PREVIEW_STORAGE_HINTS = {
+    "storage": "Estimated 60–160 KiB/window",
+    "readable": "Estimated 120–350 KiB/window",
+    "high": "Estimated 220–650 KiB/window; watch the quota",
+}
+
+
+def recall_preview_profile(value: str) -> tuple[int, int]:
+    return RECALL_PREVIEW_PROFILES.get(value, RECALL_PREVIEW_PROFILES["storage"])
+
+
+def recall_entry_images(entry: dict) -> list[tuple[str, str]]:
+    """List every encrypted application-window preview and its readable label."""
+    images: list[tuple[str, str]] = []
+    matched = entry.get("matched_window") if isinstance(entry.get("matched_window"), dict) else None
+    windows = ([matched] if matched else []) + list(entry.get("windows", []))
+    for window in windows:
+        if not isinstance(window, dict) or not window.get("image"):
+            continue
+        pair = (
+            str(window["image"]),
+            str(window.get("title") or window.get("app_name") or window.get("app_id") or "Window"),
+        )
+        if pair[0] not in {value[0] for value in images}:
+            images.append(pair)
+    if entry.get("has_preview"):
+        images.append(("", "Display overview"))
+    return images
 
 
 def icon_path() -> Path:
@@ -66,16 +102,16 @@ def qt_shortcut(shortcut: str) -> QKeySequence:
     return QKeySequence(shortcut.replace("Super", "Meta"))
 
 
-def highlight_recall_pixmap(pixmap: QPixmap, boxes: list[dict]) -> QPixmap:
+def highlight_recall_pixmap(
+    pixmap: QPixmap, boxes: list[dict], active_index: int = 0
+) -> QPixmap:
     """Overlay matching normalized OCR word boxes on a Recall preview."""
     if pixmap.isNull() or not boxes:
         return pixmap
     highlighted = pixmap.copy()
     painter = QPainter(highlighted)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(QColor(255, 132, 0, 245))
-    painter.setBrush(QColor(255, 199, 20, 90))
-    for box in boxes[:64]:
+    for box_index, box in enumerate(boxes[:64]):
         if not isinstance(box, dict):
             continue
         try:
@@ -85,6 +121,9 @@ def highlight_recall_pixmap(pixmap: QPixmap, boxes: list[dict]) -> QPixmap:
             height = max(2, round(float(box["h"]) * highlighted.height() / 10000))
         except (KeyError, TypeError, ValueError):
             continue
+        active = box_index == active_index
+        painter.setPen(QColor(255, 132, 0, 245 if active else 150))
+        painter.setBrush(QColor(255, 199, 20, 120 if active else 55))
         painter.drawRect(x, y, width, height)
     painter.end()
     return highlighted
@@ -274,6 +313,25 @@ class MainWindow(QMainWindow):
         self.recall_screenshots.toggled.connect(self.update_recall_timer)
         recall_layout.addWidget(self.recall_screenshots)
 
+        self.recall_preview_quality = QComboBox()
+        for label, value in (
+            ("Storage saver · 960 px", "storage"),
+            ("Readable text · 1440 px", "readable"),
+            ("High detail · 1920 px", "high"),
+        ):
+            self.recall_preview_quality.addItem(label, value)
+        stored_quality = str(self.settings.value("recall_preview_quality", "storage"))
+        quality_index = self.recall_preview_quality.findData(stored_quality)
+        self.recall_preview_quality.setCurrentIndex(max(0, quality_index))
+        self.recall_preview_quality.currentIndexChanged.connect(self.recall_settings_changed)
+        recall_form.addRow("Screenshot detail", self.recall_preview_quality)
+        self.recall_preview_hint = QLabel(
+            RECALL_PREVIEW_STORAGE_HINTS.get(
+                stored_quality, RECALL_PREVIEW_STORAGE_HINTS["storage"]
+            )
+        )
+        recall_form.addRow("Storage estimate", self.recall_preview_hint)
+
         self.recall_ocr = QCheckBox("Index preview text with local OCR")
         self.recall_ocr.setChecked(self.settings.value("recall_ocr", False, type=bool))
         self.recall_ocr.toggled.connect(self.recall_settings_changed)
@@ -426,6 +484,13 @@ class MainWindow(QMainWindow):
         self.settings.setValue("recall_quota_mb", int(self.recall_quota.currentData()))
         self.settings.setValue("recall_include_file_paths", self.recall_files.isChecked())
         self.settings.setValue("recall_screenshots", self.recall_screenshots.isChecked())
+        self.settings.setValue(
+            "recall_preview_quality", self.recall_preview_quality.currentData()
+        )
+        self.recall_preview_hint.setText(RECALL_PREVIEW_STORAGE_HINTS.get(
+            str(self.recall_preview_quality.currentData() or "storage"),
+            RECALL_PREVIEW_STORAGE_HINTS["storage"],
+        ))
         self.settings.setValue("recall_ocr", self.recall_ocr.isChecked())
         self.settings.setValue("recall_related_search", self.recall_related.isChecked())
         self.settings.setValue("recall_sensitive_filter", self.recall_sensitive.isChecked())
@@ -493,6 +558,7 @@ class MainWindow(QMainWindow):
         self.recall_quota.setEnabled(enabled)
         self.recall_files.setEnabled(enabled)
         self.recall_screenshots.setEnabled(enabled)
+        self.recall_preview_quality.setEnabled(enabled and self.recall_screenshots.isChecked())
         self.recall_ocr.setEnabled(enabled and self.recall_screenshots.isChecked())
         self.recall_related.setEnabled(enabled)
         self.recall_sensitive.setEnabled(enabled)
@@ -625,7 +691,10 @@ class MainWindow(QMainWindow):
             (desktop for _geometry, desktop, screen in screens if screen is primary),
             screens[0][1] if screens else QPixmap(),
         )
-        desktop_preview = self._jpeg_bytes(primary_desktop, 1280, 70)
+        preview_edge, jpeg_quality = recall_preview_profile(
+            str(self.recall_preview_quality.currentData() or "storage")
+        )
+        desktop_preview = self._jpeg_bytes(primary_desktop, preview_edge, jpeg_quality)
         window_previews: dict[int, bytes] = {}
         for index, window in enumerate(session.windows[:64]):
             pixmap = QPixmap()
@@ -663,7 +732,7 @@ class MainWindow(QMainWindow):
                         max(1, round((bottom - top) * scale_y)),
                     )
                     break
-            encoded = self._jpeg_bytes(pixmap)
+            encoded = self._jpeg_bytes(pixmap, preview_edge, max(60, jpeg_quality - 3))
             if encoded:
                 window_previews[index] = encoded
         return desktop_preview, window_previews
@@ -745,7 +814,7 @@ class MainWindow(QMainWindow):
 
 
 class RecallSearchDialog(QDialog):
-    """Small, independent search surface opened by the Recall shortcut."""
+    """Large master-detail Recall browser shared by portable platforms."""
 
     def __init__(self, controller: SessionController, exclusions_provider) -> None:
         super().__init__()
@@ -753,7 +822,15 @@ class RecallSearchDialog(QDialog):
         self.exclusions_provider = exclusions_provider
         self.setWindowTitle("Search Privacy Recall")
         self.setWindowIcon(QIcon(str(icon_path())))
-        self.resize(680, 420)
+        self.settings = QSettings("SessionSifu", "SessionSifu")
+        self.resize(1280, 800)
+        self._detail_entry: dict = {}
+        self._detail_images: list[tuple[str, str]] = []
+        self._detail_position = 0
+        self._detail_pixmap = QPixmap()
+        self._detail_source_pixmap = QPixmap()
+        self._zoom = 0.0
+        self._match_position = 0
         layout = QVBoxLayout(self)
         title = QLabel("<h2>Search Privacy Recall</h2>")
         title.setTextFormat(Qt.RichText)
@@ -775,13 +852,75 @@ class RecallSearchDialog(QDialog):
         self.app_filter = QComboBox()
         self.app_filter.addItem("All applications", "")
         self.app_filter.currentIndexChanged.connect(self.refresh)
+        self.view_mode = QComboBox()
+        self.view_mode.addItem("Visual", "visual")
+        self.view_mode.addItem("Compact", "compact")
+        stored_mode = str(self.settings.value("recall_search_view_mode", "visual"))
+        self.view_mode.setCurrentIndex(max(0, self.view_mode.findData(stored_mode)))
+        self.view_mode.currentIndexChanged.connect(self.change_view_mode)
         row.addWidget(self.query, 1)
         row.addWidget(self.app_filter)
+        row.addWidget(self.view_mode)
         layout.addLayout(row)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
         self.results = QListWidget()
         self.results.setIconSize(QSize(240, 135))
         self.results.itemDoubleClicked.connect(self.open_selected)
-        layout.addWidget(self.results, 1)
+        self.results.currentItemChanged.connect(self.show_selected)
+        splitter.addWidget(self.results)
+
+        detail = QWidget()
+        detail_layout = QVBoxLayout(detail)
+        self.detail_title = QLabel("<h2>Select a saved moment</h2>")
+        self.detail_title.setWordWrap(True)
+        detail_layout.addWidget(self.detail_title)
+        self.detail_meta = QLabel("Every captured application window will appear below.")
+        self.detail_meta.setWordWrap(True)
+        detail_layout.addWidget(self.detail_meta)
+        self.preview_scroll = QScrollArea()
+        self.preview_scroll.setWidgetResizable(False)
+        self.preview_scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview = QLabel("Screenshot unavailable")
+        self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview.setMinimumSize(640, 400)
+        self.preview_scroll.setWidget(self.preview)
+        detail_layout.addWidget(self.preview_scroll, 1)
+        self.preview_state = QLabel("Metadata-only saved moment")
+        self.preview_state.setWordWrap(True)
+        detail_layout.addWidget(self.preview_state)
+        navigation = QHBoxLayout()
+        previous = QPushButton("‹ Window")
+        previous.clicked.connect(lambda: self.step_image(-1))
+        following = QPushButton("Window ›")
+        following.clicked.connect(lambda: self.step_image(1))
+        previous_match = QPushButton("‹ Match")
+        previous_match.clicked.connect(lambda: self.step_match(-1))
+        next_match = QPushButton("Match ›")
+        next_match.clicked.connect(lambda: self.step_match(1))
+        self.match_counter = QLabel("No OCR match")
+        fit = QPushButton("Fit")
+        fit.clicked.connect(lambda: self.set_zoom(0.0))
+        actual = QPushButton("100%")
+        actual.clicked.connect(lambda: self.set_zoom(1.0))
+        zoom_match = QPushButton("Zoom to match")
+        zoom_match.clicked.connect(lambda: self.set_zoom(1.6))
+        for widget in (
+            previous, following, previous_match, next_match,
+            self.match_counter, fit, actual, zoom_match,
+        ):
+            navigation.addWidget(widget)
+        detail_layout.addLayout(navigation)
+        self.filmstrip = QListWidget()
+        self.filmstrip.setViewMode(QListView.ViewMode.IconMode)
+        self.filmstrip.setFlow(QListView.Flow.LeftToRight)
+        self.filmstrip.setWrapping(False)
+        self.filmstrip.setIconSize(QSize(128, 72))
+        self.filmstrip.setFixedHeight(120)
+        self.filmstrip.currentRowChanged.connect(self.set_image)
+        detail_layout.addWidget(self.filmstrip)
+        splitter.addWidget(detail)
+        splitter.setSizes([390, 890])
+        layout.addWidget(splitter, 1)
         actions = QHBoxLayout()
         open_button = QPushButton("Reopen selected window")
         open_button.clicked.connect(self.open_selected)
@@ -790,6 +929,26 @@ class RecallSearchDialog(QDialog):
         layout.addLayout(actions)
         self.local_shortcut = QShortcut(QKeySequence(SHORTCUT_LABEL), self)
         self.local_shortcut.activated.connect(self.focus_search)
+        for key, callback in (
+            ("Left", lambda: self.step_image(-1)),
+            ("Right", lambda: self.step_image(1)),
+            ("+", lambda: self.set_zoom(min(3.0, max(1.0, self._zoom or 1.0) + 0.25))),
+            ("-", lambda: self.set_zoom(max(0.5, (self._zoom or 1.0) - 0.25))),
+            ("0", lambda: self.set_zoom(1.0)),
+            ("Space", self.toggle_fullscreen),
+            ("Return", self.open_selected),
+        ):
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.activated.connect(callback)
+
+    def change_view_mode(self) -> None:
+        mode = str(self.view_mode.currentData() or "visual")
+        self.settings.setValue("recall_search_view_mode", mode)
+        self.results.setViewMode(
+            QListView.ViewMode.IconMode if mode == "visual" else QListView.ViewMode.ListMode
+        )
+        self.results.setIconSize(QSize(240, 135) if mode == "visual" else QSize(96, 54))
+        self.refresh()
 
     def set_shortcut(self, shortcut: str) -> None:
         self.local_shortcut.setKey(qt_shortcut(shortcut))
@@ -850,6 +1009,131 @@ class RecallSearchDialog(QDialog):
             if entries
             else "No matching non-excluded Recall entries."
         )
+        self.change_view_mode_without_refresh()
+        if self.results.count():
+            self.results.setCurrentRow(0)
+
+    def change_view_mode_without_refresh(self) -> None:
+        mode = str(self.view_mode.currentData() or "visual")
+        self.results.setViewMode(
+            QListView.ViewMode.IconMode if mode == "visual" else QListView.ViewMode.ListMode
+        )
+        self.results.setIconSize(QSize(240, 135) if mode == "visual" else QSize(96, 54))
+
+    def show_selected(self, current, _previous=None) -> None:
+        entry = current.data(Qt.UserRole) if current else {}
+        self._detail_entry = entry if isinstance(entry, dict) else {}
+        apps = ", ".join(self._detail_entry.get("apps", [])[:4]) or "Unknown application"
+        titles = " · ".join(self._detail_entry.get("titles", [])[:2])
+        self.detail_title.setText(f"<h2>{titles or apps}</h2>")
+        self.detail_meta.setText(
+            f"{apps} · {self._detail_entry.get('captured_at', '')} · "
+            f"{self._detail_entry.get('match_type', 'Saved moment')}"
+        )
+        self._detail_images = recall_entry_images(self._detail_entry)
+        self.filmstrip.blockSignals(True)
+        self.filmstrip.clear()
+        for image_name, label in self._detail_images:
+            item = QListWidgetItem(label[:28])
+            data = self.controller.recall_store.preview_bytes(
+                str(self._detail_entry.get("name", "")), image_name=image_name
+            )
+            thumbnail = QPixmap()
+            if data:
+                thumbnail.loadFromData(data)
+            if not thumbnail.isNull():
+                item.setIcon(QIcon(thumbnail.scaled(
+                    128, 72, Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )))
+            self.filmstrip.addItem(item)
+        self.filmstrip.blockSignals(False)
+        if self._detail_images:
+            self.filmstrip.setCurrentRow(0)
+            self.set_image(0)
+        else:
+            self._detail_pixmap = QPixmap()
+            self.preview.clear()
+            self.preview.setText(
+                "Screenshot capture was disabled, excluded by privacy policy, or unavailable."
+            )
+            self.preview_state.setText("Metadata captured · no visual preview")
+
+    def set_image(self, position: int) -> None:
+        if not 0 <= position < len(self._detail_images):
+            return
+        self._detail_position = position
+        image_name, label = self._detail_images[position]
+        data = self.controller.recall_store.preview_bytes(
+            str(self._detail_entry.get("name", "")), image_name=image_name
+        )
+        pixmap = QPixmap()
+        if data:
+            pixmap.loadFromData(data)
+        boxes = self._detail_entry.get("highlight_boxes", []) if position == 0 else []
+        self._detail_source_pixmap = pixmap
+        self._detail_pixmap = highlight_recall_pixmap(pixmap, boxes, 0)
+        self._match_position = 0
+        self.match_counter.setText(
+            f"Match 1 of {len(boxes)}" if boxes else "No OCR match"
+        )
+        self.preview_state.setText(
+            f"{position + 1} of {len(self._detail_images)} · {label} · "
+            f"{'Exact application-window screenshot' if image_name else 'Display overview'}"
+        )
+        self.apply_zoom()
+
+    def step_image(self, delta: int) -> None:
+        if self._detail_images:
+            self.filmstrip.setCurrentRow(
+                (self._detail_position + delta) % len(self._detail_images)
+            )
+
+    def step_match(self, delta: int) -> None:
+        boxes = self._detail_entry.get("highlight_boxes", []) if self._detail_position == 0 else []
+        if not boxes:
+            return
+        self._match_position = (self._match_position + delta) % len(boxes)
+        self._detail_pixmap = highlight_recall_pixmap(
+            self._detail_source_pixmap, boxes, self._match_position
+        )
+        self.apply_zoom()
+        self.match_counter.setText(f"Match {self._match_position + 1} of {len(boxes)}")
+        box = boxes[self._match_position]
+        self.set_zoom(max(1.6, self._zoom))
+        horizontal = self.preview_scroll.horizontalScrollBar()
+        vertical = self.preview_scroll.verticalScrollBar()
+        horizontal.setValue(round(float(box.get("x", 0)) * horizontal.maximum() / 10000))
+        vertical.setValue(round(float(box.get("y", 0)) * vertical.maximum() / 10000))
+
+    def set_zoom(self, value: float) -> None:
+        self._zoom = value
+        self.apply_zoom()
+
+    def apply_zoom(self) -> None:
+        if self._detail_pixmap.isNull():
+            self.preview.clear()
+            self.preview.setText("Screenshot unavailable")
+            return
+        if self._zoom <= 0:
+            viewport = self.preview_scroll.viewport().size()
+            rendered = self._detail_pixmap.scaled(
+                max(1, viewport.width() - 8), max(1, viewport.height() - 8),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        else:
+            rendered = self._detail_pixmap.scaled(
+                round(self._detail_pixmap.width() * self._zoom),
+                round(self._detail_pixmap.height() * self._zoom),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        self.preview.setPixmap(rendered)
+        self.preview.resize(rendered.size())
+
+    def toggle_fullscreen(self) -> None:
+        self.showNormal() if self.isFullScreen() else self.showFullScreen()
 
     def open_selected(self, *_args) -> None:
         item = self.results.currentItem()

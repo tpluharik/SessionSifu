@@ -48,8 +48,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.1.9"
-assert metadata["version"] == 28
+assert metadata["version-name"] == "3.2.0"
+assert metadata["version"] == 29
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -67,6 +67,8 @@ assert schema_keys["recall-interval"].findtext("default") == "300"
 assert schema_keys["recall-retention-hours"].findtext("default") == "24"
 assert schema_keys["recall-include-file-paths"].findtext("default") == "false"
 assert schema_keys["recall-capture-screenshots"].findtext("default") == "false"
+assert schema_keys["recall-preview-quality"].findtext("default") == "'storage'"
+assert schema_keys["recall-search-view-mode"].findtext("default") == "'visual'"
 assert schema_keys["recall-ocr-enabled"].findtext("default") == "false"
 assert schema_keys["recall-semantic-search-enabled"].findtext("default") == "false"
 assert schema_keys["recall-sensitive-filter"].findtext("default") == "true"
@@ -80,7 +82,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.1.9"' in build_script
+assert 'version="3.2.0"' in build_script
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
@@ -155,7 +157,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.1.9"' in app_source
+assert 'CURRENT_VERSION = "3.2.0"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -208,10 +210,15 @@ assert (
 assert "Captured ${windowCapture.captured} of ${windowCapture.expected}" in recorder_source
 assert "${windowCapture.matched} live actors matched" in recorder_source
 assert 'if not bool(match.get("focused", False)):' in app_source
-assert "MAX_RECALL_PREVIEW_EDGE = 1280" in app_source
-assert "MAX_RECALL_WINDOW_PREVIEW_EDGE = 960" in app_source
-assert 'save_preview(cropped, target, MAX_RECALL_PREVIEW_EDGE, "70")' in app_source
-assert 'MAX_RECALL_WINDOW_PREVIEW_EDGE,\n                "65"' in app_source
+assert '"storage": (960, 68)' in app_source
+assert '"readable": (1440, 74)' in app_source
+assert '"high": (1920, 80)' in app_source
+assert "class RecallSearchWindow" in app_source
+assert "self.detail_filmstrip" in app_source
+assert 'Gtk.ToggleButton(label="Visual")' in app_source
+assert 'Gtk.ToggleButton(label="Compact")' in app_source
+assert 'for label, zoom in (("Fit", 0.0), ("100%", 1.0), ("Zoom to match", 1.6))' in app_source
+assert "def _center_match" in app_source
 assert "paint_to_content(null)" in source_text
 assert "Shell.Screenshot.composite_to_stream" in source_text
 assert "_captureWindowActors(name)" in source_text
@@ -233,6 +240,10 @@ assert "OPEN_FD_SCAN_LIMIT = 128" in open_files_source
 assert "RECENT_FILE_SCAN_LIMIT = 512" in open_files_source
 assert "isReadableRegularFile(target)" not in open_files_source
 portable_ui = (root / "portable" / "sessionsifu_portable" / "ui.py").read_text()
+assert "class RecallSearchDialog" in portable_ui
+assert "QSplitter" in portable_ui
+assert "self.filmstrip" in portable_ui
+assert '"Storage saver · 960 px"' in portable_ui
 assert "class RecallSearchDialog" in portable_ui
 assert "def recall_result_pixmap" in portable_ui
 assert "RecallHotkey" in portable_ui
@@ -310,7 +321,7 @@ for required in (
 
 roadmap = (root / "ROADMAP.md").read_text()
 assert len(re.findall(r"^## \d+\.", roadmap, re.MULTILINE)) == 10
-assert "## Shipped foundation — 3.1.9" in roadmap
+assert "## Shipped foundation — 3.2.0" in roadmap
 assert "## Explicit non-goals" in roadmap
 
 workflow = (root / ".github" / "workflows" / "release.yml").read_text()

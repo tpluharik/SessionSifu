@@ -290,7 +290,7 @@ async function _captureWindowActors(name) {
     return {expected: windowIndexes.size, matched: jobs.length, captured};
 }
 
-function _compressScreenshot(rawPath, name, displays) {
+function _compressScreenshot(rawPath, name, displays, quality = 'storage') {
     return new Promise((resolve, reject) => {
         try {
             const stem = GLib.build_filenamev([
@@ -302,6 +302,8 @@ function _compressScreenshot(rawPath, name, displays) {
                 stem,
                 '--display-layout',
                 JSON.stringify(displays),
+                '--preview-quality',
+                quality,
             ], Gio.SubprocessFlags.STDERR_PIPE);
             process.communicate_utf8_async(null, null, (source, result) => {
                 try {
@@ -678,7 +680,9 @@ export const RecallRecorder = class {
                 _removeScreenshots(name);
                 return;
             }
-            await _compressScreenshot(rawPath, name, displays);
+            await _compressScreenshot(
+                rawPath, name, displays,
+                this._settings.get_string('recall-preview-quality'));
             if (this._destroyed || screenshotGeneration !== this._screenshotGeneration ||
                 Main.sessionMode.isLocked || _excludedApplicationVisible(exclusions))
                 _removeScreenshots(name);

@@ -4,6 +4,22 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.2.0
+
+- Rebuilt Recall search as an adaptive master-detail browser. Results remain
+  visible beside a substantially larger screenshot, and every captured window
+  is directly selectable from a horizontal filmstrip.
+- Added remembered Visual and Compact result modes, single-click selection,
+  double-click/full-screen viewing and keyboard navigation for images and zoom.
+- Added Fit, 100% and Zoom-to-match controls plus OCR occurrence counters,
+  previous/next match navigation, automatic centering and a pulsing highlight.
+- Added explicit exact-window, display-overview, metadata-only, privacy-excluded
+  and unavailable-capture states instead of one ambiguous missing-image card.
+- Added Storage saver (960 px), Readable text (1440 px) and High detail (1920 px)
+  preview profiles to GNOME, Windows, macOS, KDE and generic Linux editions.
+  The bounded 960-pixel profile remains the default.
+- Updated the Recall guide, roadmap and synthetic demo for the new workflow.
+
 - Reorganized the complete documentation set around a new index and dedicated
   Privacy Recall workflow guide. Corrected stale project names, updater/OCR
   behavior and shipped per-window capture claims.

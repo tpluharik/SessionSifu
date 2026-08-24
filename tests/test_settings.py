@@ -46,6 +46,12 @@ assert settings.get_int("recall-interval") == 300
 assert settings.get_int("recall-retention-hours") == 24
 assert settings.get_boolean("recall-include-file-paths") is False
 assert settings.get_boolean("recall-capture-screenshots") is False
+assert settings.get_string("recall-preview-quality") == "storage"
+assert settings.get_string("recall-search-view-mode") == "visual"
+assert module.recall_preview_profile("storage") == (960, 68)
+assert module.recall_preview_profile("readable") == (1440, 74)
+assert module.recall_preview_profile("high") == (1920, 80)
+assert module.recall_preview_profile("invalid") == (960, 68)
 assert "SessionSifu" in settings.get_strv("recall-excluded-apps")
 assert settings.get_boolean("recall-search-shortcut-enabled") is True
 assert settings.get_strv("recall-search-shortcut") == ["<Control><Alt>space"]
@@ -68,19 +74,19 @@ now = datetime.now(timezone.utc)
 manifest = module.parse_update_manifest(
     json.dumps(
         {
-            "version": "3.1.9",
+            "version": "3.2.0",
             "channel": "stable",
             "issued_at": (now - timedelta(minutes=1)).isoformat(),
             "expires_at": (now + timedelta(days=30)).isoformat(),
             "minimum_version": "2.5.0",
-            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.9_all.deb",
+            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.2.0_all.deb",
             "sha256": "a" * 64,
             "size": 12345,
             "notes": "Test update",
         }
     )
 )
-assert manifest["version"] == "3.1.9"
+assert manifest["version"] == "3.2.0"
 assert manifest["size"] == 12345
 
 older_manifest = module.parse_update_manifest(
@@ -226,7 +232,7 @@ try:
     module.parse_update_manifest(
         json.dumps(
             {
-                "version": "3.1.9",
+                "version": "3.2.0",
                 "channel": "stable",
                 "issued_at": (now - timedelta(minutes=1)).isoformat(),
                 "expires_at": (now + timedelta(days=30)).isoformat(),

@@ -1,6 +1,6 @@
 # SessionSifu roadmap
 
-This roadmap describes product direction after 3.1.9. It is ordered by user
+This roadmap describes product direction after 3.2.0. It is ordered by user
 impact, privacy risk and platform feasibility; it is not a release-date promise.
 Operating-system security boundaries take precedence over feature parity.
 
@@ -11,7 +11,7 @@ Status labels used below:
 - **Planned** — accepted direction that still needs design or platform work;
 - **Research** — useful goal without a dependable cross-platform API yet.
 
-## Shipped foundation — 3.1.9
+## Shipped foundation — 3.2.0
 
 SessionSifu currently provides:
 
@@ -23,6 +23,11 @@ SessionSifu currently provides:
 - Privacy Recall as an off-by-default, encrypted local visual timeline;
 - separately captured and searchable images for up to 64 eligible windows;
 - per-window OCR search, screenshot word highlighting and gallery navigation;
+- adaptive master-detail Recall browsing with a large preview, every captured
+  window in a filmstrip, compact/visual layouts, keyboard zoom and OCR match
+  navigation;
+- bounded 960, 1440 and 1920-pixel screenshot quality profiles shared across
+  the GNOME and portable editions;
 - app/site exclusions, timed pauses, quotas, capture diagnostics and granular
   deletion; and
 - pinned Czech and English OCR data in installation and update artifacts.

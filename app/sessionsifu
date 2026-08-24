@@ -48,7 +48,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E4
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.1.9"
+CURRENT_VERSION = "3.2.0"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -72,8 +72,16 @@ MAX_SIGNATURE_BYTES = 512
 MAX_UPDATE_BYTES = 50 * 1024 * 1024
 MAX_RECALL_SCREENSHOT_BYTES = 8 * 1024 * 1024
 MAX_RECALL_SOURCE_BYTES = 64 * 1024 * 1024
-MAX_RECALL_PREVIEW_EDGE = 1280
-MAX_RECALL_WINDOW_PREVIEW_EDGE = 960
+RECALL_PREVIEW_PROFILES = {
+    "storage": (960, 68),
+    "readable": (1440, 74),
+    "high": (1920, 80),
+}
+RECALL_PREVIEW_STORAGE_HINTS = {
+    "storage": "Estimated 60–160 KiB per captured window",
+    "readable": "Estimated 120–350 KiB per captured window",
+    "high": "Estimated 220–650 KiB per captured window; watch the quota",
+}
 MAX_RECALL_WINDOW_PREVIEWS = 64
 RECALL_IMAGE_RE = re.compile(
     r"^recall-\d{8}-\d{6}-\d{3}(?:-(?:display|window)-\d+)?\.(?:png|jpe?g)$",
@@ -192,7 +200,8 @@ def _draw_ocr_highlights(_area, context, width: int, height: int, state: dict) -
     offset_x = (width - rendered_width) / 2
     offset_y = (height - rendered_height) / 2
     context.set_line_width(max(1.5, min(width, height) / 220))
-    for box in boxes[:64]:
+    active_index = int(state.get("active_index", 0))
+    for box_index, box in enumerate(boxes[:64]):
         if not isinstance(box, dict):
             continue
         try:
@@ -203,9 +212,17 @@ def _draw_ocr_highlights(_area, context, width: int, height: int, state: dict) -
         except (KeyError, TypeError, ValueError):
             continue
         context.rectangle(x, y, box_width, box_height)
-        context.set_source_rgba(1.0, 0.78, 0.08, 0.34)
+        pulse = max(0.35, min(1.0, float(state.get("pulse", 1.0))))
+        selected = box_index == active_index
+        context.set_source_rgba(
+            1.0, 0.78, 0.08,
+            (0.28 + 0.28 * pulse) if selected else 0.18,
+        )
         context.fill_preserve()
-        context.set_source_rgba(1.0, 0.52, 0.0, 0.95)
+        context.set_source_rgba(
+            1.0, 0.52, 0.0,
+            (0.65 + 0.3 * pulse) if selected else 0.55,
+        )
         context.stroke()
 
 
@@ -474,7 +491,14 @@ def recall_preview(
     return placeholder
 
 
-def compress_recall_preview(source_value: str, stem_value: str, layout_value: str) -> int:
+def recall_preview_profile(value: str) -> tuple[int, int]:
+    """Return the bounded longest edge and JPEG quality for a preference value."""
+    return RECALL_PREVIEW_PROFILES.get(value, RECALL_PREVIEW_PROFILES["storage"])
+
+
+def compress_recall_preview(
+    source_value: str, stem_value: str, layout_value: str, quality_value: str = "storage"
+) -> int:
     """Compress bounded display and independently rendered window previews."""
     configured_recall_dir = Path(GLib.get_user_config_dir()) / "sessionsifu" / "recall"
     source = Path(source_value)
@@ -512,6 +536,7 @@ def compress_recall_preview(source_value: str, stem_value: str, layout_value: st
                 raise ValueError("Recall display geometry is invalid")
             normalized.append((index, x, y, display_width, display_height))
 
+        preview_edge, jpeg_quality = recall_preview_profile(quality_value)
         pixbuf = GdkPixbuf.Pixbuf.new_from_file(str(source))
         if pixbuf.get_width() * pixbuf.get_height() > 150_000_000:
             raise ValueError("Recall screenshot dimensions are outside the safety limit")
@@ -580,7 +605,7 @@ def compress_recall_preview(source_value: str, stem_value: str, layout_value: st
             crop_height = max(1, min(crop_height, pixbuf.get_height() - crop_y))
             cropped = pixbuf.new_subpixbuf(crop_x, crop_y, crop_width, crop_height)
             target = recall_dir / f"{stem.name}-display-{index}.jpg"
-            save_preview(cropped, target, MAX_RECALL_PREVIEW_EDGE, "70")
+            save_preview(cropped, target, preview_edge, str(jpeg_quality))
 
         for raw_window in raw_window_paths:
             match = RECALL_RAW_WINDOW_RE.fullmatch(raw_window.name)
@@ -600,8 +625,8 @@ def compress_recall_preview(source_value: str, stem_value: str, layout_value: st
             save_preview(
                 window_pixbuf,
                 recall_dir / f"{stem.name}-window-{window_index}.jpg",
-                MAX_RECALL_WINDOW_PREVIEW_EDGE,
-                "65",
+                preview_edge,
+                str(max(60, jpeg_quality - 3)),
             )
         return 0
     except (GLib.Error, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
@@ -1256,11 +1281,20 @@ class RecallSearchWindow(Adw.ApplicationWindow):
 
     def __init__(self, app: Adw.Application):
         super().__init__(application=app, title="Browse Recall Snapshots")
-        self.set_default_size(980, 720)
+        self.set_default_size(1320, 820)
         self._settings = settings()
         self._vault = recall_vault()
         self._entries: list[dict] = []
         self._search_timeout = 0
+        self._detail_item: dict | None = None
+        self._detail_indices: list[int] = []
+        self._detail_position = 0
+        self._detail_pixbuf: GdkPixbuf.Pixbuf | None = None
+        self._detail_zoom = 0.0
+        self._detail_match_position = 0
+        self._view_mode = self._settings.get_string("recall-search-view-mode")
+        if self._view_mode not in {"visual", "compact"}:
+            self._view_mode = "visual"
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
         header.set_title_widget(Adw.WindowTitle(
@@ -1282,6 +1316,15 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         self.query.connect("activate", self._search_now)
         self.query.connect("search-changed", self._schedule_search)
         search_row.append(self.query)
+        self.visual_button = Gtk.ToggleButton(label="Visual")
+        self.compact_button = Gtk.ToggleButton(label="Compact")
+        self.compact_button.set_group(self.visual_button)
+        self.visual_button.set_active(self._view_mode == "visual")
+        self.compact_button.set_active(self._view_mode == "compact")
+        self.visual_button.connect("toggled", self._view_mode_changed, "visual")
+        self.compact_button.connect("toggled", self._view_mode_changed, "compact")
+        search_row.append(self.visual_button)
+        search_row.append(self.compact_button)
         content.append(search_row)
 
         filters = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -1301,6 +1344,10 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         filters.append(show_all)
         content.append(filters)
 
+        paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL, vexpand=True)
+        paned.set_position(455)
+        paned.set_shrink_start_child(False)
+        paned.set_shrink_end_child(False)
         scroller = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
         self.results = Gtk.FlowBox(
             selection_mode=Gtk.SelectionMode.NONE,
@@ -1310,10 +1357,15 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             row_spacing=12,
         )
         scroller.set_child(self.results)
-        content.append(scroller)
+        paned.set_start_child(scroller)
+        paned.set_end_child(self._build_detail_pane())
+        content.append(paned)
         toolbar.set_content(content)
         self.set_content(toolbar)
         self._rows: list[Gtk.Widget] = []
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", self._key_pressed)
+        self.add_controller(keys)
         self._search()
 
     @staticmethod
@@ -1341,6 +1393,289 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         item["_pixbufs"] = pixbufs
         item["_pixbuf_by_index"] = pixbuf_by_index
         item["_window_pixbuf"] = _window_pixbuf(item)
+
+    def _build_detail_pane(self) -> Gtk.Widget:
+        pane = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=10,
+            margin_start=14, margin_top=4,
+        )
+        self.detail_heading = Gtk.Label(
+            label="Select a saved moment", xalign=0, wrap=True,
+        )
+        self.detail_heading.add_css_class("title-3")
+        pane.append(self.detail_heading)
+        self.detail_meta = Gtk.Label(
+            label="A large preview and every captured window will appear here.",
+            xalign=0, wrap=True,
+        )
+        self.detail_meta.add_css_class("dim-label")
+        pane.append(self.detail_meta)
+
+        self.detail_picture = Gtk.Picture(
+            hexpand=True, vexpand=True, can_shrink=True,
+        )
+        self.detail_picture.set_content_fit(Gtk.ContentFit.CONTAIN)
+        self.detail_overlay = Gtk.Overlay(hexpand=True, vexpand=True)
+        self.detail_overlay.set_child(self.detail_picture)
+        self._detail_highlight_state = {
+            "pixbuf": None, "boxes": [], "pulse": 1.0, "active_index": 0,
+        }
+        self.detail_highlights = Gtk.DrawingArea(
+            hexpand=True, vexpand=True, can_target=False,
+        )
+        self.detail_highlights.set_draw_func(
+            _draw_ocr_highlights, self._detail_highlight_state
+        )
+        self.detail_overlay.add_overlay(self.detail_highlights)
+        self.detail_scroller = Gtk.ScrolledWindow(
+            vexpand=True,
+            min_content_height=390,
+            hscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
+            vscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
+        )
+        self.detail_scroller.set_child(self.detail_overlay)
+        pane.append(self.detail_scroller)
+
+        self.detail_state = Gtk.Label(xalign=0, wrap=True)
+        self.detail_state.add_css_class("caption")
+        pane.append(self.detail_state)
+        controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        previous = Gtk.Button(label="‹ Window")
+        previous.connect("clicked", lambda *_: self._step_detail(-1))
+        next_button = Gtk.Button(label="Window ›")
+        next_button.connect("clicked", lambda *_: self._step_detail(1))
+        controls.append(previous)
+        controls.append(next_button)
+        self.match_previous = Gtk.Button(label="‹ Match")
+        self.match_previous.connect("clicked", lambda *_: self._step_match(-1))
+        self.match_next = Gtk.Button(label="Match ›")
+        self.match_next.connect("clicked", lambda *_: self._step_match(1))
+        controls.append(self.match_previous)
+        controls.append(self.match_next)
+        self.match_counter = Gtk.Label(label="No OCR match")
+        controls.append(self.match_counter)
+        controls.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        for label, zoom in (("Fit", 0.0), ("100%", 1.0), ("Zoom to match", 1.6)):
+            button = Gtk.Button(label=label)
+            button.connect("clicked", lambda _button, value=zoom: self._set_zoom(value))
+            controls.append(button)
+        pane.append(controls)
+
+        filmstrip_scroll = Gtk.ScrolledWindow(
+            min_content_height=116,
+            hscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
+            vscrollbar_policy=Gtk.PolicyType.NEVER,
+        )
+        self.detail_filmstrip = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=8,
+            margin_top=4, margin_bottom=4,
+        )
+        filmstrip_scroll.set_child(self.detail_filmstrip)
+        pane.append(filmstrip_scroll)
+        return pane
+
+    @staticmethod
+    def _clear_box(box: Gtk.Box) -> None:
+        child = box.get_first_child()
+        while child is not None:
+            following = child.get_next_sibling()
+            box.remove(child)
+            child = following
+
+    def _view_mode_changed(self, button, mode: str) -> None:
+        if not button.get_active() or self._view_mode == mode:
+            return
+        self._view_mode = mode
+        self._settings.set_string("recall-search-view-mode", mode)
+        self._render(self._entries)
+
+    def _select_item(self, _gesture, presses: int, _x: float, _y: float, item: dict) -> None:
+        self._show_detail(item)
+        if presses >= 2:
+            self._view_item(None, item)
+
+    def _show_detail(self, item: dict) -> None:
+        self._detail_item = item
+        self._detail_indices = recall_image_indices(item)
+        preferred = item.get("highlight_image_index", -1)
+        try:
+            self._detail_position = self._detail_indices.index(int(preferred))
+        except (TypeError, ValueError):
+            self._detail_position = 0
+        modified = datetime.fromtimestamp(
+            item.get("modified", 0)
+        ).strftime("%Y-%m-%d %H:%M:%S")
+        apps = ", ".join(item.get("apps", [])[:4]) or "Unknown application"
+        titles = " · ".join(item.get("titles", [])[:2])
+        self.detail_heading.set_label(titles or apps)
+        self.detail_meta.set_label(
+            f"{apps} · {modified} · {self._match_description(str(item.get('match_type', 'Timeline')))}"
+        )
+        self._clear_box(self.detail_filmstrip)
+        for position, image_index in enumerate(self._detail_indices):
+            window = self._window_for_image(item, image_index)
+            label = str(window.get("app") or window.get("title") or "Display") if window else "Display"
+            button = Gtk.Button(tooltip_text=str(window.get("title") or label) if window else "Display overview")
+            thumbnail = item.get("_pixbuf_by_index", {}).get(image_index)
+            tile = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+            if thumbnail is not None:
+                picture = Gtk.Picture.new_for_paintable(Gdk.Texture.new_for_pixbuf(thumbnail))
+                picture.set_content_fit(Gtk.ContentFit.COVER)
+                picture.set_size_request(128, 72)
+                tile.append(picture)
+            else:
+                tile.append(Gtk.Image(icon_name="image-x-generic-symbolic", pixel_size=32))
+            tile.append(Gtk.Label(label=label[:20], ellipsize=Pango.EllipsizeMode.END))
+            button.set_child(tile)
+            button.connect("clicked", lambda _button, value=position: self._set_detail_position(value))
+            self.detail_filmstrip.append(button)
+        self._set_detail_position(self._detail_position)
+
+    @staticmethod
+    def _window_for_image(item: dict, image_index: int) -> dict | None:
+        for window in item.get("windows", []):
+            if not isinstance(window, dict):
+                continue
+            try:
+                if int(window.get("image_index", -1)) == image_index:
+                    return window
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _set_detail_position(self, position: int) -> None:
+        if self._detail_item is None or not self._detail_indices:
+            self.detail_picture.set_paintable(None)
+            self.detail_state.set_label(self._empty_preview_state())
+            return
+        self._detail_position = max(0, min(len(self._detail_indices) - 1, position))
+        image_index = self._detail_indices[self._detail_position]
+        data = self._vault.preview_bytes(self._detail_item.get("name", ""), image_index)
+        self._detail_pixbuf = _pixbuf_from_bytes(data) if data else None
+        self.detail_picture.set_paintable(
+            Gdk.Texture.new_for_pixbuf(self._detail_pixbuf)
+            if self._detail_pixbuf is not None else None
+        )
+        try:
+            highlighted = int(self._detail_item.get("highlight_image_index", -1))
+        except (TypeError, ValueError):
+            highlighted = -1
+        boxes = self._detail_item.get("highlight_boxes", []) if image_index == highlighted else []
+        self._detail_match_position = 0
+        self._detail_highlight_state.update(
+            pixbuf=self._detail_pixbuf, boxes=boxes, pulse=1.0, active_index=0
+        )
+        self.detail_highlights.queue_draw()
+        window = self._window_for_image(self._detail_item, image_index)
+        if window:
+            title = str(window.get("title") or window.get("app") or "Application window")
+            state = "Exact application-window screenshot"
+        else:
+            title = "Display overview"
+            state = "Display overview · useful for minimized or uncaptured windows"
+        self.detail_state.set_label(
+            f"{self._detail_position + 1} of {len(self._detail_indices)} · {title[:90]} · {state}"
+        )
+        self._update_match_controls()
+        self._apply_zoom()
+
+    def _empty_preview_state(self) -> str:
+        if not self._settings.get_boolean("recall-capture-screenshots"):
+            return "Screenshot capture is disabled; searchable metadata was captured."
+        return "Metadata captured; this window was minimized, excluded, or unavailable to the compositor."
+
+    def _step_detail(self, delta: int) -> None:
+        if self._detail_indices:
+            self._set_detail_position((self._detail_position + delta) % len(self._detail_indices))
+
+    def _step_match(self, delta: int) -> None:
+        boxes = self._detail_highlight_state.get("boxes") or []
+        if not boxes:
+            return
+        self._detail_match_position = (self._detail_match_position + delta) % len(boxes)
+        self._detail_highlight_state["active_index"] = self._detail_match_position
+        self._update_match_controls()
+        self._pulse_match()
+        self._center_match()
+
+    def _update_match_controls(self) -> None:
+        count = len(self._detail_highlight_state.get("boxes") or [])
+        self.match_counter.set_label(
+            f"Match {self._detail_match_position + 1} of {count}" if count else "No OCR match"
+        )
+        self.match_previous.set_sensitive(count > 1)
+        self.match_next.set_sensitive(count > 1)
+
+    def _pulse_match(self) -> None:
+        started = time.monotonic()
+
+        def animate() -> bool:
+            elapsed = time.monotonic() - started
+            self._detail_highlight_state["pulse"] = 0.35 + 0.65 * abs(__import__("math").cos(elapsed * 8))
+            self.detail_highlights.queue_draw()
+            return elapsed < 0.9
+
+        GLib.timeout_add(70, animate)
+
+    def _set_zoom(self, value: float) -> None:
+        self._detail_zoom = value
+        self._apply_zoom()
+        if value > 1.0:
+            self._center_match()
+
+    def _apply_zoom(self) -> None:
+        pixbuf = self._detail_pixbuf
+        if pixbuf is None or self._detail_zoom <= 0:
+            self.detail_picture.set_size_request(-1, -1)
+            return
+        self.detail_picture.set_size_request(
+            max(1, round(pixbuf.get_width() * self._detail_zoom)),
+            max(1, round(pixbuf.get_height() * self._detail_zoom)),
+        )
+
+    def _center_match(self) -> None:
+        boxes = self._detail_highlight_state.get("boxes") or []
+        if not boxes:
+            return
+        box = boxes[self._detail_match_position]
+
+        def center() -> bool:
+            try:
+                horizontal = self.detail_scroller.get_hadjustment()
+                vertical = self.detail_scroller.get_vadjustment()
+                x = (float(box["x"]) + float(box["w"]) / 2) / 10000
+                y = (float(box["y"]) + float(box["h"]) / 2) / 10000
+                horizontal.set_value(max(0, x * horizontal.get_upper() - horizontal.get_page_size() / 2))
+                vertical.set_value(max(0, y * vertical.get_upper() - vertical.get_page_size() / 2))
+            except (KeyError, TypeError, ValueError):
+                pass
+            return GLib.SOURCE_REMOVE
+
+        GLib.idle_add(center)
+
+    def _key_pressed(self, _controller, keyval: int, _keycode: int, state) -> bool:
+        if keyval in (Gdk.KEY_Left, Gdk.KEY_Up):
+            self._step_detail(-1)
+            return True
+        if keyval in (Gdk.KEY_Right, Gdk.KEY_Down):
+            self._step_detail(1)
+            return True
+        if keyval in (Gdk.KEY_plus, Gdk.KEY_equal):
+            self._set_zoom(min(3.0, max(1.0, self._detail_zoom or 1.0) + 0.25))
+            return True
+        if keyval == Gdk.KEY_minus:
+            self._set_zoom(max(0.5, (self._detail_zoom or 1.0) - 0.25))
+            return True
+        if keyval == Gdk.KEY_0:
+            self._set_zoom(1.0)
+            return True
+        if keyval in (Gdk.KEY_space, Gdk.KEY_Return) and self._detail_item:
+            if keyval == Gdk.KEY_Return:
+                self._open_item(None, self._detail_item)
+            else:
+                self._view_item(None, self._detail_item)
+            return True
+        return False
 
     def _selected_day(self) -> str:
         selected = self.date_filter.get_active_id() or ""
@@ -1465,9 +1800,10 @@ class RecallSearchWindow(Adw.ApplicationWindow):
                 margin_end=10,
             )
             row.add_css_class("card")
-            preview = recall_preview(item, width=320, height=180, show_all=False)
-            preview.set_size_request(320, 180)
-            row.append(preview)
+            if self._view_mode == "visual":
+                preview = recall_preview(item, width=190, height=108, show_all=False)
+                preview.set_size_request(190, 108)
+                row.append(preview)
             body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=7, hexpand=True)
             if item.get("result_kind") == "window":
                 heading = f"{apps} — {titles}" if titles else apps
@@ -1491,7 +1827,7 @@ class RecallSearchWindow(Adw.ApplicationWindow):
                 label=item.get("ocr_excerpt") or titles or "No searchable text was exposed",
                 xalign=0,
                 wrap=True,
-                lines=3,
+                lines=2 if self._view_mode == "visual" else 1,
                 ellipsize=Pango.EllipsizeMode.END,
             )
             details.add_css_class("dim-label")
@@ -1515,6 +1851,9 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             actions.append(self._more_button(item))
             body.append(actions)
             row.append(body)
+            gesture = Gtk.GestureClick()
+            gesture.connect("pressed", self._select_item, item)
+            row.add_controller(gesture)
             self.results.insert(row, -1)
             self._rows.append(row)
         status = self._vault.status()
@@ -1531,6 +1870,20 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             if entries
             else "No matching encrypted Recall snapshots. Check Capture diagnostics in SessionSifu."
         )
+        if entries:
+            selected_name = self._detail_item.get("name") if self._detail_item else ""
+            selected = next(
+                (item for item in entries if item.get("name") == selected_name), entries[0]
+            )
+            self._show_detail(selected)
+        else:
+            self._detail_item = None
+            self._detail_indices = []
+            self.detail_heading.set_label("No saved moment selected")
+            self.detail_meta.set_label("Try a broader search or check Capture diagnostics.")
+            self.detail_picture.set_paintable(None)
+            self.detail_state.set_label(self._empty_preview_state())
+            self._clear_box(self.detail_filmstrip)
 
     def _open_item(self, _button, item: dict) -> None:
         target = next(iter(item.get("targets", [])), "")
@@ -1895,6 +2248,31 @@ class ManagerWindow(Adw.ApplicationWindow):
         )
         recall_group.add(self.recall_screenshots_switch)
 
+        self.recall_preview_quality_values = ["storage", "readable", "high"]
+        self.recall_preview_quality_row = Adw.ComboRow(
+            title="Screenshot detail",
+            subtitle="Higher detail improves OCR but uses more private local storage",
+        )
+        self.recall_preview_quality_row.set_model(Gtk.StringList.new([
+            "Storage saver · 960 px",
+            "Readable text · 1440 px",
+            "High detail · 1920 px",
+        ]))
+        configured_quality = self._settings.get_string("recall-preview-quality")
+        self.recall_preview_quality_row.set_subtitle(
+            RECALL_PREVIEW_STORAGE_HINTS.get(
+                configured_quality, RECALL_PREVIEW_STORAGE_HINTS["storage"]
+            )
+        )
+        self.recall_preview_quality_row.set_selected(
+            self.recall_preview_quality_values.index(configured_quality)
+            if configured_quality in self.recall_preview_quality_values else 0
+        )
+        self.recall_preview_quality_row.connect(
+            "notify::selected", self._recall_preview_quality_changed
+        )
+        recall_group.add(self.recall_preview_quality_row)
+
         self.recall_ocr_switch = Adw.SwitchRow(
             title="Index screenshot text with local OCR",
             subtitle="Separate opt-in; requires screenshot previews and never uploads text",
@@ -2204,6 +2582,9 @@ class ManagerWindow(Adw.ApplicationWindow):
         self.recall_retention_row.set_sensitive(enabled)
         self.recall_files_switch.set_sensitive(enabled)
         self.recall_screenshots_switch.set_sensitive(enabled)
+        self.recall_preview_quality_row.set_sensitive(
+            enabled and self.recall_screenshots_switch.get_active()
+        )
         self.recall_ocr_switch.set_sensitive(enabled and self.recall_screenshots_switch.get_active())
         self.recall_semantic_switch.set_sensitive(True)
         self.recall_sensitive_switch.set_sensitive(enabled)
@@ -2237,6 +2618,17 @@ class ManagerWindow(Adw.ApplicationWindow):
         if not row.get_active() and self.recall_ocr_switch.get_active():
             self.recall_ocr_switch.set_active(False)
         self._update_recall_controls()
+
+    def _recall_preview_quality_changed(self, row, _param) -> None:
+        selected = row.get_selected()
+        if selected < len(self.recall_preview_quality_values):
+            self._settings.set_string(
+                "recall-preview-quality",
+                self.recall_preview_quality_values[selected],
+            )
+            row.set_subtitle(RECALL_PREVIEW_STORAGE_HINTS[
+                self.recall_preview_quality_values[selected]
+            ])
 
     def _toggle_recall_ocr(self, row, _param) -> None:
         self._settings.set_boolean("recall-ocr-enabled", row.get_active())
@@ -2726,6 +3118,7 @@ def main() -> int:
         help=argparse.SUPPRESS,
     )
     parser.add_argument("--display-layout", default="[]", help=argparse.SUPPRESS)
+    parser.add_argument("--preview-quality", default="storage", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     if args.compress_recall_preview:
@@ -2733,6 +3126,7 @@ def main() -> int:
             args.compress_recall_preview[0],
             args.compress_recall_preview[1],
             args.display_layout,
+            args.preview_quality,
         )
     harden_local_storage()
     if args.finalize_recall:

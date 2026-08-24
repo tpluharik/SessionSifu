@@ -114,25 +114,41 @@ def search_scene(frame: int) -> Image.Image:
     rounded(draw, (60, 62, 1140, 590), 24, "#fbfbfc", "#d1d6da")
     label(draw, (92, 95), "Browse Recall Snapshots", 27, "#30363b", True)
     label(draw, (92, 126), "Private local visual timeline", 16, "#7a8288")
-    rounded(draw, (92, 150, 1108, 202), 14, "#ffffff", "#6da431", 3)
+    rounded(draw, (92, 150, 900, 202), 14, "#ffffff", "#6da431", 3)
     typed = "release"[: max(0, min(7, (frame - 28) // 3))]
     label(draw, (122, 176), typed or "Search application, title, file or screenshot text", 18, "#363d43" if typed else "#9aa1a6", False, "lm")
-    rounded(draw, (980, 157, 1098, 195), 12, "#4d8d00")
-    label(draw, (1039, 176), "Search", 17, "#ffffff", True, "mm")
+    rounded(draw, (918, 157, 1005, 195), 12, "#4d8d00")
+    label(draw, (961, 176), "Visual", 15, "#ffffff", True, "mm")
+    rounded(draw, (1012, 157, 1098, 195), 12, "#ffffff", "#aab2b8")
+    label(draw, (1055, 176), "Compact", 14, "#30363b", True, "mm")
     if len(typed) == 7:
-        rounded(draw, (92, 222, 1108, 526), 16, "#f4f6f7")
-        preview_canvas(draw, (114, 244, 492, 494), highlight=frame >= 58)
-        label(draw, (525, 258), "Roadmap — Writer", 21, "#30363b", True)
-        label(draw, (525, 291), "Window image text · 10:41", 16, "#69727a")
-        label(draw, (525, 333), "…restore preview before release…", 18, "#30363b")
-        rounded(draw, (525, 388, 652, 431), 12, "#4d8d00")
-        label(draw, (588, 409), "Open", 17, "#ffffff", True, "mm")
-        rounded(draw, (668, 388, 870, 431), 12, "#ffffff", "#aab2b8")
-        label(draw, (769, 409), "View screenshots", 16, "#30363b", True, "mm")
-        label(draw, (525, 468), "1 matching window · 3 images in this moment", 15, "#69727a")
+        rounded(draw, (92, 222, 406, 526), 16, "#f4f6f7")
+        rounded(draw, (106, 238, 392, 372), 12, "#ffffff", "#6da431", 2)
+        preview_canvas(draw, (118, 248, 260, 350), highlight=False)
+        label(draw, (272, 255), "Roadmap", 16, "#30363b", True)
+        label(draw, (272, 280), "Writer", 14, "#69727a")
+        label(draw, (118, 393), "Found in screenshot", 14, "#4d8d00", True)
+        label(draw, (118, 420), "…preview before release…", 14, "#30363b")
+        label(draw, (118, 456), "10:41 · exact window", 13, "#69727a")
+        preview_canvas(draw, (424, 238, 1088, 457), highlight=frame >= 58)
+        label(draw, (424, 476), "1 of 3 · Roadmap — Writer · Exact application-window screenshot", 13, "#69727a")
+        for index, (text, active) in enumerate((("Roadmap", True), ("Research", False), ("Tests", False))):
+            x1 = 424 + index * 151
+            rounded(draw, (x1, 497, x1 + 140, 526), 8, "#e9f2de" if active else "#ffffff", "#6da431" if active else "#c5ccd1")
+            label(draw, (x1 + 70, 511), text, 12, "#30363b", active, "mm")
+        for index, text in enumerate(("‹ Match", "Match 1 of 1", "Zoom to match")):
+            x1 = 884 + index * 68 if index < 2 else 988
+            if index == 0:
+                rounded(draw, (735, 497, 812, 526), 8, "#ffffff", "#c5ccd1")
+                label(draw, (773, 511), text, 11, "#30363b", False, "mm")
+            elif index == 1:
+                label(draw, (873, 511), text, 11, "#69727a", False, "mm")
+            else:
+                rounded(draw, (982, 497, 1088, 526), 8, "#4d8d00")
+                label(draw, (1035, 511), text, 10, "#ffffff", True, "mm")
     else:
         label(draw, (600, 350), "Search encrypted moments by the window you remember", 20, "#747d84", True, "mm")
-    footer(draw, 1, "Search per-window metadata and OCR — no cloud index")
+    footer(draw, 1, "Large preview, window filmstrip and OCR match navigation")
     return image
 
 
@@ -224,6 +240,7 @@ def main() -> int:
         quality=68,
         method=6,
     )
+    frames[63].save(MEDIA / "recall-demo-poster.png", optimize=True)
     with tempfile.TemporaryDirectory(prefix="sessionsifu-demo-") as directory:
         frame_dir = Path(directory)
         for index, frame in enumerate(frames):
@@ -237,7 +254,6 @@ def main() -> int:
             ],
             check=True,
         )
-    frames[63].save(MEDIA / "recall-demo-poster.png", optimize=True)
     return 0
 
 

@@ -1,11 +1,11 @@
 {
-  "version": "3.1.9",
+  "version": "3.2.0",
   "channel": "stable",
-  "issued_at": "2026-08-23T20:07:22Z",
-  "expires_at": "2026-10-07T20:07:22Z",
+  "issued_at": "2026-08-24T05:11:27Z",
+  "expires_at": "2026-10-08T05:11:27Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.1.9_all.deb",
-  "sha256": "4c2a52420f6ca795b910a9bfea7134ce5c1a9957ff05552fb76705f3b3acadca",
-  "size": 3694432,
-  "notes": "SessionSifu 3.1.9 bundles verified Czech and English OCR models for normal installs, portable builds and the signed user-local updater."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.2.0_all.deb",
+  "sha256": "74844d4dedeea7ceea9940612dbe5d3cc83dc6a113c9d72994d6d347cdc2e76d",
+  "size": 3699132,
+  "notes": "SessionSifu 3.2.0 adds a large master-detail Recall browser, every-window filmstrip, OCR match navigation and configurable 960/1440/1920-pixel previews."
 }

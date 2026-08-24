@@ -194,6 +194,18 @@
       </description>
     </key>
 
+    <key name="recall-preview-quality" type="s">
+      <default>'storage'</default>
+      <summary>Recall screenshot preview quality</summary>
+      <description>Storage saver uses 960 px, Readable text uses 1440 px and High detail uses 1920 px on the longest edge.</description>
+    </key>
+
+    <key name="recall-search-view-mode" type="s">
+      <default>'visual'</default>
+      <summary>Recall search result layout</summary>
+      <description>Remembers either the visual card layout or compact result list.</description>
+    </key>
+
     <key name="recall-ocr-enabled" type="b">
       <default>false</default>
       <summary>Index screenshot text with local OCR</summary>
