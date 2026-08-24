@@ -48,8 +48,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.2.0"
-assert metadata["version"] == 29
+assert metadata["version-name"] == "3.2.1"
+assert metadata["version"] == 30
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -82,7 +82,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.2.0"' in build_script
+assert 'version="3.2.1"' in build_script
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
 assert "CHANGELOG.md" in build_script
@@ -157,7 +157,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.2.0"' in app_source
+assert 'CURRENT_VERSION = "3.2.1"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -219,6 +219,10 @@ assert 'Gtk.ToggleButton(label="Visual")' in app_source
 assert 'Gtk.ToggleButton(label="Compact")' in app_source
 assert 'for label, zoom in (("Fit", 0.0), ("100%", 1.0), ("Zoom to match", 1.6))' in app_source
 assert "def _center_match" in app_source
+assert "Gtk.GestureZoom" in app_source
+assert "Gtk.EventControllerScroll" in app_source
+assert "def _touchpad_scroll" in app_source
+assert "def _restore_scroll_center" in app_source
 assert "paint_to_content(null)" in source_text
 assert "Shell.Screenshot.composite_to_stream" in source_text
 assert "_captureWindowActors(name)" in source_text
@@ -243,6 +247,11 @@ portable_ui = (root / "portable" / "sessionsifu_portable" / "ui.py").read_text()
 assert "class RecallSearchDialog" in portable_ui
 assert "QSplitter" in portable_ui
 assert "self.filmstrip" in portable_ui
+assert "Qt.GestureType.PinchGesture" in portable_ui
+assert "QEvent.Type.NativeGesture" in portable_ui
+assert "QEvent.Type.Wheel" in portable_ui
+assert "def eventFilter" in portable_ui
+assert "def restore_scroll_center" in portable_ui
 assert '"Storage saver · 960 px"' in portable_ui
 assert "class RecallSearchDialog" in portable_ui
 assert "def recall_result_pixmap" in portable_ui
@@ -321,7 +330,7 @@ for required in (
 
 roadmap = (root / "ROADMAP.md").read_text()
 assert len(re.findall(r"^## \d+\.", roadmap, re.MULTILINE)) == 10
-assert "## Shipped foundation — 3.2.0" in roadmap
+assert "## Shipped foundation — 3.2.1" in roadmap
 assert "## Explicit non-goals" in roadmap
 
 workflow = (root / ".github" / "workflows" / "release.yml").read_text()

@@ -1,11 +1,11 @@
 {
-  "version": "3.2.0",
+  "version": "3.2.1",
   "channel": "stable",
-  "issued_at": "2026-08-24T05:11:27Z",
-  "expires_at": "2026-10-08T05:11:27Z",
+  "issued_at": "2026-08-24T06:10:08Z",
+  "expires_at": "2026-10-08T06:10:08Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.2.0_all.deb",
-  "sha256": "74844d4dedeea7ceea9940612dbe5d3cc83dc6a113c9d72994d6d347cdc2e76d",
-  "size": 3699132,
-  "notes": "SessionSifu 3.2.0 adds a large master-detail Recall browser, every-window filmstrip, OCR match navigation and configurable 960/1440/1920-pixel previews."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.2.1_all.deb",
+  "sha256": "c3f36a1aacac27a2d22199eb3d2b3fafdb650beac1840234080e7ea9f53924f3",
+  "size": 3701168,
+  "notes": "SessionSifu 3.2.1 adds touchpad panning, native pinch zoom and Ctrl+scroll zoom to the large Recall screenshot viewer on GNOME and portable desktops."
 }

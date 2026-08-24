@@ -56,6 +56,10 @@ customizable search shortcut (`Ctrl+Alt+Space` by default).
   images.
 - **Fit**, **100%** and **Zoom to match** control screenshot size. `+`, `-` and
   `0` provide equivalent keyboard controls.
+- On a touchpad, use two fingers to pan an enlarged screenshot and pinch to
+  zoom. `Ctrl` plus two-finger vertical scrolling is the zoom fallback on
+  systems that do not expose native pinch events. Zooming preserves the
+  current center instead of jumping back to the image origin.
 - OCR results show a match counter. **Previous match** and **Next match** move
   through recognized occurrences, center the selected word and pulse its
   highlight.
@@ -69,7 +73,7 @@ rendered highlights are not written to a persistent search database.
 
 ## Czech and English OCR
 
-Version 3.2.0 ships pinned Czech and English fast Tesseract models in the Debian
+Version 3.2.1 ships pinned Czech and English fast Tesseract models in the Debian
 package, signed in-app update and portable artifacts. SessionSifu selects both
 models together so mixed-language application interfaces can be searched.
 Recognition is local; the model never sends screenshots or text to a service.

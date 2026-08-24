@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QBuffer, QIODevice, QSettings, QSize, QTimer, Qt, QUrl
+from PySide6.QtCore import QByteArray, QBuffer, QEvent, QIODevice, QSettings, QSize, QTimer, Qt, QUrl
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -830,6 +830,7 @@ class RecallSearchDialog(QDialog):
         self._detail_pixmap = QPixmap()
         self._detail_source_pixmap = QPixmap()
         self._zoom = 0.0
+        self._pinch_start_zoom = 1.0
         self._match_position = 0
         layout = QVBoxLayout(self)
         title = QLabel("<h2>Search Privacy Recall</h2>")
@@ -884,10 +885,17 @@ class RecallSearchDialog(QDialog):
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setMinimumSize(640, 400)
         self.preview_scroll.setWidget(self.preview)
+        self.preview_scroll.viewport().installEventFilter(self)
+        self.preview_scroll.viewport().grabGesture(Qt.GestureType.PinchGesture)
         detail_layout.addWidget(self.preview_scroll, 1)
         self.preview_state = QLabel("Metadata-only saved moment")
         self.preview_state.setWordWrap(True)
         detail_layout.addWidget(self.preview_state)
+        gesture_hint = QLabel(
+            "Two-finger scroll to pan · pinch or Ctrl+scroll to zoom"
+        )
+        gesture_hint.setStyleSheet("color: palette(mid);")
+        detail_layout.addWidget(gesture_hint)
         navigation = QHBoxLayout()
         previous = QPushButton("‹ Window")
         previous.clicked.connect(lambda: self.step_image(-1))
@@ -1106,11 +1114,46 @@ class RecallSearchDialog(QDialog):
         horizontal.setValue(round(float(box.get("x", 0)) * horizontal.maximum() / 10000))
         vertical.setValue(round(float(box.get("y", 0)) * vertical.maximum() / 10000))
 
-    def set_zoom(self, value: float) -> None:
-        self._zoom = value
-        self.apply_zoom()
+    def effective_zoom(self) -> float:
+        if self._zoom > 0 or self._detail_pixmap.isNull():
+            return self._zoom or 1.0
+        viewport = self.preview_scroll.viewport().size()
+        return min(
+            max(1, viewport.width() - 8) / self._detail_pixmap.width(),
+            max(1, viewport.height() - 8) / self._detail_pixmap.height(),
+            1.0,
+        )
 
-    def apply_zoom(self) -> None:
+    def scroll_center(self) -> tuple[float, float]:
+        def center(scrollbar) -> float:
+            extent = max(1, scrollbar.maximum() + scrollbar.pageStep())
+            return max(
+                0.0,
+                min(1.0, (scrollbar.value() + scrollbar.pageStep() / 2) / extent),
+            )
+
+        return (
+            center(self.preview_scroll.horizontalScrollBar()),
+            center(self.preview_scroll.verticalScrollBar()),
+        )
+
+    def restore_scroll_center(self, anchor: tuple[float, float]) -> None:
+        for ratio, scrollbar in zip(
+            anchor,
+            (
+                self.preview_scroll.horizontalScrollBar(),
+                self.preview_scroll.verticalScrollBar(),
+            ),
+        ):
+            extent = scrollbar.maximum() + scrollbar.pageStep()
+            scrollbar.setValue(round(ratio * extent - scrollbar.pageStep() / 2))
+
+    def set_zoom(self, value: float) -> None:
+        anchor = self.scroll_center()
+        self._zoom = 0.0 if value <= 0 else max(0.25, min(4.0, value))
+        self.apply_zoom(anchor)
+
+    def apply_zoom(self, anchor: tuple[float, float] | None = None) -> None:
         if self._detail_pixmap.isNull():
             self.preview.clear()
             self.preview.setText("Screenshot unavailable")
@@ -1131,6 +1174,39 @@ class RecallSearchDialog(QDialog):
             )
         self.preview.setPixmap(rendered)
         self.preview.resize(rendered.size())
+        if anchor is not None:
+            QTimer.singleShot(0, lambda: self.restore_scroll_center(anchor))
+
+    def zoom_by_factor(self, factor: float) -> None:
+        self.set_zoom(self.effective_zoom() * max(0.5, min(2.0, factor)))
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt API
+        if watched is self.preview_scroll.viewport():
+            if event.type() == QEvent.Type.Gesture:
+                pinch = event.gesture(Qt.GestureType.PinchGesture)
+                if pinch is not None:
+                    if pinch.state() == Qt.GestureState.GestureStarted:
+                        self._pinch_start_zoom = self.effective_zoom()
+                    self.set_zoom(
+                        self._pinch_start_zoom * float(pinch.totalScaleFactor())
+                    )
+                    event.accept()
+                    return True
+            if event.type() == QEvent.Type.NativeGesture:
+                if event.gestureType() == Qt.NativeGestureType.ZoomNativeGesture:
+                    self.zoom_by_factor(1.0 + float(event.value()))
+                    event.accept()
+                    return True
+            if (
+                event.type() == QEvent.Type.Wheel
+                and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+            ):
+                delta = event.pixelDelta().y() or event.angleDelta().y()
+                if delta:
+                    self.zoom_by_factor(1.12 if delta > 0 else 1 / 1.12)
+                    event.accept()
+                    return True
+        return super().eventFilter(watched, event)
 
     def toggle_fullscreen(self) -> None:
         self.showNormal() if self.isFullScreen() else self.showFullScreen()

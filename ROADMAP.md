@@ -1,6 +1,6 @@
 # SessionSifu roadmap
 
-This roadmap describes product direction after 3.2.0. It is ordered by user
+This roadmap describes product direction after 3.2.1. It is ordered by user
 impact, privacy risk and platform feasibility; it is not a release-date promise.
 Operating-system security boundaries take precedence over feature parity.
 
@@ -11,7 +11,7 @@ Status labels used below:
 - **Planned** — accepted direction that still needs design or platform work;
 - **Research** — useful goal without a dependable cross-platform API yet.
 
-## Shipped foundation — 3.2.0
+## Shipped foundation — 3.2.1
 
 SessionSifu currently provides:
 
@@ -26,6 +26,8 @@ SessionSifu currently provides:
 - adaptive master-detail Recall browsing with a large preview, every captured
   window in a filmstrip, compact/visual layouts, keyboard zoom and OCR match
   navigation;
+- native touchpad panning, pinch zoom and Ctrl+scroll zoom with a stable visual
+  anchor in both the GNOME and portable Recall browsers;
 - bounded 960, 1440 and 1920-pixel screenshot quality profiles shared across
   the GNOME and portable editions;
 - app/site exclusions, timed pauses, quotas, capture diagnostics and granular

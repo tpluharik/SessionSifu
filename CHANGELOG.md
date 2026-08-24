@@ -4,6 +4,17 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.2.1
+
+- Added native touchpad control to the large Privacy Recall preview on GNOME,
+  Windows, macOS, KDE Plasma and generic Linux: two-finger scrolling pans an
+  enlarged screenshot and pinch gestures zoom it.
+- Added Ctrl+touchpad/mouse-wheel zoom as a dependable cross-platform fallback
+  while leaving unmodified scrolling available to the preview viewport.
+- Kept the same point in view while changing zoom, including during continuous
+  pinch gestures, and added an in-context gesture hint beside the preview.
+- Added source-level and package regressions for both GTK and Qt gesture paths.
+
 ## 3.2.0
 
 - Rebuilt Recall search as an adaptive master-detail browser. Results remain
