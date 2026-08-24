@@ -952,6 +952,7 @@ class RecallVault:
                         ),
                         "result_kind": "window",
                         "highlight_boxes": self._matching_ocr_boxes(window, needle),
+                        "highlight_image_index": int(window.get("image_index", -1)),
                         "ocr_excerpt": self._excerpt(
                             str(window.get("ocr_text", "")), needle
                         ),

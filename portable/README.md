@@ -4,7 +4,7 @@ This package contains the shared SessionSifu 3 desktop application used by the
 Windows, macOS, KDE Plasma and generic GNOME builds. See the repository README
 for platform capabilities and installation artifacts.
 
-The current 3.2.1 manager includes encrypted visual Privacy Recall. It is off by default;
+The current 3.2.2 manager includes encrypted visual Privacy Recall. It is off by default;
 screenshots, open paths, OCR and related ranking require separate choices. Its
 tray menu shows when capture is active and offers timed pauses. Application and
 observable website exclusions redact matching activity from new captures
@@ -23,7 +23,7 @@ does not expose one. Images are encrypted locally, optional OCR is indexed per
 window, and a result can reopen its opted-in file. Minimized/unmapped windows
 may remain metadata-only.
 
-Version 3.2.1 bundles the pinned Czech and English Tesseract language models in
+Version 3.2.2 bundles the pinned Czech and English Tesseract language models in
 portable artifacts. OCR still requires a compatible local Tesseract executable;
 the language data itself is no longer a separate download.
 

@@ -16,7 +16,7 @@ SessionSifu saves and reconstructs desktop layouts. It records running
 applications, documents and windows, then can relaunch applications and rebuild
 the supported parts of their layout.
 
-Version 3.2.1 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
+Version 3.2.2 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
 encrypted, per-window OCR activity timeline across GNOME, Windows, macOS, KDE
 Plasma 6 and other Linux desktops. Czech and English OCR data ships with the
 installer and verified update. Recall previews support two-finger panning,
@@ -129,17 +129,17 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_3.2.1_all.deb` from the matching GitHub Release, or build it
+Download `sessionsifu_3.2.2_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_3.2.1_all.deb
+sudo apt install ./sessionsifu_3.2.2_all.deb
 ```
 
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.2.1_all.deb
+sudo apt install ./dist/sessionsifu_3.2.2_all.deb
 ```
 
 After installation:
@@ -155,10 +155,10 @@ After installation:
 
 Tagged releases attach these self-contained artifacts:
 
-- `SessionSifu-3.2.1-windows-x64.zip`;
-- `SessionSifu-3.2.1-macos-arm64.zip`;
-- `SessionSifu-3.2.1-macos-x64.zip`; and
-- `SessionSifu-3.2.1-linux-x64.tar.gz`.
+- `SessionSifu-3.2.2-windows-x64.zip`;
+- `SessionSifu-3.2.2-macos-arm64.zip`;
+- `SessionSifu-3.2.2-macos-x64.zip`; and
+- `SessionSifu-3.2.2-linux-x64.tar.gz`.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -417,7 +417,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.2.1_all.deb
+dist/sessionsifu_3.2.2_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -438,12 +438,12 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v3.2.1` tag publishes the artifacts and `SHA256SUMS` as a GitHub
+A pushed `v3.2.2` tag publishes the artifacts and `SHA256SUMS` as a GitHub
 Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
 
-The modernized [SessionSifu roadmap](ROADMAP.md) separates the shipped 3.2.1
+The modernized [SessionSifu roadmap](ROADMAP.md) separates the shipped 3.2.2
 foundation from two near-term priorities and eight planned/research tracks.
 Each entry states its privacy boundary and a testable completion condition; the
 roadmap also records explicit non-goals.
@@ -466,7 +466,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Recall research and product decisions](docs/RECALL_RESEARCH.md)
 - [Documentation index](docs/README.md)
 
-The current 3.2.1 release includes verified Czech and English fast Tesseract
+The current 3.2.2 release includes verified Czech and English fast Tesseract
 models in the Debian package, signed in-app update and portable artifacts. Mixed
 Czech/English desktop text therefore works without installing a separate
 language package, while recognition stays completely local. Recall search is

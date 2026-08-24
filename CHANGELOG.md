@@ -4,6 +4,17 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.2.2
+
+- Fixed GNOME window-OCR results so the large right-hand Recall screenshot
+  receives the same highlight boxes already visible in the small result card.
+- Made the matched screenshot identity explicit in GNOME and portable search
+  results instead of assuming that OCR coordinates always belong to image zero.
+- Fixed display-level OCR results on Windows, macOS, KDE Plasma and generic
+  Linux so the detail viewer selects and highlights the display overview rather
+  than an unrelated first window.
+- Added regressions for matched-window and display-preview highlight routing.
+
 ## 3.2.1
 
 - Added native touchpad control to the large Privacy Recall preview on GNOME,

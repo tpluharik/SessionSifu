@@ -62,7 +62,9 @@ customizable search shortcut (`Ctrl+Alt+Space` by default).
   current center instead of jumping back to the image origin.
 - OCR results show a match counter. **Previous match** and **Next match** move
   through recognized occurrences, center the selected word and pulse its
-  highlight.
+  highlight. The result card and large detail viewer use the same matched
+  screenshot and OCR coordinates; selecting a result opens that screenshot
+  directly before the rest of the filmstrip.
 - Each preview clearly identifies an exact window image, display-overview
   fallback, metadata-only capture, disabled screenshots or compositor limits.
 - **Open** asks the recorded application to reopen that window's validated file
@@ -73,7 +75,7 @@ rendered highlights are not written to a persistent search database.
 
 ## Czech and English OCR
 
-Version 3.2.1 ships pinned Czech and English fast Tesseract models in the Debian
+Version 3.2.2 ships pinned Czech and English fast Tesseract models in the Debian
 package, signed in-app update and portable artifacts. SessionSifu selects both
 models together so mixed-language application interfaces can be searched.
 Recognition is local; the model never sends screenshots or text to a service.

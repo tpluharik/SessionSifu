@@ -750,6 +750,7 @@ class RecallStore:
                         "highlight_boxes": _matching_ocr_boxes(
                             window.get("ocr_boxes"), needle
                         ),
+                        "highlight_image": str(window.get("image") or ""),
                         "ocr_excerpt": " ".join(
                             str(window.get("ocr_text") or "").split()
                         )[:320],
@@ -772,6 +773,7 @@ class RecallStore:
                         "rank": round(visual_candidates[path.name], 4),
                         "match_type": "Visual text",
                         "result_kind": "visual",
+                        "highlight_image": "",
                         "highlight_boxes": _matching_ocr_boxes(
                             payload.get("ocr_boxes"), needle
                         ),

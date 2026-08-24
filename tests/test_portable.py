@@ -83,7 +83,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.2.1")
+        self.assertEqual(VERSION, "3.2.2")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -250,6 +250,32 @@ class PortableTests(unittest.TestCase):
             self.assertEqual(result["match_type"], "Window image text")
             self.assertIn("falcon", result["ocr_excerpt"])
             self.assertEqual(result["highlight_boxes"][0]["t"], "falcon")
+            self.assertEqual(
+                result["highlight_image"], result["matched_window"]["image"]
+            )
+
+    def test_display_ocr_highlight_targets_display_overview(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RecallStore(Path(directory))
+            store._ocr = lambda preview: (
+                (
+                    "visible albatross status",
+                    [{"t": "albatross", "x": 1800, "y": 2200,
+                      "w": 2400, "h": 900, "c": 94}],
+                )
+                if preview == b"display-preview" else ("", [])
+            )
+            store.save(
+                FakeAdapter().capture(),
+                preview=b"display-preview",
+                ocr_enabled=True,
+            )
+            result = next(
+                item for item in store.search("albatross")
+                if item["result_kind"] == "visual"
+            )
+            self.assertEqual(result["highlight_image"], "")
+            self.assertEqual(result["highlight_boxes"][0]["t"], "albatross")
 
     def test_excluded_app_pixels_are_not_persisted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

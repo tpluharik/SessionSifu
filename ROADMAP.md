@@ -1,6 +1,6 @@
 # SessionSifu roadmap
 
-This roadmap describes product direction after 3.2.1. It is ordered by user
+This roadmap describes product direction after 3.2.2. It is ordered by user
 impact, privacy risk and platform feasibility; it is not a release-date promise.
 Operating-system security boundaries take precedence over feature parity.
 
@@ -11,7 +11,7 @@ Status labels used below:
 - **Planned** — accepted direction that still needs design or platform work;
 - **Research** — useful goal without a dependable cross-platform API yet.
 
-## Shipped foundation — 3.2.1
+## Shipped foundation — 3.2.2
 
 SessionSifu currently provides:
 

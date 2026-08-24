@@ -86,6 +86,7 @@ class RecallEngineTests(unittest.TestCase):
             match = vault.search("falcon")[0]
             self.assertEqual(match["match_type"], "Window image text")
             self.assertEqual(match["matched_window"]["image_index"], image_index)
+            self.assertEqual(match["highlight_image_index"], image_index)
             self.assertIn("falcon", match["ocr_excerpt"])
             self.assertEqual(match["highlight_boxes"][0]["t"], "falcon")
             self.assertEqual(match["highlight_boxes"][0]["x"], 2500)
