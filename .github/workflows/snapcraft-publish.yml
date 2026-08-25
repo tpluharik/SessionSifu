@@ -22,7 +22,9 @@ jobs:
           app_version=$(sed -n 's/^CURRENT_VERSION = "\([^"]*\)"/\1/p' app/sessionsifu)
           snap_version=$(sed -n 's/^version: "\([^"]*\)"/\1/p' snap/snapcraft.yaml)
           test "$snap_version" = "$app_version"
-          test "$GITHUB_REF_NAME" = "v$app_version"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            test "$GITHUB_REF_NAME" = "v$app_version"
+          fi
       - name: Build snap
         id: build
         uses: snapcore/action-build@3bdaa03e1ba6bf59a65f84a751d943d549a54e79 # v1
