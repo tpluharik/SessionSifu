@@ -1,0 +1,31 @@
+Description: Fix manually dispatched classic Snap builds
+ Permit manual workflow builds from main and bundle the Python interpreter,
+ which classic snaps cannot inherit from the core24 base.
+Author: Tomas Pluharik <tpluharik@gmail.com>
+Forwarded: not-needed
+Last-Update: 2026-08-25
+--- a/.github/workflows/snapcraft-publish.yml
++++ b/.github/workflows/snapcraft-publish.yml
+@@ -22,7 +22,9 @@ jobs:
+           app_version=$(sed -n 's/^CURRENT_VERSION = "\([^"]*\)"/\1/p' app/sessionsifu)
+           snap_version=$(sed -n 's/^version: "\([^"]*\)"/\1/p' snap/snapcraft.yaml)
+           test "$snap_version" = "$app_version"
+-          test "$GITHUB_REF_NAME" = "v$app_version"
++          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
++            test "$GITHUB_REF_NAME" = "v$app_version"
++          fi
+       - name: Build snap
+         id: build
+         uses: snapcore/action-build@3bdaa03e1ba6bf59a65f84a751d943d549a54e79 # v1
+--- a/snap/snapcraft.yaml
++++ b/snap/snapcraft.yaml
+@@ -40,6 +40,9 @@ parts:
+       - psutil==7.2.2
+       - PySide6==6.11.2
+     stage-packages:
++      # Classic snaps cannot use the interpreter from the core24 base. Bundle
++      # Python explicitly so the launcher and virtual environment are portable.
++      - python3
+       - libdbus-1-3
+       - libegl1
+       - libgl1
