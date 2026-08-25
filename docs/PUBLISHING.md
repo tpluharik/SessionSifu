@@ -59,6 +59,16 @@ available to the publisher in the Store dashboard but is not released to a
 public channel: Canonical marked it as requiring manual classic-confinement
 review.
 
+The required classic-confinement forum request was submitted in the
+`store-requests/classic-confinement` category on 25 August 2026. Because it is
+the publisher account's first topic, the forum placed it in its normal
+moderation queue before public listing. The request identifies the supported
+agent/assistant category, explains why exact user-directed host applications
+and documents are unknown at build time, and makes clear that this snap is the
+portable edition and does not install a GNOME Shell extension. Store revision
+1 continues to show `Manual review pending`; no public channel is selected
+until both the forum moderation and Store confinement review finish.
+
 The snap is built on tags and manual dispatches by
 `.github/workflows/snapcraft-publish.yml`. A restricted, snap-specific Store
 credential is installed as the `SNAPCRAFT_STORE_CREDENTIALS` GitHub secret and
