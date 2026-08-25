@@ -53,12 +53,19 @@ helpers where available and store encrypted local session history. These are
 core functions, not optional conveniences that can truthfully operate inside a
 strict sandbox.
 
-The `sessionsifu` name is registered to the `tpluharik77` publisher. The snap is
-built on tags and manual dispatches by
-`.github/workflows/snapcraft-publish.yml`. Store publication remains disabled
-until classic-confinement review is complete and the repository secret
-`SNAPCRAFT_STORE_CREDENTIALS` is installed. Store credentials must never be
-pasted into issues, logs or documentation.
+The `sessionsifu` name is registered to the `tpluharik77` publisher. Revision 1
+of version 3.2.3 was built successfully and uploaded on 25 August 2026. It is
+available to the publisher in the Store dashboard but is not released to a
+public channel: Canonical marked it as requiring manual classic-confinement
+review.
+
+The snap is built on tags and manual dispatches by
+`.github/workflows/snapcraft-publish.yml`. A restricted, snap-specific Store
+credential is installed as the `SNAPCRAFT_STORE_CREDENTIALS` GitHub secret and
+is limited to the `sessionsifu` name and `edge` channel. Store credentials must
+never be pasted into issues, logs or documentation. Public installation must
+not be advertised until the classic-confinement request is approved and the
+revision is released.
 
 ## WinGet, Chocolatey, AUR and Homebrew
 
