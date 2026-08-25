@@ -83,6 +83,19 @@ and release assets exist. The Homebrew Cask remains withheld until both macOS
 archives are signed with an Apple Developer ID and notarized; publishing an
 unsigned Cask would create a poor and misleading installation experience.
 
+Tagged Windows releases are blocked unless the `release` GitHub environment
+contains both `WINDOWS_CERTIFICATE_PFX_BASE64` and
+`WINDOWS_CERTIFICATE_PASSWORD`. The workflow decodes the certificate only into
+the runner's temporary directory, signs and verifies `SessionSifu.exe`, rebuilds
+the ZIP and deletes the temporary PFX. A development build from a branch may be
+unsigned, but it is never submitted to Chocolatey.
+
+After a tagged GitHub Release is created, the Chocolatey job regenerates its
+package from the immutable release archives, packs it and submits it using
+`CHOCOLATEY_API_KEY` from the same `release` environment. The API key and PFX
+must be provisioned through GitHub's encrypted-secret UI or CLI input and must
+never be committed or pasted into logs, issues or documentation.
+
 The generated metadata is attached to every tagged release so downstream
 reviewers can reproduce its hashes. Account credentials and API keys belong in
 the package store or encrypted repository secrets, never in the source tree.

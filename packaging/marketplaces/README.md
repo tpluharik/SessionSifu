@@ -17,3 +17,8 @@ Generated definitions must be submitted through the maintainer's corresponding
 store accounts. The Homebrew Cask is intentionally held until both macOS builds
 are Developer ID-signed and notarized. See
 [`docs/PUBLISHING.md`](../../docs/PUBLISHING.md) for channel status and policy.
+
+The tag release workflow publishes the generated Chocolatey package only from
+the protected `release` environment. It requires `CHOCOLATEY_API_KEY` and also
+requires the Windows archive to have been Authenticode-signed using
+`WINDOWS_CERTIFICATE_PFX_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD`.
