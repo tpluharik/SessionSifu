@@ -83,12 +83,23 @@ and release assets exist. The Homebrew Cask remains withheld until both macOS
 archives are signed with an Apple Developer ID and notarized; publishing an
 unsigned Cask would create a poor and misleading installation experience.
 
-Tagged Windows releases are blocked unless the `release` GitHub environment
-contains both `WINDOWS_CERTIFICATE_PFX_BASE64` and
-`WINDOWS_CERTIFICATE_PASSWORD`. The workflow decodes the certificate only into
-the runner's temporary directory, signs and verifies `SessionSifu.exe`, rebuilds
-the ZIP and deletes the temporary PFX. A development build from a branch may be
-unsigned, but it is never submitted to Chocolatey.
+The preferred public-signing route is the SignPath Foundation open-source
+program. It keeps the production key in managed hardware, verifies that the
+artifact originated in the repository's GitHub-hosted workflow and returns the
+signed artifact to the same run. The repository prerequisites are recorded in
+the [code signing policy](../CODE_SIGNING_POLICY.md). The workflow integration
+will be enabled only after SignPath approves the project and supplies its real
+organization, project and policy identifiers; placeholder identifiers are not
+committed.
+
+The existing certificate-authority-issued PFX path remains a fallback. Tagged
+Windows releases are blocked unless either the approved SignPath integration is
+configured or the `release` GitHub environment contains both
+`WINDOWS_CERTIFICATE_PFX_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD`. The PFX
+fallback decodes the certificate only into the runner's temporary directory,
+signs and verifies `SessionSifu.exe`, rebuilds the ZIP and deletes the temporary
+PFX. A development build from a branch may be unsigned, but it is never
+submitted to Chocolatey.
 
 After a tagged GitHub Release is created, the Chocolatey job regenerates its
 package from the immutable release archives, packs it and submits it using
@@ -97,9 +108,18 @@ must be provisioned through GitHub's encrypted-secret UI or CLI input and must
 never be committed or pasted into logs, issues or documentation.
 
 The `release` environment and `CHOCOLATEY_API_KEY` secret were provisioned on
-25 August 2026. The two Authenticode secrets remain deliberately unset until a
-trusted certificate-authority-issued PFX is available; a self-signed
-certificate is not an acceptable substitute for public distribution.
+25 August 2026. The two PFX fallback secrets remain deliberately unset while a
+SignPath Foundation application is prepared. A self-signed certificate is not
+an acceptable substitute for public distribution.
+
+SignPath onboarding still requires external approval. The maintainer must keep
+multi-factor authentication enabled, submit the public repository and code-
+signing-policy links, install the official SignPath GitHub App when requested,
+and create a least-privilege CI submitter token. That token belongs in the
+protected `release` environment as `SIGNPATH_API_TOKEN`; it must never be
+pasted into issues, documentation or workflow output. Production workflow
+changes are made only after the assigned identifiers and artifact configuration
+are known and can be tested without guessing.
 
 The generated metadata is attached to every tagged release so downstream
 reviewers can reproduce its hashes. Account credentials and API keys belong in

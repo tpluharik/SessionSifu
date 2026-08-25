@@ -22,6 +22,8 @@ This index describes the current 3.2.3 behavior. Start with the main
   hardening work.
 - [Release signing and recovery](RELEASE_SECURITY.md) — maintainer procedure,
   key rotation and compromise response.
+- [Code signing policy](../CODE_SIGNING_POLICY.md) — signed artifact scope,
+  trusted build requirements, roles and privacy statement.
 - [Publishing and distribution](PUBLISHING.md) — GitHub Releases, Ubuntu PPA,
   Snap Store and community package-manager submission status.
 - [Roadmap](../ROADMAP.md) — shipped foundation, next priorities, planned work

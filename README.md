@@ -475,6 +475,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Contribution guide](CONTRIBUTING.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
 - [Security policy and private reporting](SECURITY.md)
+- [Code signing policy](CODE_SIGNING_POLICY.md)
 - [Security audit and remediation plan](docs/SECURITY_AUDIT.md)
 - [Privacy and local-data guide](docs/PRIVACY.md)
 - [Recall workflow guide](docs/RECALL_GUIDE.md)
