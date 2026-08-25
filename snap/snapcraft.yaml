@@ -46,6 +46,7 @@ parts:
       - libpython3.12-stdlib
       - python3-minimal
       - python3.12-minimal
+      - python3.12-venv
       - libdbus-1-3
       - libegl1
       - libgl1
