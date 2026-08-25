@@ -4,6 +4,23 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.0
+
+- Reused a bounded, memory-only decrypted-record cache and FTS5 index across
+  Recall queries instead of decrypting and reindexing the full vault for every
+  keystroke. Record changes invalidate the index automatically.
+- Replaced repeated fuzzy scans of raw OCR with a bounded token dictionary and
+  length-aware typo matching, while preserving single-word prefix search.
+- Cached optional semantic document vectors in memory so subsequent queries
+  encode only the new query and changed documents.
+- Moved GTK and Qt Recall retrieval off the UI thread, discarded stale query
+  generations, and kept only the newest pending query during rapid typing.
+- Limited initial rendering to 24 results with explicit incremental loading;
+  Compact mode avoids screenshot decryption, and Visual mode decodes only one
+  bounded thumbnail per visible result.
+- Added cross-worker cache/index regressions, semantic-cache coverage and
+  documented performance, privacy and invalidation boundaries.
+
 ## 3.4.1
 
 - Fixed a legacy user-updater compatibility failure that could activate the

@@ -48,8 +48,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.4.1"
-assert metadata["version"] == 35
+assert metadata["version-name"] == "3.5.0"
+assert metadata["version"] == 36
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -82,7 +82,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.4.1"' in build_script
+assert 'version="3.5.0"' in build_script
 assert "python3-pyatspi" in (root / "packaging" / "control").read_text()
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
@@ -164,7 +164,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.4.1"' in app_source
+assert 'CURRENT_VERSION = "3.5.0"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -270,6 +270,9 @@ assert '"Storage saver · 960 px"' in portable_ui
 assert "class RecallSearchDialog" in portable_ui
 assert "def recall_result_pixmap" in portable_ui
 assert "def recall_highlight_image_name" in portable_ui
+assert "sessionsifu-recall-search" in portable_ui
+assert "Load 24 more results" in portable_ui
+assert "self._all_entries[:self._visible_count]" in portable_ui
 assert "RecallHotkey" in portable_ui
 assert "def recall_saving_icon" in portable_ui
 assert "Saving Privacy Recall…" in portable_ui

@@ -58,7 +58,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.4.1"
+CURRENT_VERSION = "3.5.0"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -1390,6 +1390,10 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         self._vault = recall_vault()
         self._entries: list[dict] = []
         self._search_timeout = 0
+        self._search_generation = 0
+        self._search_inflight = False
+        self._pending_search: dict | None = None
+        self._render_limit = 24
         self._detail_item: dict | None = None
         self._detail_indices: list[int] = []
         self._detail_position = 0
@@ -1471,6 +1475,7 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         paned.set_position(455)
         paned.set_shrink_start_child(False)
         paned.set_shrink_end_child(False)
+        result_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         scroller = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
         self.results = Gtk.FlowBox(
             selection_mode=Gtk.SelectionMode.NONE,
@@ -1480,7 +1485,11 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             row_spacing=12,
         )
         scroller.set_child(self.results)
-        paned.set_start_child(scroller)
+        result_column.append(scroller)
+        self.load_more = Gtk.Button(label="Load 24 more results", visible=False)
+        self.load_more.connect("clicked", self._load_more_results)
+        result_column.append(self.load_more)
+        paned.set_start_child(result_column)
         paned.set_end_child(self._build_detail_pane())
         content.append(paned)
         toolbar.set_content(content)
@@ -1496,21 +1505,41 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         return _pixbuf_from_bytes(data)
 
     def _prepare_previews(self, item: dict) -> None:
+        if item.get("_pixbuf_by_index"):
+            return
         pixbufs = []
         pixbuf_by_index = {}
-        indices = list(range(min(8, int(item.get("image_count") or 0))))
+        image_count = int(item.get("image_count") or 0)
+        indices = []
+        try:
+            highlighted = int(item.get("highlight_image_index", -1))
+        except (TypeError, ValueError):
+            highlighted = -1
+        if 0 <= highlighted < image_count:
+            indices.append(highlighted)
         match = item.get("matched_window")
         if isinstance(match, dict):
             try:
                 window_image_index = int(match.get("image_index", -1))
             except (TypeError, ValueError):
                 window_image_index = -1
-            if 0 <= window_image_index < int(item.get("image_count") or 0):
+            if 0 <= window_image_index < image_count:
                 indices.append(window_image_index)
-        for index in dict.fromkeys(indices):
+        if image_count and not indices:
+            indices.append(0)
+        for index in dict.fromkeys(indices[:1]):
             data = self._vault.preview_bytes(item["name"], index)
             pixbuf = self._pixbuf(data) if data else None
             if pixbuf is not None:
+                width, height = pixbuf.get_width(), pixbuf.get_height()
+                scale = min(1.0, 320 / max(1, width), 180 / max(1, height))
+                if scale < 1.0:
+                    scaled = pixbuf.scale_simple(
+                        max(1, round(width * scale)), max(1, round(height * scale)),
+                        GdkPixbuf.InterpType.BILINEAR,
+                    )
+                    if scaled is not None:
+                        pixbuf = scaled
                 pixbufs.append(pixbuf)
                 pixbuf_by_index[index] = pixbuf
         item["_pixbufs"] = pixbufs
@@ -1920,25 +1949,62 @@ class RecallSearchWindow(Adw.ApplicationWindow):
 
     def _search(self, *_args) -> None:
         policy = recall_policy(self._settings)
-        try:
-            self._vault.migrate_legacy(policy)
-            entries = self._vault.search(
-                self.query.get_text(),
-                app=self.app_filter.get_active_id() or "",
-                day=self._selected_day(),
-                semantic=policy.semantic,
-                excluded_apps=tuple(
-                    self._settings.get_strv("recall-excluded-apps")
-                ),
-            )
-            if self.group_scenes.get_active() and not self.query.get_text().strip() and not (self.app_filter.get_active_id() or ""):
-                entries = self._vault.group_scenes(entries)
-        except (OSError, RuntimeError, ValueError) as error:
-            entries = []
-            self.notice.set_label(f"Recall vault unavailable: {error}")
-        if (self.date_filter.get_active_id() or "") == "week":
+        self._search_generation += 1
+        request = {
+            "generation": self._search_generation,
+            "policy": policy,
+            "query": self.query.get_text(),
+            "app": self.app_filter.get_active_id() or "",
+            "day": self._selected_day(),
+            "week": (self.date_filter.get_active_id() or "") == "week",
+            "group": self.group_scenes.get_active(),
+            "excluded_apps": tuple(self._settings.get_strv("recall-excluded-apps")),
+        }
+        self._pending_search = request
+        self.notice.set_label("Searching encrypted local history…")
+        if not self._search_inflight:
+            self._start_pending_search()
+
+    def _start_pending_search(self) -> None:
+        request = self._pending_search
+        if request is None:
+            return
+        self._pending_search = None
+        self._search_inflight = True
+
+        def worker() -> None:
+            error = ""
+            try:
+                self._vault.migrate_legacy(request["policy"])
+                entries = self._vault.search(
+                    request["query"], app=request["app"], day=request["day"],
+                    semantic=request["policy"].semantic,
+                    excluded_apps=request["excluded_apps"],
+                )
+                if request["group"] and not request["query"].strip() and not request["app"]:
+                    entries = self._vault.group_scenes(entries)
+            except (OSError, RuntimeError, ValueError) as caught:
+                entries = []
+                error = str(caught)[:512]
+            GLib.idle_add(self._finish_search, request, entries, error)
+
+        threading.Thread(target=worker, name="sessionsifu-recall-search", daemon=True).start()
+
+    def _finish_search(self, request: dict, entries: list[dict], error: str) -> bool:
+        self._search_inflight = False
+        if request["generation"] == self._search_generation:
+            self._apply_search_results(entries, week=request["week"])
+            if error:
+                self.notice.set_label(f"Recall vault unavailable: {error}")
+        if self._pending_search is not None:
+            self._start_pending_search()
+        return GLib.SOURCE_REMOVE
+
+    def _apply_search_results(self, entries: list[dict], *, week: bool) -> None:
+        if week:
             cutoff = time.time() - 7 * 86400
             entries = [entry for entry in entries if float(entry.get("modified") or 0) >= cutoff]
+        self._render_limit = 24
         self._entries = entries
         self.timeline_scale.set_range(0, max(1, len(entries) - 1))
         self.timeline_scale.set_value(0)
@@ -1949,6 +2015,10 @@ class RecallSearchWindow(Adw.ApplicationWindow):
                 self.app_filter.append(app, app)
             self.app_filter.set_active_id(active_app)
         self._render(entries)
+
+    def _load_more_results(self, *_args) -> None:
+        self._render_limit = min(len(self._entries), self._render_limit + 24)
+        self._render(self._entries)
 
     @staticmethod
     def _match_description(match_type: str) -> str:
@@ -2004,8 +2074,10 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         for row in self._rows:
             self.results.remove(row)
         self._rows.clear()
-        for item in entries:
-            self._prepare_previews(item)
+        visible_entries = entries[:self._render_limit]
+        for item in visible_entries:
+            if self._view_mode == "visual":
+                self._prepare_previews(item)
             modified = datetime.fromtimestamp(item.get("modified", 0)).strftime("%Y-%m-%d %H:%M:%S")
             apps = ", ".join(item.get("apps", [])[:4]) or "Unknown application"
             titles = " · ".join(item.get("titles", [])[:3])
@@ -2077,6 +2149,11 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             row.add_controller(gesture)
             self.results.insert(row, -1)
             self._rows.append(row)
+        self.load_more.set_visible(len(entries) > len(visible_entries))
+        if len(entries) > len(visible_entries):
+            self.load_more.set_label(
+                f"Load 24 more results · showing {len(visible_entries)} of {len(entries)}"
+            )
         status = self._vault.status()
         result_label = (
             "window moment"

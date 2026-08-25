@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QBuffer, QEvent, QIODevice, QSettings, QSize, QTimer, Qt, QUrl
+from PySide6.QtCore import (
+    QByteArray, QBuffer, QEvent, QIODevice, QObject, QSettings, QSize,
+    QTimer, Qt, QUrl, Signal,
+)
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -970,6 +974,12 @@ class MainWindow(QMainWindow):
             event.accept()
 
 
+class RecallSearchBridge(QObject):
+    """Deliver worker results to Qt's GUI thread without polling."""
+
+    completed = Signal(int, object, str)
+
+
 class RecallSearchDialog(QDialog):
     """Large master-detail Recall browser shared by portable platforms."""
 
@@ -989,6 +999,13 @@ class RecallSearchDialog(QDialog):
         self._zoom = 0.0
         self._pinch_start_zoom = 1.0
         self._match_position = 0
+        self._search_generation = 0
+        self._search_inflight = False
+        self._pending_search: dict | None = None
+        self._all_entries: list[dict] = []
+        self._visible_count = 24
+        self._search_bridge = RecallSearchBridge(self)
+        self._search_bridge.completed.connect(self._finish_refresh)
         layout = QVBoxLayout(self)
         title = QLabel("<h2>Search Privacy Recall</h2>")
         title.setTextFormat(Qt.RichText)
@@ -1098,6 +1115,10 @@ class RecallSearchDialog(QDialog):
         splitter.addWidget(detail)
         splitter.setSizes([390, 890])
         layout.addWidget(splitter, 1)
+        self.load_more = QPushButton("Load 24 more results")
+        self.load_more.clicked.connect(self.load_more_results)
+        self.load_more.hide()
+        layout.addWidget(self.load_more)
         actions = QHBoxLayout()
         open_button = QPushButton("Reopen selected window")
         open_button.clicked.connect(self.open_selected)
@@ -1137,7 +1158,7 @@ class RecallSearchDialog(QDialog):
             QListView.ViewMode.IconMode if mode == "visual" else QListView.ViewMode.ListMode
         )
         self.results.setIconSize(QSize(240, 135) if mode == "visual" else QSize(96, 54))
-        self.refresh()
+        self._render_entries()
 
     def set_shortcut(self, shortcut: str) -> None:
         self.local_shortcut.setKey(qt_shortcut(shortcut))
@@ -1150,30 +1171,78 @@ class RecallSearchDialog(QDialog):
         self.query.selectAll()
 
     def refresh(self) -> None:
-        self.results.clear()
-        entries = self.controller.search_recall(
-            self.query.text(),
-            excluded_apps=self.exclusions_provider(),
-            app=str(self.app_filter.currentData() or ""),
-            semantic=QSettings("SessionSifu", "SessionSifu").value(
+        self._search_generation += 1
+        request = {
+            "generation": self._search_generation,
+            "query": self.query.text(),
+            "excluded_apps": tuple(self.exclusions_provider()),
+            "app": str(self.app_filter.currentData() or ""),
+            "semantic": QSettings("SessionSifu", "SessionSifu").value(
                 "recall_related_search", False, type=bool
             ),
-        )
-        if self.group_scenes.isChecked() and not self.query.text().strip() and not self.app_filter.currentData():
-            entries = self.controller.recall_store.group_scenes(entries)
+            "group": self.group_scenes.isChecked(),
+        }
+        self._pending_search = request
+        self.notice.setText("Searching encrypted local history…")
+        if not self._search_inflight:
+            self._start_pending_refresh()
+
+    def _start_pending_refresh(self) -> None:
+        request = self._pending_search
+        if request is None:
+            return
+        self._pending_search = None
+        self._search_inflight = True
+
+        def worker() -> None:
+            error = ""
+            try:
+                entries = self.controller.search_recall(
+                    request["query"],
+                    excluded_apps=request["excluded_apps"],
+                    app=request["app"],
+                    semantic=request["semantic"],
+                )
+                if request["group"] and not request["query"].strip() and not request["app"]:
+                    entries = self.controller.recall_store.group_scenes(entries)
+            except (OSError, RuntimeError, ValueError) as caught:
+                entries = []
+                error = str(caught)[:512]
+            self._search_bridge.completed.emit(request["generation"], entries, error)
+
+        threading.Thread(
+            target=worker, name="sessionsifu-recall-search", daemon=True
+        ).start()
+
+    def _finish_refresh(self, generation: int, entries: object, error: str) -> None:
+        self._search_inflight = False
+        if generation == self._search_generation:
+            safe_entries = entries if isinstance(entries, list) else []
+            self._apply_entries(safe_entries)
+            if error:
+                self.notice.setText(f"Recall vault unavailable: {error}")
+        if self._pending_search is not None:
+            self._start_pending_refresh()
+
+    def _apply_entries(self, entries: list[dict]) -> None:
         if self.app_filter.count() == 1:
-            all_entries = self.controller.search_recall(
-                "", excluded_apps=self.exclusions_provider()
-            )
             apps = sorted(
-                {app for entry in all_entries for app in entry.get("apps", [])},
+                {app for entry in entries for app in entry.get("apps", [])},
                 key=str.casefold,
             )
             self.app_filter.blockSignals(True)
             for app in apps:
                 self.app_filter.addItem(app, app)
             self.app_filter.blockSignals(False)
-        for entry in entries:
+        self._all_entries = entries
+        self._visible_count = 24
+        self._render_entries()
+
+    def _render_entries(self) -> None:
+        self.results.clear()
+        mode = str(self.view_mode.currentData() or "visual")
+        visible_entries = self._all_entries[:self._visible_count]
+        for entry in visible_entries:
             apps = ", ".join(entry.get("apps", [])[:4]) or "Unknown application"
             titles = " · ".join(entry.get("titles", [])[:3])
             label = f"{apps} — {titles or 'Window moment'}\n{entry.get('captured_at', '')}"
@@ -1188,25 +1257,32 @@ class RecallSearchDialog(QDialog):
             label += f" · {match_label}"
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, entry)
-            pixmap = recall_result_pixmap(self.controller, entry)
-            if not pixmap.isNull():
-                item.setIcon(QIcon(pixmap.scaled(
-                    240, 135, Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )))
+            if mode == "visual":
+                pixmap = recall_result_pixmap(self.controller, entry)
+                if not pixmap.isNull():
+                    item.setIcon(QIcon(pixmap.scaled(
+                        240, 135, Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )))
             self.results.addItem(item)
         self.notice.setText(
-            f"{len(entries)} matching window moments. Excluded applications are redacted from all results."
-            if entries
+            f"{len(self._all_entries)} matching window moments. "
+            f"Showing {len(visible_entries)}; excluded applications are redacted from all results."
+            if self._all_entries
             else "No matching non-excluded Recall entries."
         )
         self.change_view_mode_without_refresh()
+        self.load_more.setVisible(len(visible_entries) < len(self._all_entries))
         self.timeline.blockSignals(True)
-        self.timeline.setRange(0, max(0, len(entries) - 1))
+        self.timeline.setRange(0, max(0, len(visible_entries) - 1))
         self.timeline.setValue(0)
         self.timeline.blockSignals(False)
         if self.results.count():
             self.results.setCurrentRow(0)
+
+    def load_more_results(self) -> None:
+        self._visible_count = min(len(self._all_entries), self._visible_count + 24)
+        self._render_entries()
 
     def select_timeline_position(self, position: int) -> None:
         if self.results.count():
@@ -1300,19 +1376,22 @@ class RecallSearchDialog(QDialog):
         self._detail_images = recall_entry_images(self._detail_entry)
         self.filmstrip.blockSignals(True)
         self.filmstrip.clear()
-        for image_name, label in self._detail_images:
+        for index, (image_name, label) in enumerate(self._detail_images):
             item = QListWidgetItem(label[:28])
-            data = self.controller.recall_store.preview_bytes(
-                str(self._detail_entry.get("name", "")), image_name=image_name
-            )
-            thumbnail = QPixmap()
-            if data:
-                thumbnail.loadFromData(data)
-            if not thumbnail.isNull():
-                item.setIcon(QIcon(thumbnail.scaled(
-                    128, 72, Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )))
+            # Keep the filmstrip responsive for records with many windows.
+            # Remaining full images are decrypted only when selected.
+            if index < 12:
+                data = self.controller.recall_store.preview_bytes(
+                    str(self._detail_entry.get("name", "")), image_name=image_name
+                )
+                thumbnail = QPixmap()
+                if data:
+                    thumbnail.loadFromData(data)
+                if not thumbnail.isNull():
+                    item.setIcon(QIcon(thumbnail.scaled(
+                        128, 72, Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )))
             self.filmstrip.addItem(item)
         self.filmstrip.blockSignals(False)
         if self._detail_images:

@@ -1,6 +1,6 @@
 # SessionSifu documentation
 
-This index describes the current 3.4.1 behavior. Start with the main
+This index describes the current 3.5.0 behavior. Start with the main
 [README](../README.md) for installation and compatibility.
 
 ## Using SessionSifu
@@ -16,6 +16,8 @@ This index describes the current 3.4.1 behavior. Start with the main
 
 - [Architecture](ARCHITECTURE.md) — GNOME/portable components, storage,
   capture/search pipeline and release channel.
+- [Recall performance](PERFORMANCE.md) — measured bottlenecks, memory-only
+  caches, invalidation rules and regression targets.
 - [Recall research and product decisions](RECALL_RESEARCH.md) — comparison
   baseline, feedback themes and deliberate differences from other products.
 - [Competitive feature analysis](COMPETITIVE_ANALYSIS.md) — ten adjacent

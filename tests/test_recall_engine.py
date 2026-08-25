@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -432,6 +433,38 @@ class RecallEngineTests(unittest.TestCase):
             imported = RecallVault(imported_root, test_key=b"c" * 32)
             imported.import_record(records[0][1], records[0][2])
             self.assertEqual(len(list(imported.export_records())), 1)
+
+    def test_search_reuses_decrypted_records_and_index_across_workers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            vault = RecallVault(root, test_key=b"i" * 32)
+            vault.finalize(self.capture(root, "Indexed project notes"), RecallPolicy())
+            vault.clear_search_cache()
+            results: list[list[dict]] = []
+
+            with mock.patch.object(
+                vault, "_read_encrypted", wraps=vault._read_encrypted
+            ) as decrypt:
+                first = threading.Thread(
+                    target=lambda: results.append(vault.search("Indexed"))
+                )
+                first.start()
+                first.join(timeout=5)
+                connection = vault._index_connection
+                second = threading.Thread(
+                    target=lambda: results.append(vault.search("project"))
+                )
+                second.start()
+                second.join(timeout=5)
+
+            self.assertFalse(first.is_alive())
+            self.assertFalse(second.is_alive())
+            self.assertEqual(len(results), 2)
+            self.assertTrue(all(results))
+            self.assertIs(vault._index_connection, connection)
+            self.assertEqual(decrypt.call_count, 1)
+            vault.clear_search_cache()
+            self.assertIsNone(vault._index_connection)
 
 
 if __name__ == "__main__":

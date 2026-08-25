@@ -81,7 +81,9 @@ customizable search shortcut (`Ctrl+Alt+Space` by default).
 - Narrow results by application or date when needed.
 - **Visual** mode uses screenshot cards; **Compact** mode favors denser text.
   The choice is remembered. Selecting a result keeps a large preview visible
-  beside the result list.
+  beside the result list. The first 24 results are rendered immediately; use
+  **Load 24 more results** to extend the list without decoding the entire
+  encrypted image history at once.
 - The filmstrip below the preview contains every separately captured window,
   followed by the display overview. A single click selects a window, a double
   click or Space opens the full gallery, and the arrow keys move between
@@ -105,8 +107,10 @@ customizable search shortcut (`Ctrl+Alt+Space` by default).
 - **Open** asks the recorded application to reopen that window's validated file
   or observable URL when the platform and application support it.
 
-Search rebuilds an ephemeral in-memory index. Queries, decrypted text and
-rendered highlights are not written to a persistent search database.
+Search reuses a bounded ephemeral in-memory index until the encrypted vault
+changes. Queries run outside the interface thread, and stale results from rapid
+typing are discarded. Queries, decrypted text, vector caches and rendered
+highlights are not written to a persistent search database.
 
 ## Czech and English OCR
 

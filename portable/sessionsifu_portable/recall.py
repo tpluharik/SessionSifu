@@ -15,6 +15,8 @@ import sys
 import tempfile
 import time
 import urllib.parse
+import threading
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -37,6 +39,7 @@ RECALL_SCHEMA = 3
 RECALL_MAX_ENTRIES = 500
 MAX_RECALL_BYTES = 3 * 1024 * 1024
 MAX_PREVIEW_BYTES = 8 * 1024 * 1024
+MAX_RECORD_CACHE_BYTES = 128 * 1024 * 1024
 MAX_WINDOW_PREVIEWS = 64
 MAX_WINDOW_OCR_BYTES = 16 * 1024
 MAX_TOTAL_WINDOW_OCR_BYTES = 512 * 1024
@@ -232,6 +235,12 @@ class RecallStore:
         self.recall_dir = root / "recall"
         self.vault_dir = self.recall_dir / "vault"
         self.semantic = OfflineSemanticSearch()
+        self._search_lock = threading.RLock()
+        self._record_cache: OrderedDict[str, tuple[tuple[int, int], dict, int]] = OrderedDict()
+        self._record_cache_bytes = 0
+        self._index_signature: tuple[tuple[str, int, int], ...] = ()
+        self._index_connection: sqlite3.Connection | None = None
+        self._storage_cache: tuple[int, int] | None = None
 
     def _ensure_directory(self) -> None:
         if self.recall_dir.is_symlink() or self.vault_dir.is_symlink():
@@ -622,13 +631,106 @@ class RecallStore:
         )
 
     def _load(self, path: Path) -> dict | None:
+        with self._search_lock:
+            return self._load_locked(path)
+
+    def _load_locked(self, path: Path) -> dict | None:
         try:
-            if path.stat().st_size > MAX_RECALL_BYTES + 128:
+            stat = path.stat()
+            if stat.st_size > MAX_RECALL_BYTES + 128:
                 return None
-            payload = json.loads(self._decrypt(path.read_bytes(), path.name))
-            return payload if payload.get("recall_schema") == RECALL_SCHEMA else None
+            signature = (stat.st_mtime_ns, stat.st_size)
+            cached = self._record_cache.get(path.name)
+            if cached and cached[0] == signature:
+                self._record_cache.move_to_end(path.name)
+                return cached[1]
+            raw = self._decrypt(path.read_bytes(), path.name)
+            payload = json.loads(raw)
+            if payload.get("recall_schema") != RECALL_SCHEMA:
+                return None
+            previous = self._record_cache.pop(path.name, None)
+            if previous:
+                self._record_cache_bytes -= previous[2]
+            self._record_cache[path.name] = (signature, payload, len(raw))
+            self._record_cache_bytes += len(raw)
+            while self._record_cache_bytes > MAX_RECORD_CACHE_BYTES and len(self._record_cache) > 1:
+                _name, (_signature, _payload, size) = self._record_cache.popitem(last=False)
+                self._record_cache_bytes -= size
+            return payload
         except (OSError, ValueError, json.JSONDecodeError):
             return None
+
+    @staticmethod
+    def _path_signature(paths: list[Path]) -> tuple[tuple[str, int, int], ...]:
+        signature = []
+        for path in paths:
+            with contextlib.suppress(OSError):
+                stat = path.stat()
+                signature.append((path.name, stat.st_mtime_ns, stat.st_size))
+        return tuple(signature)
+
+    def _ensure_search_index(
+        self, records: list[tuple[Path, dict]],
+        signature: tuple[tuple[str, int, int], ...],
+    ) -> sqlite3.Connection:
+        if self._index_connection is not None and signature == self._index_signature:
+            return self._index_connection
+        # The RLock serializes use; disabling the owner-thread check lets the
+        # cached in-memory index survive successive UI worker threads.
+        connection = sqlite3.connect(":memory:", check_same_thread=False)
+        connection.execute(
+            "CREATE VIRTUAL TABLE recall_windows USING fts5("
+            "key UNINDEXED, app, title, files, accessible, ocr)"
+        )
+        connection.execute(
+            "CREATE VIRTUAL TABLE recall_visual USING fts5(name UNINDEXED, ocr)"
+        )
+        for path, payload in records:
+            annotations = dict(payload.get("annotations") or {})
+            for index, window in enumerate(payload.get("windows", [])[:512]):
+                if not isinstance(window, dict):
+                    continue
+                connection.execute(
+                    "INSERT INTO recall_windows VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        f"{path.name}#{index}",
+                        str(window.get("app_name") or window.get("app_id") or ""),
+                        str(window.get("title") or ""),
+                        "\n".join(str(value) for value in window.get("open_files", [])),
+                        "\n".join((
+                            str(window.get("accessible_text") or ""),
+                            str(annotations.get("collection") or ""),
+                            str(annotations.get("note") or ""),
+                        )),
+                        str(window.get("ocr_text") or ""),
+                    ),
+                )
+            connection.execute(
+                "INSERT INTO recall_visual VALUES (?, ?)",
+                (path.name, str(payload.get("ocr_text") or "")),
+            )
+        connection.commit()
+        previous = self._index_connection
+        self._index_connection = connection
+        self._index_signature = signature
+        if previous is not None:
+            previous.close()
+        valid_names = {name for name, _modified, _size in signature}
+        for name in list(self._record_cache):
+            if name not in valid_names:
+                _signature, _payload, size = self._record_cache.pop(name)
+                self._record_cache_bytes -= size
+        return connection
+
+    def clear_search_cache(self) -> None:
+        with self._search_lock:
+            if self._index_connection is not None:
+                self._index_connection.close()
+            self._index_connection = None
+            self._index_signature = ()
+            self._record_cache.clear()
+            self._record_cache_bytes = 0
+            self.semantic.clear_cache()
 
     def prune(self, retention_hours: int, quota_mb: int = 512) -> None:
         hours = max(1, min(24 * 30, int(retention_hours)))
@@ -680,22 +782,30 @@ class RecallStore:
         app: str = "",
         semantic: bool = False,
     ) -> list[dict[str, object]]:
+        with self._search_lock:
+            return self._search_locked(
+                query, limit, excluded_apps, app=app, semantic=semantic,
+            )
+
+    def _search_locked(
+        self,
+        query: str = "",
+        limit: int = 100,
+        excluded_apps: list[str] | tuple[str, ...] = (),
+        *,
+        app: str = "",
+        semantic: bool = False,
+    ) -> list[dict[str, object]]:
         needle = query.strip().casefold()[:256]
         exclusions = self._exclusions(excluded_apps)
-        connection = sqlite3.connect(":memory:")
+        paths = self._paths()
+        signature = self._path_signature(paths)
+        records = [(path, self._load(path)) for path in paths]
+        records = [(path, payload) for path, payload in records if payload]
+        connection = self._ensure_search_index(records, signature)
         try:
-            connection.execute(
-                "CREATE VIRTUAL TABLE recall_windows USING fts5("
-                "key UNINDEXED, app, title, files, accessible, ocr)"
-            )
-            connection.execute(
-                "CREATE VIRTUAL TABLE recall_visual USING fts5(name UNINDEXED, ocr)"
-            )
             loaded = []
-            for path in self._paths():
-                payload = self._load(path)
-                if not payload:
-                    continue
+            for path, payload in records:
                 visible_windows = []
                 excluded_visible = False
                 for index, window in enumerate(payload.get("windows", [])[:512]):
@@ -709,36 +819,19 @@ class RecallStore:
                         excluded_visible = True
                         continue
                     visible_windows.append((index, window))
-                    connection.execute(
-                        "INSERT INTO recall_windows VALUES (?, ?, ?, ?, ?, ?)",
-                        (
-                            f"{path.name}#{index}",
-                            str(window.get("app_name") or window.get("app_id") or ""),
-                            str(window.get("title") or ""),
-                            "\n".join(str(value) for value in window.get("open_files", [])),
-                            "\n".join((
-                                str(window.get("accessible_text") or ""),
-                                str(dict(payload.get("annotations") or {}).get("collection") or ""),
-                                str(dict(payload.get("annotations") or {}).get("note") or ""),
-                            )),
-                            str(window.get("ocr_text") or ""),
-                        ),
-                    )
                 if not visible_windows:
                     continue
                 preview_allowed = not excluded_visible
-                if preview_allowed:
-                    connection.execute(
-                        "INSERT INTO recall_visual VALUES (?, ?)",
-                        (path.name, str(payload.get("ocr_text") or "")),
-                    )
                 loaded.append((path, payload, visible_windows, preview_allowed))
 
             window_candidates: dict[str, float] = {}
             visual_candidates: dict[str, float] = {}
             if needle:
                 terms = re.findall(r"[\w.-]+", needle)[:16]
-                expression = " OR ".join(f'"{term.replace(chr(34), "")}"' for term in terms)
+                expression = " OR ".join(
+                    f'"{term.replace(chr(34), "")}"{("*" if len(terms) == 1 else "")}'
+                    for term in terms
+                )
                 if expression:
                     with contextlib.suppress(sqlite3.OperationalError):
                         for key, rank in connection.execute(
@@ -857,7 +950,7 @@ class RecallStore:
                         )[:320],
                     })
 
-                if needle and not app and path.name in visual_candidates:
+                if needle and not app and preview_allowed and path.name in visual_candidates:
                     ocr_text = str(payload.get("ocr_text") or "")
                     apps = list(dict.fromkeys(
                         str(window.get("app_name") or window.get("app_id") or "")
@@ -885,7 +978,7 @@ class RecallStore:
             )
             return results[:max(1, min(250, int(limit)))]
         finally:
-            connection.close()
+            pass
 
     @staticmethod
     def _targets(files: list[str], urls: list[str]) -> list[str]:
@@ -1134,6 +1227,8 @@ class RecallStore:
                 continue
             self._delete_path(path)
             removed += 1
+        if removed:
+            self.clear_search_cache()
         return removed
 
     def clear(self) -> int:
@@ -1145,4 +1240,11 @@ class RecallStore:
     def storage_bytes(self) -> int:
         if not self.vault_dir.is_dir():
             return 0
-        return sum(path.stat().st_size for path in self.vault_dir.iterdir() if path.is_file() and not path.is_symlink())
+        with contextlib.suppress(OSError):
+            modified = self.vault_dir.stat().st_mtime_ns
+            if self._storage_cache and self._storage_cache[0] == modified:
+                return self._storage_cache[1]
+            size = sum(path.stat().st_size for path in self.vault_dir.iterdir() if path.is_file() and not path.is_symlink())
+            self._storage_cache = (modified, size)
+            return size
+        return 0

@@ -16,13 +16,16 @@ SessionSifu saves and reconstructs desktop layouts. It records running
 applications, documents and windows, then can relaunch applications and rebuild
 the supported parts of their layout.
 
-Version 3.4.1 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
+Version 3.5.0 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
 encrypted, per-window OCR activity timeline across GNOME, Windows, macOS, KDE
 Plasma 6 and other Linux desktops. Czech and English OCR data ships with the
 installer and verified update. Recall previews support two-finger panning,
 native pinch zoom and Ctrl+scroll zoom. Search now prefers text exposed through
 the application accessibility interface before falling back to OCR, shows
 per-capture completeness, and redacts recognized private/protected contexts.
+Recall search now reuses a bounded memory-only index, runs outside the interface
+thread and renders results in 24-item pages, so typing and browsing do not
+repeatedly decrypt every record or decode every screenshot.
 The project is open source under GPL-3.0.
 
 ## Features
@@ -146,11 +149,11 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_3.4.1_all.deb` from the matching GitHub Release, or build it
+Download `sessionsifu_3.5.0_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_3.4.1_all.deb
+sudo apt install ./sessionsifu_3.5.0_all.deb
 ```
 
 The Ubuntu 26.04 PPA is active at `ppa:tpluharik77/sessionsifu` and its amd64
@@ -168,7 +171,7 @@ details.
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.4.1_all.deb
+sudo apt install ./dist/sessionsifu_3.5.0_all.deb
 ```
 
 After installation:
@@ -184,10 +187,10 @@ After installation:
 
 Tagged releases attach these self-contained artifacts:
 
-- `SessionSifu-3.4.1-windows-x64.zip`;
-- `SessionSifu-3.4.1-macos-arm64.zip`;
-- `SessionSifu-3.4.1-macos-x64.zip`; and
-- `SessionSifu-3.4.1-linux-x64.tar.gz`.
+- `SessionSifu-3.5.0-windows-x64.zip`;
+- `SessionSifu-3.5.0-macos-arm64.zip`;
+- `SessionSifu-3.5.0-macos-x64.zip`; and
+- `SessionSifu-3.5.0-linux-x64.tar.gz`.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -378,6 +381,16 @@ plaintext persistent search database is created:
 - portable editions: the platform-specific SessionSifu data directory listed
   above, under `recall/`.
 
+The decrypted record cache and FTS index are bounded and process-local. They
+are invalidated when a record is added, changed or removed and disappear when
+SessionSifu exits. Search requests run on a worker thread; rapid typing keeps
+only the newest pending request. The browser initially renders 24 matches,
+Compact mode loads no thumbnails, and Visual mode loads one downscaled preview
+per visible result. Use **Load 24 more results** to expand the list. Optional
+semantic search similarly caches document vectors only in memory and recomputes
+vectors for changed records. See the [performance notes](docs/PERFORMANCE.md)
+for the benchmark and test boundaries.
+
 SessionSifu never uploads Recall data. Every edition can optionally store
 private, downscaled JPEG previews for the desktop and each eligible open
 window; GNOME also records each connected display. Preview capture is off by
@@ -449,7 +462,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.4.1_all.deb
+dist/sessionsifu_3.5.0_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -470,7 +483,7 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v3.4.1` tag publishes the artifacts and `SHA256SUMS` as a GitHub
+A pushed `v3.5.0` tag publishes the artifacts and `SHA256SUMS` as a GitHub
 Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
@@ -501,7 +514,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Publishing and distribution](docs/PUBLISHING.md)
 - [Documentation index](docs/README.md)
 
-The current 3.4.1 release includes verified Czech and English fast Tesseract
+The current 3.5.0 release includes verified Czech and English fast Tesseract
 models in the Debian package, signed in-app update and portable artifacts. Mixed
 Czech/English desktop text therefore works without installing a separate
 language package, while recognition stays completely local. Recall search is

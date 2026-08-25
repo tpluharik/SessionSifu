@@ -24,6 +24,8 @@ import time
 import unicodedata
 import urllib.parse
 import uuid
+import threading
+from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -90,7 +92,9 @@ MIN_OCR_CONFIDENCE = 30.0
 MAX_ENTRIES = 500
 SERVICE = "org.gnome.SessionSifu.Recall"
 ACCOUNT = "local-vault-v1"
-FUZZY_OCR_SCAN_BYTES = 2 * 1024 * 1024
+MAX_RECORD_CACHE_BYTES = 128 * 1024 * 1024
+MAX_FUZZY_TERMS = 100_000
+MAX_FUZZY_REFERENCES = 500_000
 MAX_OCR_WORKING_EDGE = 2400
 _TESSERACT_LANGUAGE_ARGS: tuple[str, ...] | None = None
 TESSERACT_LANGUAGE_ALIASES = {
@@ -654,6 +658,16 @@ class RecallVault:
         self._test_key = test_key
         self._key_source = "test" if test_key else "unavailable"
         self.semantic = OfflineSemanticSearch(semantic_model_path or None) if OfflineSemanticSearch else None
+        # Search plaintext is deliberately memory-only.  Keeping the decrypted
+        # manifests and FTS tables for the lifetime of this vault avoids doing
+        # the same AES, JSON and tokenization work after every keystroke.
+        self._search_lock = threading.RLock()
+        self._record_cache: OrderedDict[str, tuple[tuple[int, int], dict[str, object], int]] = OrderedDict()
+        self._record_cache_bytes = 0
+        self._index_signature: tuple[tuple[str, int, int], ...] = ()
+        self._index_connection: sqlite3.Connection | None = None
+        self._fuzzy_terms: dict[int, dict[str, set[str]]] = {}
+        self._storage_cache: tuple[int, int] | None = None
 
     def _ensure(self) -> None:
         if self.root.is_symlink() or self.vault.is_symlink():
@@ -1174,27 +1188,167 @@ class RecallVault:
         )
 
     def _load(self, path: Path) -> dict[str, object] | None:
+        with self._search_lock:
+            return self._load_locked(path)
+
+    def _load_locked(self, path: Path) -> dict[str, object] | None:
         try:
-            value = json.loads(self._read_encrypted(path, MAX_RECORD_BYTES + MAX_OCR_BYTES).decode("utf-8"))
+            stat = path.stat()
+            signature = (stat.st_mtime_ns, stat.st_size)
+            cached = self._record_cache.get(path.name)
+            if cached and cached[0] == signature:
+                self._record_cache.move_to_end(path.name)
+                return cached[1]
+            raw = self._read_encrypted(path, MAX_RECORD_BYTES + MAX_OCR_BYTES)
+            value = json.loads(raw.decode("utf-8"))
+            if value.get("schema") != 3:
+                return None
+            previous = self._record_cache.pop(path.name, None)
+            if previous:
+                self._record_cache_bytes -= previous[2]
+            self._record_cache[path.name] = (signature, value, len(raw))
+            self._record_cache_bytes += len(raw)
+            while self._record_cache_bytes > MAX_RECORD_CACHE_BYTES and len(self._record_cache) > 1:
+                _name, (_signature, _value, size) = self._record_cache.popitem(last=False)
+                self._record_cache_bytes -= size
             return value if value.get("schema") == 3 else None
         except (OSError, ValueError, json.JSONDecodeError):
             return None
 
+    @staticmethod
+    def _path_signature(paths: list[Path]) -> tuple[tuple[str, int, int], ...]:
+        signature = []
+        for path in paths:
+            with contextlib.suppress(OSError):
+                stat = path.stat()
+                signature.append((path.name, stat.st_mtime_ns, stat.st_size))
+        return tuple(signature)
+
+    def _ensure_search_index(
+        self,
+        records: list[tuple[Path, dict[str, object]]],
+        signature: tuple[tuple[str, int, int], ...],
+    ) -> sqlite3.Connection:
+        if self._index_connection is not None and signature == self._index_signature:
+            return self._index_connection
+        # Every search is serialized by _search_lock, but successive searches
+        # may run on different short-lived UI worker threads.
+        connection = sqlite3.connect(":memory:", check_same_thread=False)
+        connection.execute(
+            "CREATE VIRTUAL TABLE recall_windows USING fts5("
+            "key UNINDEXED, app, title, files, accessible, ocr)"
+        )
+        connection.execute(
+            "CREATE VIRTUAL TABLE recall_visual USING fts5(name UNINDEXED, ocr)"
+        )
+        fuzzy_terms: dict[int, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+        fuzzy_term_count = 0
+        fuzzy_reference_count = 0
+        for path, value in records:
+            for index, window in enumerate(value.get("windows", [])[:512]):
+                if not isinstance(window, dict):
+                    continue
+                key = f"{path.name}#{index}"
+                ocr_text = str(window.get("ocr_text", ""))
+                connection.execute(
+                    "INSERT INTO recall_windows VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        key,
+                        str(window.get("app", "")),
+                        str(window.get("title", "")),
+                        "\n".join(str(item) for item in window.get("files", [])),
+                        str(window.get("accessible_text", "")),
+                        ocr_text,
+                    ),
+                )
+                # Store unique OCR tokens once.  Query-time fuzzy matching then
+                # compares words of similar lengths instead of rescanning 2 MiB
+                # of raw OCR and repeating the same Levenshtein work per window.
+                for token in dict.fromkeys(_search_tokens(ocr_text)[:2048]):
+                    if 4 <= len(token) <= 64:
+                        bucket = fuzzy_terms[len(token)]
+                        if token not in bucket:
+                            if fuzzy_term_count >= MAX_FUZZY_TERMS:
+                                continue
+                            fuzzy_term_count += 1
+                        references = bucket[token]
+                        if key not in references:
+                            if fuzzy_reference_count >= MAX_FUZZY_REFERENCES:
+                                continue
+                            fuzzy_reference_count += 1
+                            references.add(key)
+            connection.execute(
+                "INSERT INTO recall_visual VALUES (?, ?)",
+                (path.name, str(value.get("ocr_text", ""))),
+            )
+        connection.commit()
+        previous = self._index_connection
+        self._index_connection = connection
+        self._index_signature = signature
+        self._fuzzy_terms = {
+            length: dict(values) for length, values in fuzzy_terms.items()
+        }
+        if previous is not None:
+            previous.close()
+        valid_names = {name for name, _modified, _size in signature}
+        for name in list(self._record_cache):
+            if name not in valid_names:
+                _signature, _value, size = self._record_cache.pop(name)
+                self._record_cache_bytes -= size
+        return connection
+
+    def clear_search_cache(self) -> None:
+        """Forget decrypted search state immediately, for lock/logout paths."""
+        with self._search_lock:
+            if self._index_connection is not None:
+                self._index_connection.close()
+            self._index_connection = None
+            self._index_signature = ()
+            self._fuzzy_terms.clear()
+            self._record_cache.clear()
+            self._record_cache_bytes = 0
+            if self.semantic is not None:
+                self.semantic.clear_cache()
+
+    def _fuzzy_candidates(self, query: str, maximum: int = 500) -> dict[str, float]:
+        candidates: dict[str, float] = {}
+        for needle in _search_tokens(query)[:16]:
+            if len(needle) < 4:
+                continue
+            distance_limit = 2 if len(needle) >= 8 else 1
+            for length in range(max(4, len(needle) - distance_limit), len(needle) + distance_limit + 1):
+                for token, keys in self._fuzzy_terms.get(length, {}).items():
+                    if token == needle:
+                        score = 1.0
+                    elif token.startswith(needle) or needle.startswith(token):
+                        score = 0.86
+                    elif _edit_distance_within(needle, token, distance_limit):
+                        score = 0.82 if distance_limit == 1 else 0.78
+                    else:
+                        continue
+                    for key in keys:
+                        candidates[key] = max(candidates.get(key, 0.0), score * 0.35)
+                        if len(candidates) >= maximum:
+                            return candidates
+        return candidates
+
     def search(self, query: str = "", *, app: str = "", day: str = "", semantic: bool = False, excluded_apps: tuple[str, ...] = (), limit: int = 100) -> list[dict[str, object]]:
-        records = [(path, self._load(path)) for path in self._record_paths()]
+        with self._search_lock:
+            return self._search_locked(
+                query, app=app, day=day, semantic=semantic,
+                excluded_apps=excluded_apps, limit=limit,
+            )
+
+    def _search_locked(self, query: str = "", *, app: str = "", day: str = "", semantic: bool = False, excluded_apps: tuple[str, ...] = (), limit: int = 100) -> list[dict[str, object]]:
+        paths = self._record_paths()
+        signature = self._path_signature(paths)
+        records = [(path, self._load(path)) for path in paths]
         records = [(path, value) for path, value in records if value]
         exclusion_tokens = tuple(
             token.strip().casefold() for token in excluded_apps if token.strip()
         )
-        connection = sqlite3.connect(":memory:")
+        connection = self._ensure_search_index(records, signature)
         try:
-            connection.execute(
-                "CREATE VIRTUAL TABLE recall_windows USING fts5("
-                "key UNINDEXED, app, title, files, accessible, ocr)"
-            )
-            connection.execute(
-                "CREATE VIRTUAL TABLE recall_visual USING fts5(name UNINDEXED, ocr)"
-            )
             loaded = []
             for path, value in records:
                 captured = str(value.get("captured_at") or "")
@@ -1212,25 +1366,9 @@ class RecallVault:
                         excluded_visible = True
                         continue
                     visible_windows.append((index, window))
-                    connection.execute(
-                        "INSERT INTO recall_windows VALUES (?, ?, ?, ?, ?, ?)",
-                        (
-                            f"{path.name}#{index}",
-                            str(window.get("app", "")),
-                            str(window.get("title", "")),
-                            "\n".join(str(item) for item in window.get("files", [])),
-                            str(window.get("accessible_text", "")),
-                            str(window.get("ocr_text", "")),
-                        ),
-                    )
                 if not visible_windows:
                     continue
                 preview_allowed = not excluded_visible
-                if preview_allowed:
-                    connection.execute(
-                        "INSERT INTO recall_visual VALUES (?, ?)",
-                        (path.name, str(value.get("ocr_text", ""))),
-                    )
                 loaded.append((path, value, visible_windows, preview_allowed))
 
             window_candidates: dict[str, float] = {}
@@ -1239,7 +1377,10 @@ class RecallVault:
             needle = query.strip()[:256]
             if needle:
                 tokens = re.findall(r"[\w.-]+", needle.casefold())[:16]
-                expression = " OR ".join(f'"{token.replace(chr(34), "")}"' for token in tokens if token)
+                expression = " OR ".join(
+                    f'"{token.replace(chr(34), "")}"{("*" if len(tokens) == 1 else "")}'
+                    for token in tokens if token
+                )
                 if expression:
                     with contextlib.suppress(sqlite3.OperationalError):
                         for key, rank in connection.execute(
@@ -1257,25 +1398,11 @@ class RecallVault:
                             (expression,),
                         ):
                             visual_candidates[name] = -float(rank)
-                # OCR commonly substitutes one glyph (for example O/0) or
-                # splits a long word. Apply a bounded, recent-first fallback
-                # without creating a persistent plaintext index.
-                remaining_fuzzy_bytes = FUZZY_OCR_SCAN_BYTES
-                for path, _value, windows, _preview_allowed in loaded:
-                    for index, window in windows:
-                        key = f"{path.name}#{index}"
-                        if key in window_candidates:
-                            continue
-                        ocr_text = str(window.get("ocr_text", ""))
-                        remaining_fuzzy_bytes -= len(ocr_text.encode("utf-8"))
-                        score = _fuzzy_ocr_score(needle, ocr_text)
-                        if score:
-                            window_candidates[key] = score * 0.35
+                if len(window_candidates) < min(20, max(1, int(limit))):
+                    for key, score in self._fuzzy_candidates(needle).items():
+                        if key not in window_candidates:
+                            window_candidates[key] = score
                             fuzzy_ocr_candidates.add(key)
-                        if remaining_fuzzy_bytes <= 0:
-                            break
-                    if remaining_fuzzy_bytes <= 0:
-                        break
             if needle and semantic:
                 documents: dict[str, str] = {}
                 for path, _value, windows, _preview_allowed in loaded:
@@ -1385,7 +1512,7 @@ class RecallVault:
                         ),
                     })
 
-                if needle and not app and path.name in visual_candidates:
+                if needle and not app and preview_allowed and path.name in visual_candidates:
                     apps = list(dict.fromkeys(
                         str(window.get("app", ""))
                         for _index, window in windows if window.get("app")
@@ -1413,7 +1540,7 @@ class RecallVault:
             output.sort(key=lambda item: (-float(item["rank"]), -float(item.get("modified") or 0)))
             return output[:max(1, min(250, int(limit)))]
         finally:
-            connection.close()
+            pass
 
     @staticmethod
     def _targets(files: list[str], urls: list[str]) -> list[str]:
@@ -1722,12 +1849,21 @@ class RecallVault:
                     (self.vault / str(image_name)).unlink(missing_ok=True)
             path.unlink(missing_ok=True)
             removed += 1
+        if removed:
+            self.clear_search_cache()
         return removed
 
     def storage_bytes(self) -> int:
         if not self.vault.is_dir():
             return 0
-        return sum(path.stat().st_size for path in self.vault.iterdir() if path.is_file() and not path.is_symlink())
+        with contextlib.suppress(OSError):
+            modified = self.vault.stat().st_mtime_ns
+            if self._storage_cache and self._storage_cache[0] == modified:
+                return self._storage_cache[1]
+            size = sum(path.stat().st_size for path in self.vault.iterdir() if path.is_file() and not path.is_symlink())
+            self._storage_cache = (modified, size)
+            return size
+        return 0
 
     def prune(self, quota_mb: int, retention_hours: int = 24 * 30) -> None:
         quota = max(64, min(16_384, int(quota_mb))) * 1024 * 1024

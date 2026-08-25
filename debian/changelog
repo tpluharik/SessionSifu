@@ -1,3 +1,11 @@
+sessionsifu (3.5.0-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Cache the encrypted Recall vault's decrypted search index in memory.
+  * Run GTK and Qt searches outside the UI thread and discard stale queries.
+  * Render previews incrementally and cache optional semantic document vectors.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Tue, 25 Aug 2026 22:19:00 +0200
+
 sessionsifu (3.4.1-1~ppa1~resolute1) resolute; urgency=medium
 
   * Preserve control-panel and restore startup through legacy user updates.

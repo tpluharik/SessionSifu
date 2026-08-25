@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.4.1 runtime and release layout. User-facing
+This document describes the 3.5.0 runtime and release layout. User-facing
 Recall steps live in [RECALL_GUIDE.md](RECALL_GUIDE.md).
 
 SessionSifu 3 has a full GNOME runtime, a portable runtime shared by Windows,
@@ -188,13 +188,22 @@ hidden state paths are excluded and each window is capped at 32 files.
 
 ## Local storage
 
-### 3.4 retrieval, restore and transfer layers
+### 3.5 retrieval, restore and transfer layers
 
-Recall still decrypts into an ephemeral in-memory FTS5 index. Optional semantic
-ranking is a second, separately enabled retrieval pass: `semantic.py` accepts
-only an explicit regular local model directory, forces model runtimes offline,
-rejects remote code and bounds documents and vector dimensions. Embeddings are
-not persisted.
+Recall decrypts into a bounded LRU record cache and an ephemeral in-memory FTS5
+index. A signature of record names, sizes and modification times invalidates
+the index and removes deleted cache entries when the vault changes. A reentrant
+lock serializes index access across short-lived GTK/Qt worker threads. No
+plaintext index or cache is persisted.
+
+OCR typo fallback uses a memory-only dictionary of unique bounded OCR tokens,
+grouped by length, rather than rescanning the full raw OCR corpus for every
+query. Optional semantic ranking is a second, separately enabled retrieval
+pass: `semantic.py` accepts only an explicit regular local model directory,
+forces model runtimes offline, rejects remote code and bounds documents and
+vector dimensions. Document vectors are cached by record/window key plus a
+content digest and are recomputed only when content changes. Embeddings are not
+persisted.
 
 OCR diagnostics live inside the encrypted record. Reindexing decrypts only the
 selected record's bounded images, replaces its OCR text/boxes atomically and
@@ -281,11 +290,15 @@ the GTK browser can crop a display image in memory for older/fallback records.
 The portable Qt browser follows the same exact-window-first model. Reopen
 actions use only that window's validated file or observable URL targets.
 
-The GTK search surface debounces text entry for 250 ms so decrypting and
-rebuilding the in-memory FTS index does not run for every keystroke. Window
-results retain the full non-excluded window list for gallery navigation, while
-`matched_window` remains the authoritative target for rank, preview selection,
-highlighting and reopening.
+The GTK and Qt search surfaces debounce text entry for 250 ms and execute vault
+search on a worker thread. Query generations prevent an older result from
+replacing a newer request, and rapid typing retains only the newest pending
+request. The interfaces render 24 results initially. Compact mode performs no
+preview decryption; Visual mode decodes one bounded thumbnail per visible
+result, while full screenshots are loaded only for the selected detail image.
+Window results retain the full non-excluded window list for gallery navigation,
+while `matched_window` remains the authoritative target for rank, preview
+selection, highlighting and reopening.
 
 Changing exclusions deletes affected vault records because previously captured
 pixels cannot be reliably redacted. As an additional query-time boundary, a

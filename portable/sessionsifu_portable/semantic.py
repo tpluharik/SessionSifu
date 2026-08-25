@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import math
 import os
+import hashlib
+from collections import OrderedDict
 from pathlib import Path
 from typing import Iterable, Mapping
 
 MAX_DOCUMENTS = 2048
 MAX_DOCUMENT_CHARS = 4096
 MAX_VECTOR_DIMENSIONS = 4096
+MAX_CACHED_VECTORS = 4096
 
 
 class OfflineSemanticSearch:
@@ -24,6 +27,7 @@ class OfflineSemanticSearch:
         ).expanduser()
         self._model = None
         self._error = ""
+        self._document_vectors: OrderedDict[object, tuple[bytes, list[float]]] = OrderedDict()
 
     def _validated_model_path(self) -> Path:
         path = self.model_path
@@ -90,18 +94,41 @@ class OfflineSemanticSearch:
         if not query or not values:
             return {}
         try:
-            encoded = self._load().encode(
-                [query, *values],
+            model = self._load()
+            missing: list[tuple[object, bytes, str]] = []
+            for key, value in zip(keys, values):
+                digest = hashlib.blake2b(value.encode("utf-8"), digest_size=16).digest()
+                cached = self._document_vectors.get(key)
+                if cached and cached[0] == digest:
+                    self._document_vectors.move_to_end(key)
+                else:
+                    missing.append((key, digest, value))
+            if missing:
+                encoded_documents = model.encode(
+                    [value for _key, _digest, value in missing],
+                    normalize_embeddings=True,
+                    show_progress_bar=False,
+                    batch_size=32,
+                )
+                for (key, digest, _value), vector in zip(missing, encoded_documents):
+                    self._document_vectors[key] = (digest, self._vector(vector))
+                    self._document_vectors.move_to_end(key)
+                while len(self._document_vectors) > MAX_CACHED_VECTORS:
+                    self._document_vectors.popitem(last=False)
+            encoded_query = model.encode(
+                [query],
                 normalize_embeddings=True,
                 show_progress_bar=False,
-                batch_size=32,
+                batch_size=1,
             )
-            vectors = [self._vector(value) for value in encoded]
+            query_vector = self._vector(encoded_query[0])
             self._error = ""
             return {
-                keys[index]: score
-                for index, vector in enumerate(vectors[1:])
-                for score in [self._cosine(vectors[0], vector)]
+                key: score
+                for key in keys
+                for cached in [self._document_vectors.get(key)]
+                if cached is not None
+                for score in [self._cosine(query_vector, cached[1])]
                 if score >= 0.22
             }
         except (OSError, RuntimeError, ValueError) as error:
@@ -115,5 +142,10 @@ class OfflineSemanticSearch:
             "available": self._model is not None and not self._error,
             "model": str(self.model_path) if configured else "not configured",
             "offline_only": True,
+            "cached_documents": len(self._document_vectors),
             "last_error": self._error,
         }
+
+    def clear_cache(self) -> None:
+        """Drop document embeddings without unloading the user-selected model."""
+        self._document_vectors.clear()

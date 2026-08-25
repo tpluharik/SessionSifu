@@ -1,6 +1,6 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.4.0. It separates shipped
+This roadmap describes the product after version 3.5.0. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
 
@@ -35,6 +35,18 @@ history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
 These P0, P1 and P2 items were selected from the competitive analysis and
 shipped together in 3.4.0 so the user-visible workflow and the underlying data
 model remain consistent across supported editions.
+
+## Search responsiveness shipped — 3.5.0
+
+- bounded process-memory caches for decrypted records, FTS rows, OCR typo
+  tokens and optional semantic document vectors;
+- automatic index invalidation after encrypted records change;
+- background GTK/Qt queries with stale-generation suppression; and
+- 24-result incremental rendering, compact-mode image avoidance and one
+  downscaled thumbnail per visible visual result.
+
+The cache is an optimization, not a new storage format: no plaintext search
+database or embedding file is written.
 
 ## Next: quality and trust
 

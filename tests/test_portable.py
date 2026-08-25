@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -18,6 +19,7 @@ from sessionsifu_portable.controller import SessionController  # noqa: E402
 from sessionsifu_portable.model import MonitorSnapshot, SessionSnapshot, WindowSnapshot  # noqa: E402
 from sessionsifu_portable.mcp import ReadOnlyMcp  # noqa: E402
 from sessionsifu_portable.recall import RecallStore  # noqa: E402
+from sessionsifu_portable.semantic import OfflineSemanticSearch  # noqa: E402
 from sessionsifu_portable.shortcut import parse_shortcut  # noqa: E402
 from sessionsifu_portable.storage import HISTORY_LIMIT, SessionStore  # noqa: E402
 from sessionsifu_portable.adapters.linux import GnomeAdapter, KDEAdapter, LinuxAdapter  # noqa: E402
@@ -85,7 +87,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.4.1")
+        self.assertEqual(VERSION, "3.5.0")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -403,6 +405,46 @@ class PortableTests(unittest.TestCase):
             self.assertEqual(len(browser), 1)
             self.assertEqual(browser[0]["apps"], ["Browser"])
 
+    def test_recall_search_reuses_memory_only_index_across_worker_threads(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RecallStore(Path(directory))
+            store.save(FakeAdapter().capture())
+            results: list[list[dict]] = []
+            first = threading.Thread(
+                target=lambda: results.append(store.search("Notes"))
+            )
+            first.start()
+            first.join(timeout=5)
+            connection = store._index_connection
+            second = threading.Thread(
+                target=lambda: results.append(store.search("Editor"))
+            )
+            second.start()
+            second.join(timeout=5)
+            self.assertFalse(first.is_alive())
+            self.assertFalse(second.is_alive())
+            self.assertTrue(all(results))
+            self.assertIs(store._index_connection, connection)
+
+    def test_semantic_search_caches_document_vectors(self) -> None:
+        class FakeModel:
+            def __init__(self) -> None:
+                self.batches: list[list[str]] = []
+
+            def encode(self, values, **_kwargs):
+                batch = list(values)
+                self.batches.append(batch)
+                return [[1.0, 0.0] if "alpha" in value else [0.0, 1.0] for value in batch]
+
+        search = OfflineSemanticSearch()
+        model = FakeModel()
+        search._model = model
+        documents = {"one": "alpha project", "two": "beta research"}
+        self.assertIn("one", search.rank("alpha", documents))
+        self.assertIn("one", search.rank("alpha update", documents))
+        self.assertEqual([len(batch) for batch in model.batches], [2, 1, 1])
+        self.assertEqual(search.diagnostics()["cached_documents"], 2)
+
     def test_accessible_text_deep_targets_and_capture_completeness(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = RecallStore(Path(directory))
@@ -437,7 +479,7 @@ class PortableTests(unittest.TestCase):
             controller.save_named("Work")
             api = LocalApi(controller)
             status = api.dispatch({"method": "status"})
-            self.assertEqual(status["version"], "3.4.1")
+            self.assertEqual(status["version"], "3.5.0")
             preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
             self.assertEqual(preview["applications"][0]["application"], "Editor")
             with self.assertRaises(ValueError):
@@ -498,7 +540,7 @@ class PortableTests(unittest.TestCase):
             controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
             controller.save_named("Work")
             mcp = ReadOnlyMcp(controller)
-            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.4.1")
+            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.0")
             self.assertTrue(mcp.call("restore_preview", {"name": "Work"}))
             with self.assertRaises(ValueError):
                 mcp.call("restore_execute", {"name": "Work"})

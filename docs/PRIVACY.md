@@ -14,7 +14,8 @@ is transmitted for OCR.
 New optional surfaces in 3.4.0 follow the same local-only boundary:
 
 - semantic search is off by default, loads only an explicit local model in
-  forced offline mode and does not persist embeddings;
+  forced offline mode and keeps its bounded document-vector cache in process
+  memory rather than persisting embeddings;
 - Ask history is extractive and cites its local source snapshots;
 - MCP runs only with `--mcp-stdio`, inherits pipes, opens no listener and has
   read-only tools;

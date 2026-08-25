@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "3.4.1"
+VERSION = "3.5.0"
 
 
 with tempfile.TemporaryDirectory() as temporary:
@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory() as temporary:
     assert "SessionSifu\\SessionSifu.exe" in winget
     assert "PortableCommandAlias: sessionsifu" in winget
     aur = (output / "aur/sessionsifu-bin/PKGBUILD").read_text()
-    assert "pkgver=3.4.1" in aur
+    assert "pkgver=3.5.0" in aur
     assert "sha256sums=('" in aur and "SKIP" not in aur
     chocolatey = (output / "chocolatey/sessionsifu/sessionsifu.nuspec").read_text()
     assert "GPL-3.0-or-later" in chocolatey
