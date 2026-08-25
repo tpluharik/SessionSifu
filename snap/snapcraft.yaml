@@ -23,7 +23,7 @@ apps:
   sessionsifu:
     command: bin/sessionsifu-portable
     common-id: org.gnome.SessionSifu
-    desktop: snap/gui/sessionsifu.desktop
+    desktop: usr/share/applications/sessionsifu.desktop
     environment:
       PYTHONPATH: $SNAP/lib/python3.12/site-packages:$SNAP/usr/lib/python3/dist-packages
       TESSDATA_PREFIX: $SNAP/usr/share/tesseract-ocr/5/tessdata
@@ -64,3 +64,9 @@ parts:
       - tesseract-ocr-ces
       - tesseract-ocr-eng
       - wmctrl
+
+  desktop:
+    plugin: dump
+    source: snap/gui
+    organize:
+      sessionsifu.desktop: usr/share/applications/sessionsifu.desktop
