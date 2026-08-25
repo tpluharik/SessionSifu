@@ -108,9 +108,10 @@ must be provisioned through GitHub's encrypted-secret UI or CLI input and must
 never be committed or pasted into logs, issues or documentation.
 
 The `release` environment and `CHOCOLATEY_API_KEY` secret were provisioned on
-25 August 2026. The two PFX fallback secrets remain deliberately unset while a
-SignPath Foundation application is prepared. A self-signed certificate is not
-an acceptable substitute for public distribution.
+25 August 2026. A SignPath Foundation open-source application was submitted and
+acknowledged by the service on the same date; it is awaiting external review.
+The two PFX fallback secrets remain deliberately unset. A self-signed
+certificate is not an acceptable substitute for public distribution.
 
 SignPath onboarding still requires external approval. The maintainer must keep
 multi-factor authentication enabled, submit the public repository and code-
