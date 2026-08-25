@@ -22,13 +22,13 @@ a package store.
 ## Ubuntu PPA
 
 The full GNOME integration is deliberately limited to Ubuntu 26.04 with GNOME
-Shell 50. Its source package is prepared for:
+Shell 50. The active PPA is:
 
 ```text
 ppa:tpluharik77/sessionsifu
 ```
 
-Once the first Launchpad build is published, installation will be:
+Its first clean Launchpad amd64 build passed on 25 August 2026. Installation is:
 
 ```sh
 sudo add-apt-repository ppa:tpluharik77/sessionsifu
@@ -53,10 +53,12 @@ helpers where available and store encrypted local session history. These are
 core functions, not optional conveniences that can truthfully operate inside a
 strict sandbox.
 
-The snap is built on tags by `.github/workflows/snapcraft-publish.yml`. Store
-publication remains disabled until the snap name, classic-confinement review
-and the repository secret `SNAPCRAFT_STORE_CREDENTIALS` are all in place. Store
-credentials must never be pasted into issues, logs or documentation.
+The `sessionsifu` name is registered to the `tpluharik77` publisher. The snap is
+built on tags and manual dispatches by
+`.github/workflows/snapcraft-publish.yml`. Store publication remains disabled
+until classic-confinement review is complete and the repository secret
+`SNAPCRAFT_STORE_CREDENTIALS` is installed. Store credentials must never be
+pasted into issues, logs or documentation.
 
 ## WinGet, Chocolatey, AUR and Homebrew
 
@@ -104,4 +106,3 @@ window titles, paths or captured content before sharing.
 7. Generate downstream submissions from the final immutable assets; never reuse
    hashes from a draft or replaced upload.
 8. Announce only channels that are actually downloadable.
-

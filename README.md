@@ -136,11 +136,17 @@ locally, then install it with:
 sudo apt install ./sessionsifu_3.2.3_all.deb
 ```
 
-An Ubuntu 26.04 PPA is being prepared as
-`ppa:tpluharik77/sessionsifu`. The exact publication state and planned install
-commands are tracked in the
-[publishing guide](docs/PUBLISHING.md); until Launchpad shows a successful
-published build, use the signed GitHub Release package above.
+The Ubuntu 26.04 PPA is active at `ppa:tpluharik77/sessionsifu` and its amd64
+package has passed Launchpad's clean remote build. Install or upgrade with:
+
+```sh
+sudo add-apt-repository ppa:tpluharik77/sessionsifu
+sudo apt update
+sudo apt install sessionsifu
+```
+
+See the [publishing guide](docs/PUBLISHING.md) for channel scope and maintainer
+details.
 
 When installing from this checkout, use:
 
