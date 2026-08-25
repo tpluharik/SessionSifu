@@ -136,6 +136,12 @@ locally, then install it with:
 sudo apt install ./sessionsifu_3.2.3_all.deb
 ```
 
+An Ubuntu 26.04 PPA is being prepared as
+`ppa:tpluharik77/sessionsifu`. The exact publication state and planned install
+commands are tracked in the
+[publishing guide](docs/PUBLISHING.md); until Launchpad shows a successful
+published build, use the signed GitHub Release package above.
+
 When installing from this checkout, use:
 
 ```sh
@@ -467,6 +473,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Privacy and local-data guide](docs/PRIVACY.md)
 - [Recall workflow guide](docs/RECALL_GUIDE.md)
 - [Recall research and product decisions](docs/RECALL_RESEARCH.md)
+- [Publishing and distribution](docs/PUBLISHING.md)
 - [Documentation index](docs/README.md)
 
 The current 3.2.3 release includes verified Czech and English fast Tesseract

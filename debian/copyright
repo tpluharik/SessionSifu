@@ -1,0 +1,23 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: SessionSifu
+Source: https://github.com/tpluharik/SessionSifu
+
+Files: *
+Copyright: 2026 Tomas Pluharik and SessionSifu contributors
+License: GPL-3+
+
+Files: extension/sessionsifu@local/*
+Copyright: nlpsuge and Another Window Session Manager contributors
+License: GPL-3+
+
+Files: ocr/tessdata/*
+Copyright: Tesseract OCR contributors
+License: Apache-2.0
+
+License: GPL-3+
+ On Debian systems, the complete text of the GNU General Public License version
+ 3 can be found in /usr/share/common-licenses/GPL-3.
+
+License: Apache-2.0
+ On Debian systems, the complete text of the Apache License version 2.0 can be
+ found in /usr/share/common-licenses/Apache-2.0.

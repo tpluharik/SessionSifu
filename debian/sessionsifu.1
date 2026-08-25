@@ -1,0 +1,32 @@
+.TH SESSIONSIFU 1 "August 2026" "SessionSifu 3.2.3" "User Commands"
+.SH NAME
+sessionsifu \- save and restore desktop sessions
+.SH SYNOPSIS
+.B sessionsifu
+.RI [ options ]
+.SH DESCRIPTION
+SessionSifu records running applications, open documents and supported window
+layout information.  It can restore named sessions and recent automatic
+snapshots through its graphical manager or GNOME Shell integration.
+.SH OPTIONS
+.TP
+.BR --save " " NAME
+Save the current desktop as a named session.
+.TP
+.BR --restore " " NAME
+Restore a named session.
+.TP
+.B --list
+List saved sessions.
+.TP
+.B --version
+Print the installed version.
+.SH FILES
+.TP
+.I ~/.config/sessionsifu/
+User settings and saved session metadata.
+.SH SEE ALSO
+Project documentation is installed under
+.IR /usr/share/doc/sessionsifu/ .
+.SH BUGS
+Report issues at https://github.com/tpluharik/SessionSifu/issues.

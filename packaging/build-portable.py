@@ -80,6 +80,22 @@ def main() -> int:
     built = work / "dist" / ("SessionSifu.app" if target == "macos" else "SessionSifu")
     if not built.exists():
         raise SystemExit(f"PyInstaller did not create {built}")
+    if target == "linux":
+        shutil.copy2(
+            ROOT / "branding" / "sessionsifu-app-icon.png",
+            built / "sessionsifu-app-icon.png",
+        )
+        (built / "org.gnome.SessionSifu.desktop").write_text(
+            "[Desktop Entry]\n"
+            "Name=SessionSifu\n"
+            "Comment=Save and restore applications, files and window layouts\n"
+            "Exec=sessionsifu\n"
+            "Icon=org.gnome.SessionSifu\n"
+            "Terminal=false\n"
+            "Type=Application\n"
+            "Categories=Utility;\n",
+            encoding="utf-8",
+        )
     suffix = "zip" if target in {"windows", "macos"} else "tar.gz"
     artifact = output / f"SessionSifu-{VERSION}-{target}-{args.arch}.{suffix}"
     artifact.unlink(missing_ok=True)

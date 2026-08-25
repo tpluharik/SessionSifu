@@ -1,0 +1,7 @@
+tar-ignore = .git
+tar-ignore = build
+tar-ignore = dist
+tar-ignore = __pycache__
+tar-ignore = *.pyc
+tar-ignore = updates/*.deb
+extend-diff-ignore = (^|/)(build|dist)/|(^|/)updates/.*\.deb$|(^|/)__pycache__/|\.pyc$

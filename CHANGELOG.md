@@ -6,6 +6,14 @@ All notable SessionSifu changes are documented here.
 
 ## 3.2.3
 
+- Added reproducible Ubuntu/Launchpad source packaging for Ubuntu 26.04 and a
+  classic-confinement Snap definition for the portable KDE/general GNOME
+  edition.
+- Added release-derived WinGet, Chocolatey, AUR and Homebrew submission
+  metadata with locally calculated SHA-256 hashes.
+- Extended tagged releases with a downloadable package-manager metadata bundle
+  and documented channel status, maintainer safeguards and promotion policy.
+
 - Fixed GNOME Privacy Recall so one visible user-excluded application no longer
   cancels screenshots for every other open application.
 - Kept capturing and OCR-indexing the independently rendered windows of allowed

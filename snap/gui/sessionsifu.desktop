@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=SessionSifu
+Comment=Save and restore applications, files and window layouts
+Exec=sessionsifu
+Icon=${SNAP}/meta/gui/icon.png
+Terminal=false
+Type=Application
+Categories=Utility;
+Keywords=session;restore;windows;workspace;GNOME;KDE;Recall;
+StartupNotify=true

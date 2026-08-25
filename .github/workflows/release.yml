@@ -106,6 +106,13 @@ jobs:
         with:
           path: release-artifacts
           merge-multiple: true
+      - name: Generate package-manager submissions
+        run: |
+          python3 packaging/generate-marketplace-metadata.py \
+            --asset-dir release-artifacts \
+            --output marketplace-metadata
+          tar -C marketplace-metadata -czf \
+            "release-artifacts/SessionSifu-${GITHUB_REF_NAME#v}-marketplace-metadata.tar.gz" .
       - name: Generate checksums
         run: sha256sum release-artifacts/* > release-artifacts/SHA256SUMS
       - name: Create release

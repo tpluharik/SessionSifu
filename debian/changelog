@@ -1,0 +1,6 @@
+sessionsifu (3.2.3-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Publish the first Ubuntu 26.04/GNOME Shell 50 PPA package.
+  * Include SessionSifu manager, Shell extension and local OCR resources.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Tue, 25 Aug 2026 09:30:00 +0200

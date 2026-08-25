@@ -1,0 +1,59 @@
+name: sessionsifu
+title: SessionSifu
+base: core24
+version: "3.2.3"
+summary: Restore desktop applications, files and window layouts
+description: |
+  SessionSifu saves desktop sessions and restores applications, documents,
+  workspaces and window geometry. Its optional Privacy Recall feature provides
+  an encrypted, local-only visual timeline with application exclusions, local
+  OCR and bounded retention. This snap contains the portable KDE Plasma and
+  general GNOME edition; Ubuntu 26.04 users can use the PPA for full GNOME Shell
+  50 integration.
+grade: stable
+confinement: classic
+license: GPL-3.0-or-later
+icon: branding/sessionsifu-app-icon.png
+website: https://github.com/tpluharik/SessionSifu
+source-code: https://github.com/tpluharik/SessionSifu
+issues: https://github.com/tpluharik/SessionSifu/issues
+donation: https://github.com/sponsors/tpluharik
+
+apps:
+  sessionsifu:
+    command: bin/sessionsifu-portable
+    common-id: org.gnome.SessionSifu
+    desktop: snap/gui/sessionsifu.desktop
+    environment:
+      PYTHONPATH: $SNAP/lib/python3.12/site-packages:$SNAP/usr/lib/python3/dist-packages
+      TESSDATA_PREFIX: $SNAP/usr/share/tesseract-ocr/5/tessdata
+
+parts:
+  sessionsifu:
+    plugin: python
+    source: portable
+    python-packages:
+      - cryptography==46.0.5
+      - dbus-next==0.2.3
+      - keyring==25.7.0
+      - Pillow==12.3.0
+      - psutil==7.2.2
+      - PySide6==6.11.2
+    stage-packages:
+      - libdbus-1-3
+      - libegl1
+      - libgl1
+      - libxkbcommon0
+      - libxcb-cursor0
+      - libxcb-icccm4
+      - libxcb-image0
+      - libxcb-keysyms1
+      - libxcb-randr0
+      - libxcb-render-util0
+      - libxcb-shape0
+      - libxcb-xfixes0
+      - libxcb-xinerama0
+      - tesseract-ocr
+      - tesseract-ocr-ces
+      - tesseract-ocr-eng
+      - wmctrl

@@ -1,0 +1,54 @@
+Source: sessionsifu
+Section: gnome
+Priority: optional
+Maintainer: Tomas Pluharik <tpluharik@gmail.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ desktop-file-utils,
+ gir1.2-adw-1,
+ gir1.2-gdkpixbuf-2.0,
+ gir1.2-gtk-4.0,
+ gir1.2-gtop-2.0,
+ gjs,
+ gnome-shell (>= 50),
+ libglib2.0-bin,
+ nodejs,
+ openssl,
+ python3,
+ python3-cryptography,
+ python3-gi,
+ python3-keyring,
+ python3-pil,
+ tesseract-ocr,
+ zip
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
+Homepage: https://github.com/tpluharik/SessionSifu
+Vcs-Git: https://github.com/tpluharik/SessionSifu.git
+Vcs-Browser: https://github.com/tpluharik/SessionSifu
+
+Package: sessionsifu
+Architecture: all
+Depends:
+ ${misc:Depends},
+ gir1.2-adw-1,
+ gir1.2-gdkpixbuf-2.0,
+ gir1.2-gtk-4.0,
+ gir1.2-gtop-2.0,
+ gjs,
+ gnome-shell (>= 50),
+ libglib2.0-bin,
+ openssl,
+ procps,
+ python3,
+ python3-cryptography,
+ python3-gi,
+ python3-keyring,
+ python3-pil,
+ tesseract-ocr
+Suggests: ydotool
+Description: restore GNOME applications, workspaces and window layouts
+ SessionSifu records running applications and window state, then relaunches
+ applications and reconstructs workspaces, monitors, geometry and state. It
+ includes rolling snapshots, document restoration, a GNOME Shell 50 extension,
+ a GTK 4 manager and an optional private local visual timeline.

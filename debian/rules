@@ -1,0 +1,23 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	./packaging/build-deb.sh
+
+override_dh_auto_test:
+	@echo "SessionSifu tests run as part of override_dh_auto_build"
+
+override_dh_auto_install:
+	rm -rf debian/sessionsifu
+	mkdir -p debian/sessionsifu
+	dpkg-deb -x dist/sessionsifu_3.2.3_all.deb debian/sessionsifu
+	rm -f debian/sessionsifu/usr/share/doc/sessionsifu/CHANGELOG.md
+
+override_dh_installchangelogs:
+	dh_installchangelogs CHANGELOG.md
+
+override_dh_usrlocal:

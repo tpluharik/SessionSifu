@@ -33,6 +33,8 @@ SessionSifu currently provides:
 - app/site exclusions, timed pauses, quotas, capture diagnostics and granular
   deletion; and
 - pinned Czech and English OCR data in installation and update artifacts.
+- reproducible package-manager definitions for Ubuntu PPA, Snap, WinGet,
+  Chocolatey, AUR and Homebrew review.
 
 The [feature overview](README.md#features),
 [architecture](docs/ARCHITECTURE.md), and

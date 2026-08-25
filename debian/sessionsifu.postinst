@@ -1,0 +1,20 @@
+#!/bin/sh
+set -e
+
+system_schema_dir=/usr/share/glib-2.0/schemas
+extension_schema_dir=/usr/share/gnome-shell/extensions/sessionsifu@local/schemas
+if command -v glib-compile-schemas >/dev/null 2>&1; then
+    if [ -d "$system_schema_dir" ]; then
+        glib-compile-schemas "$system_schema_dir"
+    fi
+    if [ -d "$extension_schema_dir" ]; then
+        glib-compile-schemas "$extension_schema_dir"
+    fi
+fi
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q || true
+fi
+
+#DEBHELPER#
+
+exit 0
