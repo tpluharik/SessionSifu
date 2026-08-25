@@ -26,6 +26,36 @@ def _integer(value: Any, minimum: int = -100_000, maximum: int = 100_000) -> int
 
 
 @dataclass(slots=True)
+class MonitorSnapshot:
+    monitor_id: str = ""
+    name: str = ""
+    geometry: list[int] = field(default_factory=lambda: [0, 0, 1920, 1080])
+    scale: float = 1.0
+    primary: bool = False
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "MonitorSnapshot":
+        geometry = list(value.get("geometry") or [0, 0, 1920, 1080])[:4]
+        geometry += [0] * (4 - len(geometry))
+        geometry = [_integer(part) for part in geometry]
+        geometry[2], geometry[3] = max(64, geometry[2]), max(64, geometry[3])
+        try:
+            scale = max(0.25, min(8.0, float(value.get("scale") or 1.0)))
+        except (TypeError, ValueError):
+            scale = 1.0
+        return cls(
+            monitor_id=_text(value.get("monitor_id"), 256),
+            name=_text(value.get("name"), 256),
+            geometry=geometry,
+            scale=scale,
+            primary=bool(value.get("primary")),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
 class WindowSnapshot:
     window_id: str = ""
     app_id: str = ""
@@ -88,6 +118,7 @@ class SessionSnapshot:
     sessionsifu_version: str = VERSION
     capabilities: dict[str, bool] = field(default_factory=dict)
     capture_diagnostics: dict[str, int | str | bool] = field(default_factory=dict)
+    monitors: list[MonitorSnapshot] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "SessionSnapshot":
@@ -114,6 +145,11 @@ class SessionSnapshot:
                 str(key): val for key, val in dict(value.get("capture_diagnostics") or {}).items()
                 if isinstance(val, (bool, int, str))
             },
+            monitors=[
+                MonitorSnapshot.from_dict(item)
+                for item in list(value.get("monitors") or [])[:32]
+                if isinstance(item, dict)
+            ],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -125,5 +161,6 @@ class SessionSnapshot:
             "desktop": self.desktop,
             "capabilities": self.capabilities,
             "capture_diagnostics": self.capture_diagnostics,
+            "monitors": [monitor.to_dict() for monitor in self.monitors],
             "windows": [window.to_dict() for window in self.windows],
         }

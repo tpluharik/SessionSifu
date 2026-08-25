@@ -384,6 +384,30 @@ class RecallEngineTests(unittest.TestCase):
             self.assertEqual(match["match_type"], "Application content")
             self.assertIn("vscode://file/home/example/notes.txt", match["targets"])
 
+    def test_annotations_reindex_ask_and_portable_export(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            capture = self.capture(root)
+            (root / "recall-20260822-120000-123-window-0.jpg").write_bytes(b"image")
+            vault = RecallVault(root, test_key=b"b" * 32)
+            saved = vault.finalize(capture, RecallPolicy())
+            annotation = vault.annotate(
+                saved["record"], bookmarked=True, collection="Work", note="release evidence"
+            )
+            self.assertTrue(annotation["bookmarked"])
+            with mock.patch.object(vault, "_ocr", return_value=("obvious screenshot words", [{"t": "obvious"}])):
+                reindexed = vault.reindex(saved["record"])
+            self.assertEqual(reindexed["images_indexed"], 1)
+            self.assertTrue(vault.search("obvious"))
+            answer = vault.ask("obvious")
+            self.assertTrue(answer["citations"])
+            records = list(vault.export_records())
+            self.assertEqual(len(records), 1)
+            imported_root = root / "imported"
+            imported = RecallVault(imported_root, test_key=b"c" * 32)
+            imported.import_record(records[0][1], records[0][2])
+            self.assertEqual(len(list(imported.export_records())), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

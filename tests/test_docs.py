@@ -38,11 +38,11 @@ readme = (ROOT / "README.md").read_text(encoding="utf-8")
 roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
 contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
 extension_readme = (ROOT / "extension/sessionsifu@local/README.md").read_text(encoding="utf-8")
-assert "Version 3.3.0" in readme
+assert "Version 3.4.0" in readme
 assert "docs/media/recall-demo.webp" in readme
 assert "docs/RECALL_GUIDE.md" in readme
-assert "## Shipped foundation — 3.3.0" in roadmap
-assert "## 1. Recall correctness and capture health — Partly shipped, next" in roadmap
+assert "## Shipped foundation — 3.4.0" in roadmap
+assert "## Next: quality and trust" in roadmap
 assert "docs/COMPETITIVE_ANALYSIS.md" in readme
 assert "## Explicit non-goals" in roadmap
 assert "SessionSifu 2 targets" not in contributing

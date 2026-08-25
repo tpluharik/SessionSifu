@@ -11,6 +11,19 @@ is transmitted for OCR.
 
 ## Data inventory
 
+New optional surfaces in 3.4.0 follow the same local-only boundary:
+
+- semantic search is off by default, loads only an explicit local model in
+  forced offline mode and does not persist embeddings;
+- Ask history is extractive and cites its local source snapshots;
+- MCP runs only with `--mcp-stdio`, inherits pipes, opens no listener and has
+  read-only tools;
+- explicit transfer uses Scrypt and AES-GCM, validates sizes/paths and
+  re-encrypts Recall with the destination vault key; and
+- bookmarks, collections, notes, OCR diagnostics and restore journals remain
+  owner-private local data. Journals contain outcomes, not screenshots or a
+  replayable shell command.
+
 | Feature | Data | Default | Retention |
 | --- | --- | --- | --- |
 | Current GNOME state | Applications, process launch data, window titles, document paths and layout | Active with GNOME integration | Replaced as windows change |

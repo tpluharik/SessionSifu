@@ -42,6 +42,11 @@ try:
 except ImportError:  # pragma: no cover - graceful fallback for source checkouts
     Image = ImageFilter = ImageOps = None
 
+try:
+    from semantic import OfflineSemanticSearch
+except ImportError:  # source checkout fallback
+    OfflineSemanticSearch = None
+
 
 RECORD_RE = re.compile(r"^recall-\d{8}-\d{6}-\d{3}\.json$")
 VAULT_RE = re.compile(r"^recall-\d{8}-\d{6}-\d{3}\.ssrec$")
@@ -422,11 +427,29 @@ def _deep_targets(window: dict, files: list[str], title: str) -> list[str]:
         quoted = urllib.parse.quote(str(path))
         if VSCODE_IDENTITY_RE.search(identity):
             targets.append(f"vscode://file/{quoted.lstrip('/')}")
+        elif any(token in identity for token in ("idea", "pycharm", "clion", "goland", "webstorm", "rider")):
+            targets.append(path.as_uri() + "#jetbrains")
         elif "obsidian" in identity:
             targets.append("obsidian://open?path=" + quoted)
+        elif any(token in identity for token in ("libreoffice", "soffice", "writer", "calc", "impress")):
+            targets.append(path.as_uri() + "#libreoffice")
         targets.append(path.as_uri())
     targets.extend(URL_RE.findall(title))
+    if any(token in identity for token in ("firefox", "chrome", "chromium", "edge", "brave", "vivaldi")):
+        targets.extend(URL_RE.findall(str(window.get("accessible_text") or "")))
     return list(dict.fromkeys(targets))[:32]
+
+
+def _visual_hash_bytes(value: bytes) -> str:
+    if not value or Image is None:
+        return ""
+    try:
+        with Image.open(io.BytesIO(value)) as source:
+            pixels = list(source.convert("L").resize((8, 8), Image.Resampling.LANCZOS).getdata())
+        average = sum(pixels) / len(pixels)
+        return f"{int(''.join('1' if pixel >= average else '0' for pixel in pixels), 2):016x}"
+    except (OSError, ValueError):
+        return ""
 
 
 def _search_tokens(value: str) -> list[str]:
@@ -505,12 +528,13 @@ class RecallPolicy:
 class RecallVault:
     """AES-GCM record/image store with an ephemeral in-memory FTS5 index."""
 
-    def __init__(self, root: Path, *, test_key: bytes | None = None) -> None:
+    def __init__(self, root: Path, *, test_key: bytes | None = None, semantic_model_path: str = "") -> None:
         self.root = root.resolve()
         self.vault = self.root / "vault"
         self.status_path = self.root / "capture-status.json"
         self._test_key = test_key
         self._key_source = "test" if test_key else "unavailable"
+        self.semantic = OfflineSemanticSearch(semantic_model_path or None) if OfflineSemanticSearch else None
 
     def _ensure(self) -> None:
         if self.root.is_symlink() or self.vault.is_symlink():
@@ -945,6 +969,14 @@ class RecallVault:
             "displays": normalized_displays,
             "images": image_names,
             "image_hashes": image_hashes,
+            "scene_id": _visual_hash_bytes(valid_images[0].read_bytes()) if valid_images else "",
+            "annotations": {"bookmarked": False, "collection": "", "note": ""},
+            "ocr_diagnostics": {
+                "state": "completed" if policy.ocr else "disabled",
+                "engine": "tesseract",
+                "images_indexed": len(valid_images) if policy.ocr else 0,
+                "recognized_characters": len("\n".join(display_ocr_parts)) + sum(len(value) for value in window_ocr.values()),
+            },
             "capture_diagnostics": {
                 "expected_windows": expected_windows,
                 "eligible_windows": eligible_windows,
@@ -1126,27 +1158,18 @@ class RecallVault:
                     if remaining_fuzzy_bytes <= 0:
                         break
             if needle and semantic:
-                query_terms = set(re.findall(r"[\w]+", needle.casefold()))
+                documents: dict[str, str] = {}
                 for path, _value, windows, _preview_allowed in loaded:
                     for index, window in windows:
-                        text_terms = set(re.findall(
-                            r"[\w]+",
-                            " ".join([
-                                str(window.get("app", "")),
-                                str(window.get("title", "")),
-                                *(str(item) for item in window.get("files", [])),
-                                str(window.get("accessible_text", "")),
-                                str(window.get("ocr_text", "")),
-                            ]).casefold(),
-                        ))
-                        related = len(query_terms & text_terms) / max(
-                            1, len(query_terms | text_terms)
-                        )
-                        if related >= 0.08:
-                            key = f"{path.name}#{index}"
-                            window_candidates[key] = max(
-                                window_candidates.get(key, 0.0), related
-                            )
+                        documents[f"{path.name}#{index}"] = " ".join([
+                            str(window.get("app", "")), str(window.get("title", "")),
+                            *(str(item) for item in window.get("files", [])),
+                            str(window.get("accessible_text", "")),
+                            str(window.get("ocr_text", "")),
+                        ])
+                if self.semantic is not None:
+                    for key, score in self.semantic.rank(needle, documents).items():
+                        window_candidates[key] = max(window_candidates.get(key, 0.0), score * 4.0)
             output = []
             for path, value, windows, preview_allowed in loaded:
                 common = {
@@ -1157,6 +1180,9 @@ class RecallVault:
                     "displays": value.get("displays", []) if preview_allowed else [],
                     "capture_diagnostics": value.get("capture_diagnostics", {}),
                     "privacy": value.get("privacy", {}),
+                    "annotations": value.get("annotations", {}),
+                    "scene_id": value.get("scene_id", ""),
+                    "ocr_diagnostics": value.get("ocr_diagnostics", {}),
                 }
                 if not needle and not app:
                     apps = list(dict.fromkeys(
@@ -1386,6 +1412,175 @@ class RecallVault:
         with contextlib.suppress(OSError, ValueError):
             return self._read_encrypted(self.vault / image_name, MAX_IMAGE_BYTES + 128)
         return None
+
+    def annotate(self, record_name: str, *, bookmarked=None, collection=None, note=None) -> dict[str, object]:
+        if not VAULT_RE.fullmatch(record_name):
+            raise ValueError("Invalid Recall record")
+        path = self.vault / record_name
+        value = self._load(path)
+        if not value:
+            raise ValueError("Recall record is unavailable")
+        annotations = dict(value.get("annotations") or {})
+        if bookmarked is not None:
+            annotations["bookmarked"] = bool(bookmarked)
+        if collection is not None:
+            annotations["collection"] = str(collection).strip()[:128]
+        if note is not None:
+            annotations["note"] = str(note).strip()[:4096]
+        value["annotations"] = annotations
+        value["modified"] = time.time()
+        self._atomic_encrypted(path, json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode())
+        return annotations
+
+    @staticmethod
+    def group_scenes(results: list[dict[str, object]]) -> list[dict[str, object]]:
+        grouped = []
+        for result in results:
+            visual = str(result.get("scene_id") or "")
+            previous = grouped[-1] if grouped else None
+            distance = 65
+            if previous and visual and previous.get("scene_id"):
+                with contextlib.suppress(ValueError):
+                    distance = (int(visual, 16) ^ int(str(previous["scene_id"]), 16)).bit_count()
+            if previous and visual and distance <= 5:
+                previous["scene_count"] = int(previous.get("scene_count") or 1) + 1
+                previous["scene_started_at"] = result.get("captured_at")
+            else:
+                item = dict(result)
+                item.update({"scene_count": 1, "scene_started_at": result.get("captured_at"), "scene_finished_at": result.get("captured_at")})
+                grouped.append(item)
+        return grouped
+
+    def reindex(self, record_name: str) -> dict[str, object]:
+        if not VAULT_RE.fullmatch(record_name):
+            raise ValueError("Invalid Recall record")
+        path = self.vault / record_name
+        value = self._load(path)
+        if not value:
+            raise ValueError("Recall record is unavailable")
+        indexed = 0
+        display_boxes: dict[str, list] = {}
+        display_text: list[str] = []
+        windows_by_image = {
+            int(window.get("image_index", -1)): window
+            for window in value.get("windows", []) if isinstance(window, dict)
+        }
+        displays_by_image = {
+            int(display.get("image_index", -1)): display
+            for display in value.get("displays", []) if isinstance(display, dict)
+        }
+        for index, image_name in enumerate(value.get("images", [])[:72]):
+            raw = self.preview_bytes(record_name, index)
+            if raw is None:
+                continue
+            descriptor, temporary_name = tempfile.mkstemp(prefix="sessionsifu-reindex-", suffix=".jpg")
+            temporary = Path(temporary_name)
+            try:
+                with os.fdopen(descriptor, "wb") as output:
+                    output.write(raw)
+                text, boxes = self._ocr(temporary)
+            finally:
+                temporary.unlink(missing_ok=True)
+            if index in windows_by_image:
+                windows_by_image[index]["ocr_text"] = text[:MAX_WINDOW_OCR_BYTES]
+                windows_by_image[index]["ocr_boxes"] = boxes[:MAX_OCR_BOXES_PER_IMAGE]
+            elif index in displays_by_image:
+                display_index = str(displays_by_image[index].get("index", index))
+                display_boxes[display_index] = boxes[:MAX_DISPLAY_OCR_BOXES]
+                display_text.append(text)
+            indexed += 1
+        value["ocr_text"] = "\n".join(display_text)[:MAX_OCR_BYTES]
+        value["display_ocr_boxes"] = display_boxes
+        value["ocr_diagnostics"] = {
+            "state": "completed", "engine": "tesseract", "images_indexed": indexed,
+            "recognized_characters": len(str(value.get("ocr_text") or "")) + sum(
+                len(str(window.get("ocr_text") or "")) for window in value.get("windows", []) if isinstance(window, dict)
+            ),
+        }
+        value["modified"] = time.time()
+        payload = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
+        if len(payload) > MAX_RECORD_BYTES:
+            raise ValueError("Reindexed Recall record exceeds the safety limit")
+        self._atomic_encrypted(path, payload)
+        return {"record": record_name, **dict(value["ocr_diagnostics"])}
+
+    def ask(self, question: str, limit: int = 8) -> dict[str, object]:
+        question = question.strip()[:256]
+        if not question:
+            raise ValueError("A question is required")
+        matches = self.search(question, semantic=True, limit=limit)
+        citations = []
+        excerpts = []
+        for item in matches[:limit]:
+            excerpt = str(item.get("ocr_excerpt") or "") or " — ".join(str(value) for value in item.get("titles", [])[:2])
+            citations.append({
+                "record": item.get("name"), "captured_at": item.get("captured_at"),
+                "application": next(iter(item.get("apps", [])), ""),
+                "title": next(iter(item.get("titles", [])), ""), "excerpt": excerpt[:320],
+            })
+            if excerpt:
+                excerpts.append(excerpt[:240])
+        return {
+            "question": question,
+            "answer": "No matching local history was found." if not citations else "The closest local evidence is: " + " ".join(excerpts[:3]),
+            "citations": citations,
+        }
+
+    def diagnostics(self) -> dict[str, object]:
+        return {
+            "entries": len(self._record_paths()), "storage_bytes": self.storage_bytes(),
+            "semantic": self.semantic.diagnostics() if self.semantic is not None else {"available": False, "error": "semantic component unavailable"},
+        }
+
+    def export_records(self):
+        for path in self._record_paths():
+            value = self._load(path)
+            if not value:
+                continue
+            images = []
+            for index, _name in enumerate(value.get("images", [])):
+                data = self.preview_bytes(path.name, index)
+                if data is not None:
+                    images.append(data)
+            yield path.stem, value, images
+
+    def import_record(self, value: dict[str, object], images: list[bytes]) -> Path:
+        self._ensure()
+        if value.get("schema") != 3 or not isinstance(value.get("windows"), list):
+            raise ValueError("Recall archive record is incompatible")
+        payload = json.loads(json.dumps(value))
+        if len(images) != len(payload.get("images", [])) or any(
+            not isinstance(image, bytes) or not 0 < len(image) <= MAX_IMAGE_BYTES
+            for image in images
+        ):
+            raise ValueError("Recall archive has missing or oversized images")
+        stamp = datetime.now(timezone.utc).strftime("recall-%Y%m%d-%H%M%S-%f")[:26]
+        while (self.vault / f"{stamp}.ssrec").exists():
+            time.sleep(0.002)
+            stamp = datetime.now(timezone.utc).strftime("recall-%Y%m%d-%H%M%S-%f")[:26]
+        names = []
+        written = []
+        try:
+            for index, (old_name, raw) in enumerate(zip(payload.get("images", []), images)):
+                match = re.search(r"-(display|window)-(\d+)\.ssimg$", str(old_name))
+                suffix = f"-{match.group(1)}-{match.group(2)}" if match else f"-window-{index}"
+                name = f"{stamp}{suffix}.ssimg"
+                target = self.vault / name
+                self._atomic_encrypted(target, raw)
+                names.append(name)
+                written.append(target)
+            payload["images"] = names
+            payload["modified"] = time.time()
+            target = self.vault / f"{stamp}.ssrec"
+            encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+            if len(encoded) > MAX_RECORD_BYTES:
+                raise ValueError("Imported Recall record exceeds the metadata limit")
+            self._atomic_encrypted(target, encoded)
+            return target
+        except Exception:
+            for path in written:
+                path.unlink(missing_ok=True)
+            raise
 
     def delete(self, *, record: str = "", app: str = "", website: str = "", before: float | None = None, after: float | None = None) -> int:
         removed = 0

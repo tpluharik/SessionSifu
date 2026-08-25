@@ -176,7 +176,34 @@ export const MoveSession = class {
             reportedPrimaryMonitor < monitorCount
             ? reportedPrimaryMonitor
             : currentMonitorIndex;
-        const savedMonitorIndex = saved_window_session.monitor_number;
+        let savedMonitorIndex = saved_window_session.monitor_number;
+        const savedGeometry = saved_window_session.monitor_geometry;
+        if (!saved_window_session.is_on_primary_monitor && savedGeometry &&
+            Number.isFinite(savedGeometry.width) && savedGeometry.width > 0 &&
+            Number.isFinite(savedGeometry.height) && savedGeometry.height > 0) {
+            let bestIndex = -1;
+            let bestScore = Number.POSITIVE_INFINITY;
+            const savedAspect = savedGeometry.width / savedGeometry.height;
+            for (let index = 0; index < monitorCount; index++) {
+                let geometry;
+                try {
+                    geometry = global.display.get_monitor_geometry(index);
+                } catch (_error) {
+                    continue;
+                }
+                if (!geometry || geometry.width <= 0 || geometry.height <= 0)
+                    continue;
+                const score = Math.abs(geometry.width / geometry.height - savedAspect) +
+                    Math.abs(geometry.width - savedGeometry.width) / savedGeometry.width +
+                    Math.abs(geometry.height - savedGeometry.height) / savedGeometry.height;
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestIndex = index;
+                }
+            }
+            if (bestIndex >= 0)
+                savedMonitorIndex = bestIndex;
+        }
 
         let toMonitorIndex = null;
         if (savedMonitorIndex === undefined) {

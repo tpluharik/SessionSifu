@@ -10,7 +10,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from .base import AdapterCapabilities, PlatformAdapter, process_details, process_files
-from ..model import SessionSnapshot, WindowSnapshot
+from ..model import MonitorSnapshot, SessionSnapshot, WindowSnapshot
 from ..content import enrich_linux_session
 
 
@@ -27,7 +27,7 @@ class LinuxAdapter(PlatformAdapter):
         documents=True,
         geometry=bool(shutil.which("wmctrl")),
         workspaces=bool(shutil.which("wmctrl")),
-        monitors=False,
+        monitors=bool(shutil.which("xrandr") or shutil.which("kscreen-doctor")),
         native_wayland=False,
     )
 
@@ -67,7 +67,25 @@ class LinuxAdapter(PlatformAdapter):
     def enrich_content(self, session: SessionSnapshot) -> None:
         enrich_linux_session(session)
 
+    def capture_monitors(self, windows=None) -> list[MonitorSnapshot]:
+        monitors: list[MonitorSnapshot] = []
+        if shutil.which("xrandr"):
+            for line in _run(["xrandr", "--query"]).splitlines():
+                match = re.match(
+                    r"^(\S+) connected(?: primary)?\s+(\d+)x(\d+)\+(-?\d+)\+(-?\d+)", line
+                )
+                if not match:
+                    continue
+                name, width, height, x, y = match.groups()
+                monitors.append(MonitorSnapshot(
+                    monitor_id=name, name=name,
+                    geometry=[int(x), int(y), int(width), int(height)],
+                    primary=" connected primary " in f" {line} ",
+                ))
+        return monitors or super().capture_monitors(windows)
+
     def apply_layout(self, session: SessionSnapshot) -> None:
+        session = self.reconciled_session(session)
         if not shutil.which("wmctrl"):
             return
         available: dict[str, list[WindowSnapshot]] = defaultdict(list)
@@ -114,7 +132,7 @@ class KDEAdapter(LinuxAdapter):
             documents=True,
             geometry=bool(self.kdotool or shutil.which("wmctrl")),
             workspaces=bool(self.kdotool or shutil.which("wmctrl")),
-            monitors=False,
+            monitors=bool(shutil.which("kscreen-doctor") or shutil.which("xrandr")),
             native_wayland=bool(self.kdotool),
         )
 
@@ -169,6 +187,7 @@ class KDEAdapter(LinuxAdapter):
         return windows
 
     def apply_layout(self, session: SessionSnapshot) -> None:
+        session = self.reconciled_session(session)
         if not self.kdotool:
             super().apply_layout(session)
             return

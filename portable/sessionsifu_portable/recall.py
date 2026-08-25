@@ -31,6 +31,7 @@ except ImportError:  # pragma: no cover - source checkout fallback
     Image = ImageFilter = ImageOps = None
 
 from .model import SessionSnapshot, WindowSnapshot
+from .semantic import OfflineSemanticSearch
 
 RECALL_SCHEMA = 3
 RECALL_MAX_ENTRIES = 500
@@ -230,6 +231,7 @@ class RecallStore:
         self.root = root
         self.recall_dir = root / "recall"
         self.vault_dir = self.recall_dir / "vault"
+        self.semantic = OfflineSemanticSearch()
 
     def _ensure_directory(self) -> None:
         if self.recall_dir.is_symlink() or self.vault_dir.is_symlink():
@@ -358,6 +360,10 @@ class RecallStore:
                 item["_preview"] = image
                 if ocr_enabled and remaining_window_ocr:
                     text, boxes = self._ocr(image)
+                    ocr_diagnostics = {
+                        "state": "completed", "engine": "tesseract",
+                        "word_count": len(text.split()), "recognized_characters": len(text),
+                    }
                     text = text.encode("utf-8")[
                         :min(MAX_WINDOW_OCR_BYTES, remaining_window_ocr)
                     ].decode("utf-8", "ignore")
@@ -366,14 +372,23 @@ class RecallStore:
                         item["ocr_boxes"] = boxes[:remaining_window_boxes]
                         remaining_window_boxes -= len(item["ocr_boxes"])
                         remaining_window_ocr -= len(text.encode("utf-8"))
+                    item["ocr_diagnostics"] = ocr_diagnostics
             item["_source_index"] = source_index
             windows.append(item)
         if not windows:
             raise RuntimeError("No non-excluded windows were available for Privacy Recall")
         stamp = datetime.now(timezone.utc).strftime("recall-%Y%m%d-%H%M%S-%f")
-        ocr_text, ocr_boxes = (
-            self._ocr(preview) if preview and ocr_enabled else ("", [])
-        )
+        if preview and ocr_enabled:
+            ocr_text, ocr_boxes = self._ocr(preview)
+            display_ocr_diagnostics = {
+                "state": "completed", "engine": "tesseract",
+                "word_count": len(ocr_text.split()), "recognized_characters": len(ocr_text),
+            }
+        else:
+            ocr_text, ocr_boxes, display_ocr_diagnostics = "", [], {
+                "state": "disabled" if not ocr_enabled else "no-display-preview",
+                "engine": "tesseract",
+            }
         search_text = "\n".join(
             str(value)
             for item in windows
@@ -435,6 +450,7 @@ class RecallStore:
             "windows": windows,
             "ocr_text": ocr_text,
             "ocr_boxes": ocr_boxes,
+            "ocr_diagnostics": display_ocr_diagnostics,
             "urls": urls,
             "targets": [
                 *[str(target) for item in windows for target in item.get("targets", [])],
@@ -442,6 +458,8 @@ class RecallStore:
                 *urls,
             ][:128],
             "image": image_name,
+            "scene_id": self._visual_hash(preview or next((data for _name, data in image_writes), b"")),
+            "annotations": {"bookmarked": False, "collection": "", "note": ""},
             "capture_diagnostics": {
                 **session.capture_diagnostics,
                 "expected_windows": len(session.windows),
@@ -488,6 +506,16 @@ class RecallStore:
 
     @staticmethod
     def _ocr(preview: bytes) -> tuple[str, list[dict]]:
+        text, boxes, _diagnostics = RecallStore._ocr_detailed(preview)
+        return text, boxes
+
+    @staticmethod
+    def _ocr_detailed(preview: bytes) -> tuple[str, list[dict], dict[str, object]]:
+        started = time.monotonic()
+        diagnostics: dict[str, object] = {
+            "state": "failed", "engine": "tesseract", "word_count": 0,
+            "mean_confidence": 0, "duration_ms": 0,
+        }
         descriptor, name = tempfile.mkstemp(suffix=".jpg")
         path = Path(name)
         try:
@@ -505,8 +533,11 @@ class RecallStore:
                 capture_output=True,
                 timeout=20,
             )
+            diagnostics["languages"] = " ".join(language_args)
+            diagnostics["return_code"] = result.returncode
             if result.returncode != 0:
-                return "", []
+                diagnostics["error"] = result.stderr.decode("utf-8", "replace")[:512]
+                return "", [], diagnostics
             reader = csv.DictReader(
                 io.StringIO(result.stdout[:1024 * 1024].decode("utf-8", "replace")),
                 delimiter="\t",
@@ -514,6 +545,7 @@ class RecallStore:
             page_width = page_height = 0
             words = []
             boxes = []
+            confidences: list[float] = []
             for row in reader:
                 try:
                     level = int(row.get("level") or 0)
@@ -539,6 +571,7 @@ class RecallStore:
                 except (TypeError, ValueError):
                     continue
                 words.append(text)
+                confidences.append(confidence)
                 boxes.append({
                     "t": text,
                     "x": round(left * 10000 / page_width),
@@ -547,13 +580,37 @@ class RecallStore:
                     "h": max(1, round(height * 10000 / page_height)),
                     "c": round(confidence),
                 })
-            return " ".join(words)[:1024 * 1024], boxes
-        except (OSError, subprocess.TimeoutExpired):
-            return "", []
+            diagnostics.update({
+                "state": "completed",
+                "word_count": len(words),
+                "mean_confidence": round(sum(confidences) / len(confidences), 1) if confidences else 0,
+                "minimum_confidence": round(min(confidences), 1) if confidences else 0,
+                "maximum_confidence": round(max(confidences), 1) if confidences else 0,
+            })
+            return " ".join(words)[:1024 * 1024], boxes, diagnostics
+        except (OSError, subprocess.TimeoutExpired) as error:
+            diagnostics["state"] = "timeout" if isinstance(error, subprocess.TimeoutExpired) else "unavailable"
+            diagnostics["error"] = str(error)[:512]
+            return "", [], diagnostics
         finally:
+            diagnostics["duration_ms"] = round((time.monotonic() - started) * 1000)
             if "working_path" in locals() and working_path != path:
                 working_path.unlink(missing_ok=True)
             path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _visual_hash(preview: bytes) -> str:
+        if not preview or Image is None:
+            return ""
+        try:
+            with Image.open(io.BytesIO(preview)) as source:
+                gray = source.convert("L").resize((8, 8), Image.Resampling.LANCZOS)
+                values = list(gray.getdata())
+            mean = sum(values) / len(values)
+            bits = "".join("1" if value >= mean else "0" for value in values)
+            return f"{int(bits, 2):016x}"
+        except (OSError, ValueError):
+            return ""
 
     def _paths(self) -> list[Path]:
         if not self.vault_dir.is_dir() or self.vault_dir.is_symlink():
@@ -659,7 +716,11 @@ class RecallStore:
                             str(window.get("app_name") or window.get("app_id") or ""),
                             str(window.get("title") or ""),
                             "\n".join(str(value) for value in window.get("open_files", [])),
-                            str(window.get("accessible_text") or ""),
+                            "\n".join((
+                                str(window.get("accessible_text") or ""),
+                                str(dict(payload.get("annotations") or {}).get("collection") or ""),
+                                str(dict(payload.get("annotations") or {}).get("note") or ""),
+                            )),
                             str(window.get("ocr_text") or ""),
                         ),
                     )
@@ -694,27 +755,18 @@ class RecallStore:
                         ):
                             visual_candidates[name] = -float(rank)
             if needle and semantic:
-                query_terms = set(re.findall(r"[\w]+", needle))
+                documents: dict[str, str] = {}
                 for path, _payload, windows, _preview_allowed in loaded:
                     for index, window in windows:
-                        text_terms = set(re.findall(
-                            r"[\w]+",
-                            " ".join([
-                                str(window.get("app_name") or window.get("app_id") or ""),
-                                str(window.get("title") or ""),
-                                *(str(value) for value in window.get("open_files", [])),
-                                str(window.get("accessible_text") or ""),
-                                str(window.get("ocr_text") or ""),
-                            ]).casefold(),
-                        ))
-                        related = len(query_terms & text_terms) / max(
-                            1, len(query_terms | text_terms)
-                        )
-                        if related >= 0.08:
-                            key = f"{path.name}#{index}"
-                            window_candidates[key] = max(
-                                window_candidates.get(key, 0.0), related
-                            )
+                        documents[f"{path.name}#{index}"] = " ".join([
+                            str(window.get("app_name") or window.get("app_id") or ""),
+                            str(window.get("title") or ""),
+                            *(str(value) for value in window.get("open_files", [])),
+                            str(window.get("accessible_text") or ""),
+                            str(window.get("ocr_text") or ""),
+                        ])
+                for key, score in self.semantic.rank(needle, documents).items():
+                    window_candidates[key] = max(window_candidates.get(key, 0.0), score * 4.0)
 
             results = []
             for path, payload, windows, preview_allowed in loaded:
@@ -725,6 +777,9 @@ class RecallStore:
                     "has_preview": bool(payload.get("image")) and preview_allowed,
                     "capture_diagnostics": dict(payload.get("capture_diagnostics") or {}),
                     "privacy": dict(payload.get("privacy") or {}),
+                    "scene_id": str(payload.get("scene_id") or ""),
+                    "annotations": dict(payload.get("annotations") or {}),
+                    "ocr_diagnostics": dict(payload.get("ocr_diagnostics") or {}),
                 }
                 if not needle and not app:
                     apps = list(dict.fromkeys(
@@ -785,7 +840,10 @@ class RecallStore:
                         ]))[:32],
                         "urls": urls,
                         "rank": round(window_candidates.get(key, 0.0), 4),
-                        "match_type": self._window_match_type(window, needle),
+                        "match_type": self._window_match_type(
+                            window, needle,
+                            semantic=semantic and key in window_candidates,
+                        ),
                         "result_kind": "window",
                         "windows": [visible for _visible_index, visible in windows],
                         "matched_window": window,
@@ -840,7 +898,7 @@ class RecallStore:
         return list(dict.fromkeys(targets))[:32]
 
     @staticmethod
-    def _window_match_type(window: dict, needle: str) -> str:
+    def _window_match_type(window: dict, needle: str, *, semantic: bool = False) -> str:
         if not needle:
             return "Window"
         if needle in str(window.get("title") or "").casefold():
@@ -855,7 +913,30 @@ class RecallStore:
             return "Application"
         if needle in str(window.get("ocr_text") or "").casefold():
             return "Window image text"
-        return "Related window"
+        return "Semantic match" if semantic else "Related window"
+
+    @staticmethod
+    def group_scenes(results: list[dict[str, object]]) -> list[dict[str, object]]:
+        """Collapse adjacent near-identical timeline frames without losing evidence."""
+        grouped: list[dict[str, object]] = []
+        for result in results:
+            visual = str(result.get("scene_id") or "")
+            previous = grouped[-1] if grouped else None
+            previous_visual = str(previous.get("scene_id") or "") if previous else ""
+            distance = 65
+            if visual and previous_visual:
+                with contextlib.suppress(ValueError):
+                    distance = (int(visual, 16) ^ int(previous_visual, 16)).bit_count()
+            if previous and visual and distance <= 5:
+                previous["scene_count"] = int(previous.get("scene_count") or 1) + 1
+                previous["scene_started_at"] = result.get("captured_at")
+                continue
+            item = dict(result)
+            item["scene_count"] = 1
+            item["scene_started_at"] = result.get("captured_at")
+            item["scene_finished_at"] = result.get("captured_at")
+            grouped.append(item)
+        return grouped
 
     def preview_bytes(self, record: str, *, image_name: str = "") -> bytes | None:
         if not RECORD_RE.fullmatch(record):
@@ -870,6 +951,175 @@ class RecallStore:
         with contextlib.suppress(OSError, ValueError):
             return self._decrypt((self.vault_dir / name).read_bytes(), name)
         return None
+
+    def annotate(
+        self,
+        record: str,
+        *,
+        bookmarked: bool | None = None,
+        collection: str | None = None,
+        note: str | None = None,
+    ) -> dict[str, object]:
+        if not RECORD_RE.fullmatch(record):
+            raise ValueError("Invalid Recall record")
+        path = self.vault_dir / record
+        payload = self._load(path)
+        if not payload:
+            raise ValueError("Recall record is unavailable")
+        annotations = dict(payload.get("annotations") or {})
+        if bookmarked is not None:
+            annotations["bookmarked"] = bool(bookmarked)
+        if collection is not None:
+            annotations["collection"] = str(collection).strip()[:128]
+        if note is not None:
+            annotations["note"] = str(note).strip()[:4096]
+        payload["annotations"] = annotations
+        payload["modified"] = time.time()
+        self._write_encrypted(
+            path, json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+        )
+        return annotations
+
+    def ocr_diagnostics(self, record: str) -> dict[str, object]:
+        if not RECORD_RE.fullmatch(record):
+            raise ValueError("Invalid Recall record")
+        payload = self._load(self.vault_dir / record)
+        if not payload:
+            raise ValueError("Recall record is unavailable")
+        windows = [
+            {
+                "application": str(window.get("app_name") or window.get("app_id") or ""),
+                "title": str(window.get("title") or ""),
+                **dict(window.get("ocr_diagnostics") or {"state": "not-indexed"}),
+            }
+            for window in payload.get("windows", [])
+            if isinstance(window, dict)
+        ]
+        return {
+            "display": dict(payload.get("ocr_diagnostics") or {"state": "not-indexed"}),
+            "windows": windows,
+            "semantic": self.semantic.diagnostics(),
+        }
+
+    def reindex(self, record: str) -> dict[str, object]:
+        """Re-run OCR only for a selected encrypted local record."""
+        if not RECORD_RE.fullmatch(record):
+            raise ValueError("Invalid Recall record")
+        path = self.vault_dir / record
+        payload = self._load(path)
+        if not payload:
+            raise ValueError("Recall record is unavailable")
+        indexed = 0
+        display_name = str(payload.get("image") or "")
+        if display_name:
+            preview = self.preview_bytes(record, image_name=display_name)
+            if preview:
+                text, boxes, diagnostics = self._ocr_detailed(preview)
+                payload.update({"ocr_text": text, "ocr_boxes": boxes, "ocr_diagnostics": diagnostics})
+                indexed += 1
+        for window in payload.get("windows", [])[:MAX_WINDOW_PREVIEWS]:
+            if not isinstance(window, dict):
+                continue
+            image_name = str(window.get("image") or "")
+            preview = self.preview_bytes(record, image_name=image_name) if image_name else None
+            if not preview:
+                window["ocr_diagnostics"] = {"state": "no-preview", "engine": "tesseract"}
+                continue
+            text, boxes, diagnostics = self._ocr_detailed(preview)
+            window.update({"ocr_text": text, "ocr_boxes": boxes, "ocr_diagnostics": diagnostics})
+            indexed += 1
+        payload["modified"] = time.time()
+        contents = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+        if len(contents) > MAX_RECALL_BYTES:
+            raise ValueError("Reindexed Recall record exceeds the safety limit")
+        self._write_encrypted(path, contents)
+        return {"record": record, "images_indexed": indexed, **self.ocr_diagnostics(record)}
+
+    def ask(self, question: str, *, limit: int = 8) -> dict[str, object]:
+        """Answer locally with extractive text and explicit snapshot citations."""
+        question = question.strip()[:256]
+        if not question:
+            raise ValueError("A question is required")
+        matches = self.search(question, limit=limit, semantic=True)
+        citations = []
+        excerpts = []
+        for result in matches[:max(1, min(12, limit))]:
+            excerpt = str(result.get("ocr_excerpt") or "")
+            if not excerpt:
+                excerpt = " — ".join(str(value) for value in result.get("titles", [])[:2])
+            citations.append({
+                "record": result.get("name"),
+                "captured_at": result.get("captured_at"),
+                "application": next(iter(result.get("apps", [])), ""),
+                "title": next(iter(result.get("titles", [])), ""),
+                "excerpt": excerpt[:320],
+                "image": result.get("highlight_image", ""),
+            })
+            if excerpt:
+                excerpts.append(excerpt[:240])
+        answer = (
+            "No matching local history was found."
+            if not citations else
+            "The closest evidence in your local history is: " + " ".join(excerpts[:3])
+        )
+        return {"question": question, "answer": answer, "citations": citations}
+
+    def export_records(self):
+        for path in self._paths():
+            payload = self._load(path)
+            if not payload:
+                continue
+            images: dict[str, bytes] = {}
+            for image_name in self._payload_images(payload):
+                preview = self.preview_bytes(path.name, image_name=image_name)
+                if preview is not None:
+                    images[image_name] = preview
+            yield path.stem, payload, images
+
+    def import_record(self, metadata: dict, images: dict[str, bytes]) -> Path:
+        self._ensure_directory()
+        if metadata.get("recall_schema") != RECALL_SCHEMA or not isinstance(metadata.get("windows"), list):
+            raise ValueError("Recall archive record is incompatible")
+        payload = json.loads(json.dumps(metadata))
+        stamp = datetime.now(timezone.utc).strftime("recall-%Y%m%d-%H%M%S-%f")
+        mapping: dict[str, str] = {}
+        display = str(payload.get("image") or "")
+        if display:
+            mapping[display] = f"{stamp}.ssimg"
+        for index, window in enumerate(payload.get("windows", [])[:MAX_WINDOW_PREVIEWS]):
+            if isinstance(window, dict) and window.get("image"):
+                mapping[str(window["image"])] = f"{stamp}-window-{index}.ssimg"
+        if any(name not in images or not isinstance(images[name], bytes) or len(images[name]) > MAX_PREVIEW_BYTES for name in mapping):
+            raise ValueError("Recall archive is missing a bounded preview")
+        payload["image"] = mapping.get(display, "")
+        for window in payload.get("windows", []):
+            if isinstance(window, dict):
+                window["image"] = mapping.get(str(window.get("image") or ""), "")
+        payload["modified"] = time.time()
+        contents = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+        if len(contents) > MAX_RECALL_BYTES:
+            raise ValueError("Imported Recall record exceeds the safety limit")
+        record_path = self.vault_dir / f"{stamp}.ssrec"
+        written: list[Path] = []
+        try:
+            for old_name, new_name in mapping.items():
+                target = self.vault_dir / new_name
+                self._write_encrypted(target, images[old_name])
+                written.append(target)
+            self._write_encrypted(record_path, contents)
+        except Exception:
+            for target in written:
+                target.unlink(missing_ok=True)
+            raise
+        return record_path
+
+    def diagnostics(self) -> dict[str, object]:
+        return {
+            "entries": self.entry_count(),
+            "storage_bytes": self.storage_bytes(),
+            "ocr_languages": " ".join(_tesseract_language_args()),
+            "semantic": self.semantic.diagnostics(),
+        }
 
     def delete(self, *, record: str = "", app: str = "", website: str = "") -> int:
         removed = 0

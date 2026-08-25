@@ -43,9 +43,14 @@ with tempfile.TemporaryDirectory(prefix="sessionsifu-package-test-") as director
     )
     installed_app = test_root / "data/sessionsifu/app/sessionsifu"
     installed_module = test_root / "data/sessionsifu/app/recall_engine.py"
+    installed_support_modules = [
+        test_root / f"data/sessionsifu/app/{name}"
+        for name in ("semantic.py", "restore_journal.py", "mcp.py")
+    ]
     installed_tessdata = test_root / "data/sessionsifu/tessdata"
     assert installed_app.is_file()
     assert installed_module.is_file()
+    assert all(module.is_file() for module in installed_support_modules)
     assert (installed_tessdata / "ces.traineddata").stat().st_size > 1_000_000
     assert (installed_tessdata / "eng.traineddata").stat().st_size > 1_000_000
     assert (installed_tessdata / "configs/tsv").is_file()

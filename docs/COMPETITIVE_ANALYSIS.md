@@ -26,7 +26,7 @@ an active competitor: the original service ended in 2025. Its historical lesson
 — powerful continuous capture can disappear with a service — still reinforces
 SessionSifu's open format, local storage and absence of a mandatory account.
 
-## Feature position in 3.3.0
+## Feature position in 3.4.0
 
 SessionSifu is unusual because it combines two related but separate jobs:
 
@@ -35,7 +35,7 @@ SessionSifu is unusual because it combines two related but separate jobs:
 2. an off-by-default encrypted visual history whose primary unit is an
    individual application window rather than only the active display.
 
-Version 3.3.0 closes the highest-value gaps identified above:
+Version 3.4.0 implements the P0, P1 and P2 priorities identified above:
 
 - **Search quality:** bounded accessibility text is indexed before OCR, while
   Czech/English per-window OCR remains the fallback.
@@ -49,15 +49,28 @@ Version 3.3.0 closes the highest-value gaps identified above:
   launch.
 - **Extensibility without a daemon:** trusted tools get a read-only stdio API;
   there is no listening service or write-capable API method.
+- **Genuine related search:** an explicitly selected local embedding model can
+  rank concepts offline; the older lexical-overlap approximation was removed.
+- **Diagnosable OCR:** every moment records OCR health and can be reindexed
+  deliberately without rebuilding or exposing the entire vault.
+- **Recoverable restoration:** an owner-private atomic journal records each
+  restore action, outcome and retry source.
+- **Timeline organization:** scene grouping, bookmarks, collections and notes
+  make a long visual history navigable.
+- **Return and layout quality:** LibreOffice/JetBrains/browser adapters and
+  multi-monitor reconciliation improve return to a useful workspace.
+- **Private interoperability:** cited local Ask, read-only MCP stdio and
+  password-encrypted transfer archives expose useful workflows without a
+  SessionSifu cloud account.
 
-## Remaining competitive gaps
+## Remaining competitive gaps after 3.4.0
 
 The roadmap deliberately keeps these separate from shipped claims:
 
-- optional on-device visual embeddings for genuinely semantic image matching;
-- richer public application adapters and browser cooperation;
-- a crash-safe restore journal with retry and per-action results;
-- stable multi-monitor topology reconciliation;
+- an optional local *visual* embedding model (3.4.0 semantic ranking uses text
+  exposed by metadata, accessibility or OCR);
+- more public application/browser restoration APIs without private automation;
+- user-previewable manual monitor mapping for unusual dock configurations;
 - stronger portable native update signing/notarization; and
 - complete accessibility, localization and keyboard-only review of every UI.
 

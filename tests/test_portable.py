@@ -15,7 +15,8 @@ sys.path.insert(0, str(ROOT / "portable"))
 
 from sessionsifu_portable.adapters.base import AdapterCapabilities, PlatformAdapter  # noqa: E402
 from sessionsifu_portable.controller import SessionController  # noqa: E402
-from sessionsifu_portable.model import SessionSnapshot, WindowSnapshot  # noqa: E402
+from sessionsifu_portable.model import MonitorSnapshot, SessionSnapshot, WindowSnapshot  # noqa: E402
+from sessionsifu_portable.mcp import ReadOnlyMcp  # noqa: E402
 from sessionsifu_portable.recall import RecallStore  # noqa: E402
 from sessionsifu_portable.shortcut import parse_shortcut  # noqa: E402
 from sessionsifu_portable.storage import HISTORY_LIMIT, SessionStore  # noqa: E402
@@ -84,7 +85,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.3.0")
+        self.assertEqual(VERSION, "3.4.0")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -436,11 +437,71 @@ class PortableTests(unittest.TestCase):
             controller.save_named("Work")
             api = LocalApi(controller)
             status = api.dispatch({"method": "status"})
-            self.assertEqual(status["version"], "3.3.0")
+            self.assertEqual(status["version"], "3.4.0")
             preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
             self.assertEqual(preview["applications"][0]["application"], "Editor")
             with self.assertRaises(ValueError):
                 api.dispatch({"method": "restore.execute", "params": {"name": "Work"}})
+
+    def test_restore_journal_records_actions_and_can_be_retried(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
+            controller.save_named("Work")
+            controller.restore_named("Work")
+            entry = controller.restore_journals()[0]
+            self.assertEqual(entry["state"], "completed")
+            self.assertEqual(entry["source"], "named:Work")
+            self.assertTrue(entry["actions"])
+            self.assertEqual(controller.retry_restore(str(entry["id"])), {"applications": 1, "windows": 1})
+
+    def test_semantic_search_annotations_scenes_and_ask_are_local(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RecallStore(Path(directory))
+            session = FakeAdapter().capture()
+            path = store.save(session, window_previews={0: b"window"})
+            store.annotate(path.name, bookmarked=True, collection="Research", note="Quarterly plan")
+            store.semantic.rank = lambda query, documents: {next(iter(documents)): 0.9}
+            result = store.search("conceptual query", semantic=True)[0]
+            self.assertEqual(result["match_type"], "Semantic match")
+            self.assertTrue(result["annotations"]["bookmarked"])
+            result["scene_id"] = "0123456789abcdef"
+            self.assertEqual(store.group_scenes([result, result])[0]["scene_count"], 2)
+            answer = store.ask("conceptual query")
+            self.assertTrue(answer["citations"])
+
+    def test_encrypted_archive_round_trip_and_wrong_password(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = SessionController(FakeAdapter(), SessionStore(root / "source"))
+            source.save_named("Work")
+            source.recall_store.save(FakeAdapter().capture(), window_previews={0: b"preview"})
+            archive = root / "transfer.ssxa"
+            source.export_archive(archive, "correct horse battery staple")
+            destination = SessionController(FakeAdapter(), SessionStore(root / "destination"))
+            with self.assertRaises(ValueError):
+                destination.import_archive(archive, "incorrect passphrase")
+            counts = destination.import_archive(archive, "correct horse battery staple")
+            self.assertEqual(counts["sessions"], 1)
+            self.assertEqual(counts["recall"], 1)
+
+    def test_monitor_topology_mapping_clamps_windows_to_available_display(self) -> None:
+        saved = [MonitorSnapshot("external", "External", [1920, 0, 2560, 1440])]
+        current = [MonitorSnapshot("laptop", "Laptop", [0, 0, 1920, 1080], primary=True)]
+        geometry = PlatformAdapter.reconcile_geometry([2200, 100, 1200, 900], "external", saved, current)
+        self.assertGreaterEqual(geometry[0], 0)
+        self.assertGreaterEqual(geometry[1], 0)
+        self.assertLessEqual(geometry[0] + geometry[2], 1920)
+        self.assertLessEqual(geometry[1] + geometry[3], 1080)
+
+    def test_mcp_surface_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
+            controller.save_named("Work")
+            mcp = ReadOnlyMcp(controller)
+            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.4.0")
+            self.assertTrue(mcp.call("restore_preview", {"name": "Work"}))
+            with self.assertRaises(ValueError):
+                mcp.call("restore_execute", {"name": "Work"})
 
 
 if __name__ == "__main__":

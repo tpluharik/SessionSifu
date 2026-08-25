@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.3.0 runtime and release layout. User-facing
+This document describes the 3.4.0 runtime and release layout. User-facing
 Recall steps live in [RECALL_GUIDE.md](RECALL_GUIDE.md).
 
 SessionSifu 3 has a full GNOME runtime, a portable runtime shared by Windows,
@@ -86,7 +86,7 @@ keyboard input.
 The extension exports `org.gnome.Shell.Extensions.SessionSifu.Control` on the
 session D-Bus. The interface supports health checks, named-session operations,
 automatic history operations, previous-session restoration and opening the
-manager. In 3.3.0, `PlanSession`/`PlanHistory` return a bounded application
+manager. In 3.4.0, `PlanSession`/`PlanHistory` return a bounded application
 summary and their selection variants accept only identities confirmed in the
 restore preview.
 
@@ -188,6 +188,32 @@ hidden state paths are excluded and each window is capped at 32 files.
 
 ## Local storage
 
+### 3.4 retrieval, restore and transfer layers
+
+Recall still decrypts into an ephemeral in-memory FTS5 index. Optional semantic
+ranking is a second, separately enabled retrieval pass: `semantic.py` accepts
+only an explicit regular local model directory, forces model runtimes offline,
+rejects remote code and bounds documents and vector dimensions. Embeddings are
+not persisted.
+
+OCR diagnostics live inside the encrypted record. Reindexing decrypts only the
+selected record's bounded images, replaces its OCR text/boxes atomically and
+does not change capture exclusions. Visual hashes group adjacent near-identical
+moments; annotations are encrypted in the same authenticated record.
+
+Restore operations are recorded in owner-private JSON journals. A journal is
+written as `in-progress` before launch and atomically finished with per-action
+states. Retry resolves only a still-present named/history source; it never
+replays a raw command from the journal.
+
+The optional MCP surface is JSON-RPC over inherited stdin/stdout. It lists only
+search, cited Ask, restore preview, journal inspection and diagnostics. There is
+no socket and no write/launch/delete/update method.
+
+Transfer archives use Scrypt-derived AES-256-GCM, bounded ZIP members and path
+validation. Recall payloads are re-encrypted with the destination vault key on
+import. The passphrase is requested interactively and never stored.
+
 Named and automatic session files are JSON. They are kept below the XDG user
 configuration directory, normally `~/.config/sessionsifu/`. Update packages use
 the XDG cache directory, normally `~/.cache/sessionsifu/updates/`.
@@ -239,7 +265,7 @@ compact JPEG, but recognition receives a temporary `0600` grayscale copy with
 automatic contrast, bounded 3× Lanczos upscaling, sharpening and a 180-DPI hint.
 That working image is deleted immediately after Tesseract exits and is never
 encrypted or retained because the vault already contains the source preview.
-Version 3.3.0 bundles pinned Czech and English fast Tesseract models and their
+Version 3.4.0 bundles pinned Czech and English fast Tesseract models and their
 TSV configuration. The engine locates the signed resources in the system,
 user-local, source or frozen portable layout and selects `ces+eng` together.
 It falls back to installed locale models only when a bundled resource is not

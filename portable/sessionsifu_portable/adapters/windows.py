@@ -10,7 +10,15 @@ from collections import defaultdict
 from pathlib import Path
 
 from .base import AdapterCapabilities, PlatformAdapter, process_details, process_files
-from ..model import SessionSnapshot, WindowSnapshot
+from ..model import MonitorSnapshot, SessionSnapshot, WindowSnapshot
+
+
+class MONITORINFOEXW(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+        ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD),
+        ("szDevice", wintypes.WCHAR * 32),
+    ]
 
 
 class WindowsAdapter(PlatformAdapter):
@@ -20,7 +28,7 @@ class WindowsAdapter(PlatformAdapter):
         applications=True,
         documents=True,
         geometry=True,
-        monitors=False,
+        monitors=True,
         workspaces=False,
     )
 
@@ -44,6 +52,30 @@ class WindowsAdapter(PlatformAdapter):
         self.user32.IsZoomed.argtypes = [wintypes.HWND]
         self.user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
         self.user32.MoveWindow.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.BOOL]
+
+    def capture_monitors(self, windows=None) -> list[MonitorSnapshot]:
+        monitors: list[MonitorSnapshot] = []
+        callback_type = ctypes.WINFUNCTYPE(
+            wintypes.BOOL, wintypes.HANDLE, wintypes.HDC,
+            ctypes.POINTER(wintypes.RECT), wintypes.LPARAM,
+        )
+
+        def visit(handle, _device, _rect, _data):
+            info = MONITORINFOEXW()
+            info.cbSize = ctypes.sizeof(info)
+            if self.user32.GetMonitorInfoW(handle, ctypes.byref(info)):
+                rect = info.rcWork
+                monitors.append(MonitorSnapshot(
+                    monitor_id=str(info.szDevice), name=str(info.szDevice),
+                    geometry=[rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top],
+                    primary=bool(info.dwFlags & 1),
+                ))
+            return True
+
+        callback = callback_type(visit)
+        if not self.user32.EnumDisplayMonitors(0, 0, callback, 0):
+            return super().capture_monitors(windows)
+        return monitors or super().capture_monitors(windows)
 
     def _window_text(self, hwnd: int) -> str:
         length = self.user32.GetWindowTextLengthW(hwnd)
@@ -109,10 +141,10 @@ class WindowsAdapter(PlatformAdapter):
     def capture_windows(self, include_files: bool = True) -> list[WindowSnapshot]:
         return self._enumerate(include_files=include_files)
 
-    def launch_window(self, window: WindowSnapshot) -> None:
+    def launch_window(self, window: WindowSnapshot) -> bool:
         executable = Path(window.executable)
         if not executable.is_file():
-            return
+            return False
         arguments = [path for path in window.open_files if Path(path).is_file()]
         subprocess.Popen(
             [str(executable), *arguments],
@@ -122,8 +154,10 @@ class WindowsAdapter(PlatformAdapter):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        return True
 
     def apply_layout(self, session: SessionSnapshot) -> None:
+        session = self.reconciled_session(session)
         available: dict[str, list[WindowSnapshot]] = defaultdict(list)
         for current in self._enumerate():
             available[current.app_id].append(current)

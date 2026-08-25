@@ -341,6 +341,13 @@ export const SaveSession = class {
         }
         sessionConfigObject.monitor_number = metaWindow.get_monitor();
         sessionConfigObject.is_on_primary_monitor = metaWindow.is_on_primary_monitor();
+        const savedMonitor = Main.layoutManager.monitors[sessionConfigObject.monitor_number];
+        if (savedMonitor) {
+            sessionConfigObject.monitor_geometry = {
+                x: Math.trunc(savedMonitor.x), y: Math.trunc(savedMonitor.y),
+                width: Math.trunc(savedMonitor.width), height: Math.trunc(savedMonitor.height),
+            };
+        }
         sessionConfigObject.pid = metaWindow.get_pid();
         // TODO Since we can launch an app in the terminal after `su - username` or `su username`, we
         // should get the user ID who creates/launches this process. In the future, we can restore

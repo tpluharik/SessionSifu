@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import functools
+import getpass
 import hashlib
 import json
 import math
@@ -20,6 +21,8 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import zipfile
+import io
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -38,7 +41,12 @@ for _module_dir in (
         sys.path.remove(_module_path)
     sys.path.insert(0, _module_path)
 
+_portable_module_dir = Path(__file__).resolve().parents[1] / "portable" / "sessionsifu_portable"
+if (_portable_module_dir / "semantic.py").is_file():
+    sys.path.insert(0, str(_portable_module_dir))
+
 from recall_engine import RecallPolicy, RecallVault  # noqa: E402
+from restore_journal import RestoreJournal  # noqa: E402
 
 import gi
 
@@ -46,10 +54,12 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E402
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: E402
+from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.3.0"
+CURRENT_VERSION = "3.4.0"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -96,10 +106,20 @@ UPDATE_SIGNING_PUBLIC_KEY = b"""-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAEnakL3ds5kGLSASytcdZ2mTmBY7A1R298zO/L5843gY=
 -----END PUBLIC KEY-----
 """
+ARCHIVE_MAGIC = b"SSXA1\0"
+MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
 
 
 def recall_vault() -> RecallVault:
-    return RecallVault(Path(GLib.get_user_config_dir()) / "sessionsifu" / "recall")
+    config = settings()
+    return RecallVault(
+        Path(GLib.get_user_config_dir()) / "sessionsifu" / "recall",
+        semantic_model_path=config.get_string("recall-semantic-model-path"),
+    )
+
+
+def restore_journal_store() -> RestoreJournal:
+    return RestoreJournal(Path(GLib.get_user_config_dir()) / "sessionsifu")
 
 
 def recall_policy(config: Gio.Settings) -> RecallPolicy:
@@ -926,7 +946,16 @@ def install_user_payload(
     user_bin_dir = user_bin_dir or Path.home() / ".local" / "bin"
 
     source_app = payload_root / "usr/bin/sessionsifu"
-    source_recall_module = payload_root / "usr/lib/sessionsifu/recall_engine.py"
+    source_module_dir = payload_root / "usr/lib/sessionsifu"
+    source_modules = {
+        name: source_module_dir / name
+        for name in (
+            "recall_engine.py",
+            "semantic.py",
+            "restore_journal.py",
+            "mcp.py",
+        )
+    }
     source_desktop = payload_root / "usr/share/applications/org.gnome.SessionSifu.desktop"
     source_autostart = payload_root / "etc/xdg/autostart/org.gnome.SessionSifu.desktop"
     source_icon = payload_root / "usr/share/icons/hicolor/scalable/apps/org.gnome.SessionSifu.svg"
@@ -941,7 +970,7 @@ def install_user_payload(
     ]
     required_files = [
         source_app,
-        source_recall_module,
+        *source_modules.values(),
         source_desktop,
         source_autostart,
         source_icon,
@@ -959,11 +988,8 @@ def install_user_payload(
     installed_app = installed_app_dir / "sessionsifu"
     # Install dependencies before atomically activating the new launcher. This
     # prevents a partially applied update from leaving an unstartable app.
-    _atomic_copy(
-        source_recall_module,
-        installed_app_dir / "recall_engine.py",
-        0o644,
-    )
+    for name, source_module in source_modules.items():
+        _atomic_copy(source_module, installed_app_dir / name, 0o644)
     _atomic_write_text(
         _replace_desktop_exec(source_desktop.read_text(), local_app),
         user_data_dir / "applications/org.gnome.SessionSifu.desktop",
@@ -1401,7 +1427,25 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         show_all = Gtk.Button(label="Show all timeline")
         show_all.connect("clicked", self._show_all)
         filters.append(show_all)
+        self.group_scenes = Gtk.CheckButton(label="Group similar scenes", active=True)
+        self.group_scenes.connect("toggled", self._search_now)
+        filters.append(self.group_scenes)
+        ask = Gtk.Button(label="Ask history")
+        ask.connect("clicked", self._ask_history)
+        filters.append(ask)
         content.append(filters)
+        timeline = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        timeline.append(Gtk.Label(label="Newer"))
+        self.timeline_scale = Gtk.Scale(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            adjustment=Gtk.Adjustment(lower=0, upper=1, step_increment=1, page_increment=1),
+        )
+        self.timeline_scale.set_hexpand(True)
+        self.timeline_scale.set_draw_value(False)
+        self.timeline_scale.connect("value-changed", self._timeline_changed)
+        timeline.append(self.timeline_scale)
+        timeline.append(Gtk.Label(label="Older"))
+        content.append(timeline)
 
         paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL, vexpand=True)
         paned.set_position(455)
@@ -1867,6 +1911,8 @@ class RecallSearchWindow(Adw.ApplicationWindow):
                     self._settings.get_strv("recall-excluded-apps")
                 ),
             )
+            if self.group_scenes.get_active() and not self.query.get_text().strip() and not (self.app_filter.get_active_id() or ""):
+                entries = self._vault.group_scenes(entries)
         except (OSError, RuntimeError, ValueError) as error:
             entries = []
             self.notice.set_label(f"Recall vault unavailable: {error}")
@@ -1874,6 +1920,8 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             cutoff = time.time() - 7 * 86400
             entries = [entry for entry in entries if float(entry.get("modified") or 0) >= cutoff]
         self._entries = entries
+        self.timeline_scale.set_range(0, max(1, len(entries) - 1))
+        self.timeline_scale.set_value(0)
         known_apps = sorted({app for entry in entries for app in entry.get("apps", [])}, key=str.casefold)
         active_app = self.app_filter.get_active_id() or ""
         if tree_model_row_count(self.app_filter.get_model()) <= 1 and known_apps:
@@ -1910,6 +1958,10 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         if item.get("image_count"):
             add("Copy screenshot", self._copy_image)
         add("Copy recognized text", self._copy_item)
+        add("Bookmark / unbookmark", self._bookmark_item)
+        add("Collection and note…", self._annotate_item)
+        add("Reindex OCR for this moment", self._reindex_item)
+        add("Show OCR diagnostics", self._ocr_diagnostics)
         add("Delete this moment", self._delete_item, destructive=True)
         if item.get("apps"):
             add(
@@ -2033,6 +2085,82 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             self.detail_picture.set_paintable(None)
             self.detail_state.set_label(self._empty_preview_state())
             self._clear_box(self.detail_filmstrip)
+
+    def _timeline_changed(self, scale) -> None:
+        if self._entries:
+            index = max(0, min(len(self._entries) - 1, round(scale.get_value())))
+            self._show_detail(self._entries[index])
+
+    def _ask_history(self, *_args) -> None:
+        question = self.query.get_text().strip()
+        if not question:
+            self.notice.set_label("Type a question in Search, then choose Ask history.")
+            self.query.grab_focus()
+            return
+        try:
+            result = self._vault.ask(question)
+            citations = "\n".join(
+                f"• {item.get('captured_at', '')} · {item.get('application', '')} · {item.get('title', '')}"
+                for item in result.get("citations", [])
+            )
+            dialog = Adw.MessageDialog.new(
+                self, "Answer from local history",
+                f"{result.get('answer', '')}\n\nEvidence:\n{citations}",
+            )
+            dialog.add_response("close", "Close")
+            dialog.present()
+        except (OSError, RuntimeError, ValueError) as error:
+            self.notice.set_label(f"Local history answer failed: {error}")
+
+    def _bookmark_item(self, _button, item: dict) -> None:
+        current = bool(dict(item.get("annotations") or {}).get("bookmarked"))
+        self._vault.annotate(str(item.get("name") or ""), bookmarked=not current)
+        self._search()
+
+    def _annotate_item(self, _button, item: dict) -> None:
+        annotations = dict(item.get("annotations") or {})
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        collection = Gtk.Entry(placeholder_text="Collection")
+        collection.set_text(str(annotations.get("collection") or ""))
+        note = Gtk.Entry(placeholder_text="Private local note")
+        note.set_text(str(annotations.get("note") or ""))
+        box.append(collection)
+        box.append(note)
+        dialog = Adw.MessageDialog.new(self, "Organize this saved moment", "Bookmarks, collections and notes remain encrypted locally.")
+        dialog.set_extra_child(box)
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("save", "Save")
+        dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
+
+        def response(_dialog, choice: str) -> None:
+            if choice == "save":
+                self._vault.annotate(
+                    str(item.get("name") or ""),
+                    collection=collection.get_text(), note=note.get_text(),
+                )
+                self._search()
+
+        dialog.connect("response", response)
+        dialog.present()
+
+    def _reindex_item(self, _button, item: dict) -> None:
+        try:
+            result = self._vault.reindex(str(item.get("name") or ""))
+            self.notice.set_label(
+                f"OCR reindex complete: {result.get('images_indexed', 0)} images, "
+                f"{result.get('recognized_characters', 0)} recognized characters."
+            )
+            self._search()
+        except (OSError, RuntimeError, ValueError) as error:
+            self.notice.set_label(f"OCR reindex failed: {error}")
+
+    def _ocr_diagnostics(self, _button, item: dict) -> None:
+        diagnostics = dict(item.get("ocr_diagnostics") or {"state": "not-indexed"})
+        dialog = Adw.MessageDialog.new(
+            self, "OCR diagnostics", json.dumps(diagnostics, indent=2),
+        )
+        dialog.add_response("close", "Close")
+        dialog.present()
 
     def _open_item(self, _button, item: dict) -> None:
         target = next(iter(item.get("targets", [])), "")
@@ -2440,6 +2568,23 @@ class ManagerWindow(Adw.ApplicationWindow):
         self.recall_semantic_switch.connect("notify::active", self._toggle_recall_semantic)
         recall_group.add(self.recall_semantic_switch)
 
+        semantic_model_row = Adw.ActionRow(
+            title="Offline semantic model",
+            subtitle="Optional local SentenceTransformers directory; no download is attempted",
+        )
+        self.recall_semantic_model_entry = Gtk.Entry(
+            text=self._settings.get_string("recall-semantic-model-path"),
+            placeholder_text="/home/me/models/multilingual-e5-small",
+            hexpand=True, valign=Gtk.Align.CENTER,
+        )
+        self.recall_semantic_model_entry.connect(
+            "changed", lambda entry: self._settings.set_string(
+                "recall-semantic-model-path", entry.get_text().strip()
+            )
+        )
+        semantic_model_row.add_suffix(self.recall_semantic_model_entry)
+        recall_group.add(semantic_model_row)
+
         self.recall_sensitive_switch = Adw.SwitchRow(
             title="Filter likely sensitive information",
             subtitle="Enabled by default; discards captures containing passwords, payment cards or security codes",
@@ -2750,10 +2895,26 @@ class ManagerWindow(Adw.ApplicationWindow):
                 self._message("Select at least one application to restore.")
                 return
             dialog.close()
-            self._call(
-                restore_method,
-                GLib.Variant("(sas)", (name, selected)),
+            journal = restore_journal_store()
+            journal_id = journal.begin(
+                f"{'history' if history else 'named'}:{name}", applications,
             )
+            try:
+                result = self._call(
+                    restore_method, GLib.Variant("(sas)", (name, selected)),
+                )
+                actions = [
+                    {"identity": identity, "state": "requested" if result else "failed"}
+                    for identity in selected
+                ]
+                journal.finish(
+                    journal_id, actions=actions,
+                    summary={"applications": len(selected), "extension_result": result or ""},
+                    error="" if result else "GNOME integration did not confirm the restore",
+                )
+            except Exception as error:
+                journal.finish(journal_id, actions=[], summary={}, error=str(error))
+                raise
 
         confirm.connect("clicked", confirm_restore)
         buttons.append(cancel)
@@ -3339,6 +3500,129 @@ def autostart() -> int:
         return 1
 
 
+def _archive_key(passphrase: str, salt: bytes) -> bytes:
+    if len(passphrase) < 12:
+        raise ValueError("Archive passphrase must contain at least 12 characters")
+    return Scrypt(salt=salt, length=32, n=2**15, r=8, p=1).derive(
+        passphrase.encode("utf-8")[:4096]
+    )
+
+
+def export_gnome_archive(destination: Path, passphrase: str) -> dict[str, int]:
+    root = Path(GLib.get_user_config_dir()) / "sessionsifu"
+    sessions = root / "sessions"
+    payload = io.BytesIO()
+    counts = {"session_files": 0, "recall": 0, "images": 0}
+    with zipfile.ZipFile(payload, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+        archive.writestr("manifest.json", json.dumps({"format": 1, "application": "SessionSifu", "platform": "GNOME"}))
+        if sessions.is_dir() and not sessions.is_symlink():
+            for path in sessions.rglob("*"):
+                if not path.is_file() or path.is_symlink() or path.stat().st_size > 16 * 1024 * 1024:
+                    continue
+                relative = path.relative_to(root)
+                archive.writestr(f"session-files/{relative.as_posix()}", path.read_bytes())
+                counts["session_files"] += 1
+        for record, metadata, images in recall_vault().export_records():
+            archive.writestr(f"recall/{record}.json", json.dumps(metadata, ensure_ascii=False))
+            counts["recall"] += 1
+            for index, image in enumerate(images):
+                archive.writestr(f"recall/{record}--{index}.bin", image)
+                counts["images"] += 1
+        if payload.tell() > MAX_ARCHIVE_BYTES:
+            raise ValueError("Export exceeds the archive safety limit")
+    salt, nonce = os.urandom(16), os.urandom(12)
+    encrypted = ARCHIVE_MAGIC + salt + nonce + AESGCM(_archive_key(passphrase, salt)).encrypt(
+        nonce, payload.getvalue(), ARCHIVE_MAGIC
+    )
+    if len(encrypted) > MAX_ARCHIVE_BYTES:
+        raise ValueError("Encrypted export exceeds the archive safety limit")
+    destination = destination.expanduser()
+    if destination.exists() and destination.is_symlink():
+        raise ValueError("Refusing to overwrite a symbolic-link archive")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, name = tempfile.mkstemp(prefix=".sessionsifu-export-", dir=destination.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(encrypted)
+            output.flush()
+            os.fsync(output.fileno())
+        temporary.chmod(0o600)
+        os.replace(temporary, destination)
+        destination.chmod(0o600)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return counts
+
+
+def import_gnome_archive(source: Path, passphrase: str) -> dict[str, int]:
+    if source.is_symlink() or not source.is_file() or not 0 < source.stat().st_size <= MAX_ARCHIVE_BYTES:
+        raise ValueError("Archive is not a bounded regular file")
+    encrypted = source.read_bytes()
+    if not encrypted.startswith(ARCHIVE_MAGIC) or len(encrypted) < 50:
+        raise ValueError("Archive envelope is invalid")
+    offset = len(ARCHIVE_MAGIC)
+    salt, nonce = encrypted[offset:offset + 16], encrypted[offset + 16:offset + 28]
+    try:
+        raw = AESGCM(_archive_key(passphrase, salt)).decrypt(nonce, encrypted[offset + 28:], ARCHIVE_MAGIC)
+    except Exception as error:
+        raise ValueError("Archive passphrase is incorrect or the archive is damaged") from error
+    root = Path(GLib.get_user_config_dir()) / "sessionsifu"
+    sessions_root = root / "sessions"
+    if sessions_root.is_symlink():
+        raise ValueError("Refusing symbolic-link session storage")
+    sessions_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    imported_root = Path(tempfile.mkdtemp(prefix="Imported-", dir=sessions_root))
+    imported_root.chmod(0o700)
+    counts = {"session_files": 0, "recall": 0, "images": 0}
+    with zipfile.ZipFile(io.BytesIO(raw), "r") as archive:
+        members = archive.infolist()
+        if len(members) > 40_000 or sum(member.file_size for member in members) > MAX_ARCHIVE_BYTES:
+            raise ValueError("Archive expands beyond safety limits")
+        manifest = json.loads(archive.read("manifest.json"))
+        if manifest.get("format") != 1 or manifest.get("application") != "SessionSifu":
+            raise ValueError("Archive format is unsupported")
+        recall_metadata, recall_images = {}, {}
+        for member in members:
+            name = member.filename
+            if member.is_dir() or member.file_size > 16 * 1024 * 1024:
+                continue
+            if name.startswith("session-files/sessions/"):
+                relative = Path(name).relative_to("session-files/sessions")
+                if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+                    raise ValueError("Archive contains an unsafe session path")
+                target = imported_root / relative
+                target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                if target.is_symlink():
+                    raise ValueError("Archive import target is a symbolic link")
+                descriptor, temporary_name = tempfile.mkstemp(prefix=".import-", dir=target.parent)
+                temporary = Path(temporary_name)
+                try:
+                    with os.fdopen(descriptor, "wb") as output:
+                        output.write(archive.read(member))
+                        output.flush()
+                        os.fsync(output.fileno())
+                    temporary.chmod(0o600)
+                    os.replace(temporary, target)
+                    target.chmod(0o600)
+                finally:
+                    temporary.unlink(missing_ok=True)
+                counts["session_files"] += 1
+            elif re.fullmatch(r"recall/recall-\d{8}-\d{6}-\d{3}\.json", name):
+                recall_metadata[Path(name).stem] = json.loads(archive.read(member))
+            elif re.fullmatch(r"recall/recall-\d{8}-\d{6}-\d{3}--\d+\.bin", name):
+                stem, index = Path(name).name[:-4].rsplit("--", 1)
+                recall_images.setdefault(stem, {})[int(index)] = archive.read(member)
+                counts["images"] += 1
+        vault = recall_vault()
+        for stem, metadata in recall_metadata.items():
+            images_by_index = recall_images.get(stem, {})
+            images = [images_by_index[index] for index in sorted(images_by_index)]
+            vault.import_record(metadata, images)
+            counts["recall"] += 1
+    return counts
+
+
 def local_api_stdio() -> int:
     """Serve a read-only, pipe-only API without exposing a socket or vault key."""
     vault = recall_vault()
@@ -3390,6 +3674,44 @@ def local_api_stdio() -> int:
     return 0
 
 
+def mcp_stdio() -> int:
+    """Serve the separately enabled, strictly read-only MCP surface."""
+    from mcp import serve_mcp
+
+    class GnomeReadOnlyController:
+        version = CURRENT_VERSION
+
+        def __init__(self) -> None:
+            self.vault = recall_vault()
+            self.config = settings()
+            self.restore_journal = restore_journal_store()
+
+        def search_recall(self, query="", *, app="", semantic=False, **_kwargs):
+            return self.vault.search(
+                query, app=app, semantic=semantic,
+                excluded_apps=tuple(self.config.get_strv("recall-excluded-apps")),
+            )
+
+        def ask_recall(self, question):
+            return self.vault.ask(question)
+
+        @staticmethod
+        def plan_named(name):
+            if not NAME_RE.fullmatch(name):
+                raise ValueError("restore.preview requires a valid name")
+            return json.loads(call("PlanSession", GLib.Variant("(s)", (name,))))
+
+        def diagnostics(self):
+            return {
+                "version": CURRENT_VERSION, "desktop": "GNOME",
+                "recall": self.vault.diagnostics(),
+                "restore_journals": len(self.restore_journal.list()),
+                "transport": "stdio", "read_only": True,
+            }
+
+    return serve_mcp(GnomeReadOnlyController())
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Save and restore GNOME desktop sessions")
     parser.add_argument("--autostart", action="store_true", help=argparse.SUPPRESS)
@@ -3397,9 +3719,17 @@ def main() -> int:
     parser.add_argument("--restore", metavar="NAME")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--recall-search", action="store_true")
+    parser.add_argument("--export-archive", type=Path, help="export encrypted sessions and Recall history")
+    parser.add_argument("--import-archive", type=Path, help="import an encrypted SessionSifu archive")
+    parser.add_argument("--recall-reindex", metavar="RECORD", help="re-run OCR for one Recall record")
+    parser.add_argument("--recall-ask", metavar="QUESTION", help="ask local Recall history with citations")
     parser.add_argument(
         "--local-api-stdio", action="store_true",
         help="serve the read-only local JSON API on stdin/stdout",
+    )
+    parser.add_argument(
+        "--mcp-stdio", action="store_true",
+        help="serve the opt-in read-only Model Context Protocol adapter",
     )
     parser.add_argument("--finalize-recall", metavar="CAPTURE", help=argparse.SUPPRESS)
     parser.add_argument(
@@ -3424,6 +3754,8 @@ def main() -> int:
     harden_local_storage()
     if args.local_api_stdio:
         return local_api_stdio()
+    if args.mcp_stdio:
+        return mcp_stdio()
     if args.finalize_recall:
         try:
             result = recall_vault().finalize(Path(args.finalize_recall), recall_policy(settings()))
@@ -3432,6 +3764,18 @@ def main() -> int:
         except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
             print(f"sessionsifu: Recall finalization failed: {error}", file=sys.stderr)
             return 1
+    if args.recall_reindex:
+        print(json.dumps(recall_vault().reindex(args.recall_reindex), indent=2))
+        return 0
+    if args.recall_ask:
+        print(json.dumps(recall_vault().ask(args.recall_ask), indent=2))
+        return 0
+    if args.export_archive:
+        print(json.dumps(export_gnome_archive(args.export_archive, getpass.getpass("Archive passphrase: "))))
+        return 0
+    if args.import_archive:
+        print(json.dumps(import_gnome_archive(args.import_archive, getpass.getpass("Archive passphrase: "))))
+        return 0
     if args.autostart:
         return autostart()
     if args.save:

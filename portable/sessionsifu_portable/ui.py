@@ -15,10 +15,12 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QInputDialog,
     QListWidget,
     QListWidgetItem,
     QListView,
@@ -27,6 +29,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSlider,
     QSplitter,
     QSystemTrayIcon,
     QTabWidget,
@@ -410,6 +413,13 @@ class MainWindow(QMainWindow):
         )
         self.recall_related.toggled.connect(self.recall_settings_changed)
         recall_layout.addWidget(self.recall_related)
+        self.recall_semantic_model = QLineEdit(str(
+            self.settings.value("recall_semantic_model", "") or ""
+        ))
+        self.recall_semantic_model.setPlaceholderText("Optional local sentence-transformer model directory")
+        self.recall_semantic_model.editingFinished.connect(self.recall_settings_changed)
+        recall_form.addRow("Offline semantic model", self.recall_semantic_model)
+        self.controller.configure_semantic_model(self.recall_semantic_model.text().strip())
 
         self.recall_sensitive = QCheckBox("Filter likely sensitive information")
         self.recall_sensitive.setChecked(
@@ -448,6 +458,12 @@ class MainWindow(QMainWindow):
         recall_item_actions.addWidget(delete_selected)
         recall_item_actions.addWidget(delete_app)
         recall_item_actions.addWidget(delete_website)
+        archive_export = QPushButton("Encrypted export")
+        archive_export.clicked.connect(self.export_archive)
+        archive_import = QPushButton("Encrypted import")
+        archive_import.clicked.connect(self.import_archive)
+        recall_item_actions.addWidget(archive_export)
+        recall_item_actions.addWidget(archive_import)
         recall_layout.addLayout(recall_item_actions)
         clear_recall = QPushButton("Delete all Recall history")
         clear_recall.clicked.connect(self.clear_recall)
@@ -586,6 +602,9 @@ class MainWindow(QMainWindow):
         ))
         self.settings.setValue("recall_ocr", self.recall_ocr.isChecked())
         self.settings.setValue("recall_related_search", self.recall_related.isChecked())
+        semantic_path = self.recall_semantic_model.text().strip()
+        self.settings.setValue("recall_semantic_model", semantic_path)
+        self.controller.configure_semantic_model(semantic_path)
         self.settings.setValue("recall_sensitive_filter", self.recall_sensitive.isChecked())
 
     def recall_privacy_exclusions_changed(self) -> None:
@@ -872,6 +891,39 @@ class MainWindow(QMainWindow):
             self.controller.delete_recall(website=website)
             self.refresh_recall()
 
+    def export_archive(self) -> None:
+        destination, _filter = QFileDialog.getSaveFileName(
+            self, "Encrypted SessionSifu export", "SessionSifu.ssxa",
+            "SessionSifu archive (*.ssxa)",
+        )
+        if not destination:
+            return
+        passphrase, accepted = QInputDialog.getText(
+            self, "Protect export", "Passphrase (at least 12 characters):",
+            QLineEdit.EchoMode.Password,
+        )
+        if accepted:
+            self._perform(
+                lambda: self.controller.export_archive(Path(destination), passphrase),
+                "Encrypted export created.",
+            )
+
+    def import_archive(self) -> None:
+        source, _filter = QFileDialog.getOpenFileName(
+            self, "Import SessionSifu archive", "", "SessionSifu archive (*.ssxa)",
+        )
+        if not source:
+            return
+        passphrase, accepted = QInputDialog.getText(
+            self, "Unlock import", "Archive passphrase:", QLineEdit.EchoMode.Password,
+        )
+        if accepted:
+            self._perform(
+                lambda: self.controller.import_archive(Path(source), passphrase),
+                "Encrypted archive imported.",
+            )
+            self.refresh()
+
     def clear_recall(self) -> None:
         answer = QMessageBox.question(
             self,
@@ -968,6 +1020,18 @@ class RecallSearchDialog(QDialog):
         row.addWidget(self.app_filter)
         row.addWidget(self.view_mode)
         layout.addLayout(row)
+        timeline_row = QHBoxLayout()
+        self.group_scenes = QCheckBox("Group similar scenes")
+        self.group_scenes.setChecked(True)
+        self.group_scenes.toggled.connect(self.refresh)
+        self.timeline = QSlider(Qt.Orientation.Horizontal)
+        self.timeline.setRange(0, 0)
+        self.timeline.valueChanged.connect(self.select_timeline_position)
+        timeline_row.addWidget(self.group_scenes)
+        timeline_row.addWidget(QLabel("Older"))
+        timeline_row.addWidget(self.timeline, 1)
+        timeline_row.addWidget(QLabel("Newer"))
+        layout.addLayout(timeline_row)
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.results = QListWidget()
         self.results.setIconSize(QSize(240, 135))
@@ -1038,6 +1102,18 @@ class RecallSearchDialog(QDialog):
         open_button = QPushButton("Reopen selected window")
         open_button.clicked.connect(self.open_selected)
         actions.addWidget(open_button)
+        bookmark_button = QPushButton("Bookmark")
+        bookmark_button.clicked.connect(self.bookmark_selected)
+        collection_button = QPushButton("Collection / note")
+        collection_button.clicked.connect(self.annotate_selected)
+        reindex_button = QPushButton("Reindex OCR")
+        reindex_button.clicked.connect(self.reindex_selected)
+        diagnostics_button = QPushButton("OCR diagnostics")
+        diagnostics_button.clicked.connect(self.show_ocr_diagnostics)
+        ask_button = QPushButton("Ask history")
+        ask_button.clicked.connect(self.ask_history)
+        for widget in (bookmark_button, collection_button, reindex_button, diagnostics_button, ask_button):
+            actions.addWidget(widget)
         actions.addStretch(1)
         layout.addLayout(actions)
         self.local_shortcut = QShortcut(QKeySequence(SHORTCUT_LABEL), self)
@@ -1083,6 +1159,8 @@ class RecallSearchDialog(QDialog):
                 "recall_related_search", False, type=bool
             ),
         )
+        if self.group_scenes.isChecked() and not self.query.text().strip() and not self.app_filter.currentData():
+            entries = self.controller.recall_store.group_scenes(entries)
         if self.app_filter.count() == 1:
             all_entries = self.controller.search_recall(
                 "", excluded_apps=self.exclusions_provider()
@@ -1123,8 +1201,80 @@ class RecallSearchDialog(QDialog):
             else "No matching non-excluded Recall entries."
         )
         self.change_view_mode_without_refresh()
+        self.timeline.blockSignals(True)
+        self.timeline.setRange(0, max(0, len(entries) - 1))
+        self.timeline.setValue(0)
+        self.timeline.blockSignals(False)
         if self.results.count():
             self.results.setCurrentRow(0)
+
+    def select_timeline_position(self, position: int) -> None:
+        if self.results.count():
+            self.results.setCurrentRow(max(0, min(self.results.count() - 1, position)))
+
+    def selected_record(self) -> str:
+        item = self.results.currentItem()
+        entry = item.data(Qt.UserRole) if item else {}
+        return str(entry.get("name") or "") if isinstance(entry, dict) else ""
+
+    def bookmark_selected(self) -> None:
+        record = self.selected_record()
+        if record:
+            entry = self._detail_entry
+            current = bool(dict(entry.get("annotations") or {}).get("bookmarked"))
+            self.controller.annotate_recall(record, bookmarked=not current)
+            self.refresh()
+
+    def annotate_selected(self) -> None:
+        record = self.selected_record()
+        if not record:
+            return
+        existing = dict(self._detail_entry.get("annotations") or {})
+        collection, ok = QInputDialog.getText(
+            self, "Recall collection", "Collection:", text=str(existing.get("collection") or "")
+        )
+        if not ok:
+            return
+        note, ok = QInputDialog.getMultiLineText(
+            self, "Recall note", "Private local note:", str(existing.get("note") or "")
+        )
+        if ok:
+            self.controller.annotate_recall(record, collection=collection, note=note)
+            self.refresh()
+
+    def reindex_selected(self) -> None:
+        record = self.selected_record()
+        if not record:
+            return
+        try:
+            result = self.controller.reindex_recall(record)
+            QMessageBox.information(self, "OCR reindex complete", json.dumps(result, indent=2))
+            self.refresh()
+        except Exception as error:
+            QMessageBox.warning(self, "OCR reindex failed", str(error))
+
+    def show_ocr_diagnostics(self) -> None:
+        record = self.selected_record()
+        if record:
+            QMessageBox.information(
+                self, "OCR diagnostics",
+                json.dumps(self.controller.recall_ocr_diagnostics(record), indent=2),
+            )
+
+    def ask_history(self) -> None:
+        question = self.query.text().strip()
+        if not question:
+            question, ok = QInputDialog.getText(self, "Ask local history", "Question:")
+            if not ok:
+                return
+        answer = self.controller.ask_recall(question)
+        citations = "\n".join(
+            f"• {item.get('captured_at', '')} · {item.get('application', '')} · {item.get('title', '')}"
+            for item in answer.get("citations", [])
+        )
+        QMessageBox.information(
+            self, "Local history answer", f"{answer.get('answer', '')}\n\nEvidence:\n{citations}",
+        )
 
     def change_view_mode_without_refresh(self) -> None:
         mode = str(self.view_mode.currentData() or "visual")

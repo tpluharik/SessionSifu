@@ -1,3 +1,11 @@
+sessionsifu (3.4.0-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Add offline semantic Recall, OCR diagnostics/reindex and scene grouping.
+  * Add crash-safe restore journals, adapters and topology reconciliation.
+  * Add cited local Ask, read-only MCP and encrypted export/import.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Tue, 25 Aug 2026 16:00:00 +0200
+
 sessionsifu (3.3.0-1~ppa1~resolute1) resolute; urgency=medium
 
   * Add accessibility-first Recall indexing and capture completeness details.

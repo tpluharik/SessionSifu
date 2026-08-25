@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 from .base import AdapterCapabilities, PlatformAdapter, process_details, process_files
-from ..model import SessionSnapshot, WindowSnapshot
+from ..model import MonitorSnapshot, SessionSnapshot, WindowSnapshot
 
 CAPTURE_SCRIPT = r"""
 function run() {
@@ -80,7 +80,7 @@ class MacOSAdapter(PlatformAdapter):
         applications=True,
         documents=True,
         geometry=True,
-        monitors=False,
+        monitors=True,
         workspaces=False,
     )
 
@@ -99,6 +99,26 @@ class MacOSAdapter(PlatformAdapter):
                 + completed.stderr.strip()
             )
         return completed.stdout.strip()
+
+    def capture_monitors(self, windows=None) -> list[MonitorSnapshot]:
+        try:
+            from AppKit import NSScreen  # type: ignore[import-not-found]
+
+            screens = list(NSScreen.screens())
+            monitors = []
+            for index, screen in enumerate(screens):
+                frame = screen.visibleFrame()
+                description = screen.deviceDescription()
+                identifier = str(description.get("NSScreenNumber", index))
+                monitors.append(MonitorSnapshot(
+                    monitor_id=identifier,
+                    name=str(screen.localizedName() or f"Display {index + 1}"),
+                    geometry=[round(frame.origin.x), round(frame.origin.y), round(frame.size.width), round(frame.size.height)],
+                    scale=float(screen.backingScaleFactor()), primary=index == 0,
+                ))
+            return monitors or super().capture_monitors(windows)
+        except (ImportError, AttributeError, TypeError):
+            return super().capture_monitors(windows)
 
     def capture_windows(self, include_files: bool = True) -> list[WindowSnapshot]:
         raw = json.loads(self._jxa(CAPTURE_SCRIPT) or "[]")
@@ -120,17 +140,19 @@ class MacOSAdapter(PlatformAdapter):
             )
         return windows
 
-    def launch_window(self, window: WindowSnapshot) -> None:
+    def launch_window(self, window: WindowSnapshot) -> bool:
         command = ["open"]
         if window.app_id and "." in window.app_id:
             command.extend(["-b", window.app_id])
         elif window.app_name:
             command.extend(["-a", window.app_name])
         else:
-            return
+            return False
         files = [path for path in window.open_files if Path(path).is_file()]
         subprocess.Popen([*command, *files], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
 
     def apply_layout(self, session: SessionSnapshot) -> None:
+        session = self.reconciled_session(session)
         payload = json.dumps({"windows": [window.to_dict() for window in session.windows]})
         self._jxa(RESTORE_SCRIPT, payload)

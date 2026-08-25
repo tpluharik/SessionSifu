@@ -83,19 +83,19 @@ now = datetime.now(timezone.utc)
 manifest = module.parse_update_manifest(
     json.dumps(
         {
-            "version": "3.3.0",
+            "version": "3.4.0",
             "channel": "stable",
             "issued_at": (now - timedelta(minutes=1)).isoformat(),
             "expires_at": (now + timedelta(days=30)).isoformat(),
             "minimum_version": "2.5.0",
-            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.3.0_all.deb",
+            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.4.0_all.deb",
             "sha256": "a" * 64,
             "size": 12345,
             "notes": "Test update",
         }
     )
 )
-assert manifest["version"] == "3.3.0"
+assert manifest["version"] == "3.4.0"
 assert manifest["size"] == 12345
 
 older_manifest = module.parse_update_manifest(
@@ -155,6 +155,10 @@ with tempfile.TemporaryDirectory() as install_root:
     payload_root = install_root / "payload"
     source_app = payload_root / "usr/bin/sessionsifu"
     source_recall_module = payload_root / "usr/lib/sessionsifu/recall_engine.py"
+    source_support_modules = [
+        payload_root / f"usr/lib/sessionsifu/{name}"
+        for name in ("semantic.py", "restore_journal.py", "mcp.py")
+    ]
     source_desktop = payload_root / "usr/share/applications/org.gnome.SessionSifu.desktop"
     source_autostart = payload_root / "etc/xdg/autostart/org.gnome.SessionSifu.desktop"
     source_icon = payload_root / "usr/share/icons/hicolor/scalable/apps/org.gnome.SessionSifu.svg"
@@ -170,6 +174,7 @@ with tempfile.TemporaryDirectory() as install_root:
     for path in [
         source_app,
         source_recall_module,
+        *source_support_modules,
         source_desktop,
         source_autostart,
         source_icon,
@@ -184,6 +189,8 @@ with tempfile.TemporaryDirectory() as install_root:
         "print(TEST_VALUE)\n"
     )
     source_recall_module.write_text("TEST_VALUE = 'updated with module'\n")
+    for source_support_module in source_support_modules:
+        source_support_module.write_text("# SessionSifu support module\n")
     source_desktop.write_text("[Desktop Entry]\nType=Application\nExec=sessionsifu\n")
     source_autostart.write_text("[Desktop Entry]\nType=Application\nExec=sessionsifu --autostart\n")
     source_icon.write_text("<svg/>\n")
@@ -211,6 +218,9 @@ with tempfile.TemporaryDirectory() as install_root:
     assert installed_app.stat().st_mode & 0o111
     installed_module = data_dir / "sessionsifu/app/recall_engine.py"
     assert installed_module.read_text() == source_recall_module.read_text()
+    for source_support_module in source_support_modules:
+        installed = data_dir / "sessionsifu/app" / source_support_module.name
+        assert installed.read_text() == source_support_module.read_text()
     installed_tessdata = data_dir / "sessionsifu/tessdata"
     for source in source_ocr_files:
         installed = installed_tessdata / source.relative_to(source_tessdata)
@@ -241,7 +251,7 @@ try:
     module.parse_update_manifest(
         json.dumps(
             {
-                "version": "3.3.0",
+                "version": "3.4.0",
                 "channel": "stable",
                 "issued_at": (now - timedelta(minutes=1)).isoformat(),
                 "expires_at": (now + timedelta(days=30)).isoformat(),

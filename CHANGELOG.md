@@ -4,6 +4,28 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.4.0
+
+- Replaced lexical “related match” with optional, strictly offline sentence
+  embeddings loaded only from a user-selected local model directory.
+- Added OCR diagnostics and selective reindexing for one encrypted Recall
+  moment without weakening exclusions or creating a persistent plaintext index.
+- Added atomic, owner-private restore journals with per-application outcomes,
+  failure details and safe retry when the source session still exists.
+- Added scrubber timelines, near-duplicate scene grouping, bookmarks,
+  collections and private notes to the GTK and Qt Recall workflows.
+- Added resumable targets for LibreOffice, JetBrains IDEs and observable browser
+  URLs alongside the existing VS Code, Obsidian and generic file adapters.
+- Added schema-4 monitor topology capture and bounded cross-topology geometry
+  reconciliation on Windows, macOS, KDE/general Linux and GNOME.
+- Added extractive local Ask with explicit snapshot citations and an opt-in,
+  read-only MCP stdio adapter with no write-capable tools or network listener.
+- Added password-encrypted, authenticated, size-bounded session/Recall transfer
+  archives; imported Recall content is re-encrypted with the destination vault.
+- Corrected the Windows release signing step's stale archive version and added
+  regressions for journals, semantic ranking, encrypted transfer, MCP and
+  monitor fallback.
+
 ## 3.3.0
 
 - Added accessibility-first Recall indexing: supported applications can expose

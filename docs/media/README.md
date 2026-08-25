@@ -2,9 +2,9 @@
 
 `recall-demo.webp`, `recall-demo.mp4` and `recall-demo-poster.png` are generated
 by `tools/render-recall-demo.py` from synthetic UI content. They demonstrate the
-3.3.0 Recall workflow foundation, including the large master-detail preview,
+3.4.0 Recall workflow foundation, including the large master-detail preview,
 per-window filmstrip and OCR match navigation, without recording a real desktop
-or user data. The restore-preview and capture-health panels added in 3.3.0 are
+or user data. The restore-preview and capture-health panels refined in 3.4.0 are
 documented with static screenshots rather than real session data.
 
 The WebP is the lightweight animated README preview. The MP4 is the downloadable

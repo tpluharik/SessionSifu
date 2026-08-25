@@ -24,7 +24,7 @@ Choose each separately:
    first visual capture.
 5. Choose a retention period and encrypted storage quota.
 
-On supported Linux applications, 3.3.0 first indexes bounded text that the app
+On supported Linux applications, 3.4.0 first indexes bounded text that the app
 already exposes to the desktop accessibility interface. This does not open or
 read document files. OCR remains the fallback for visible text that is not
 accessible, and screenshot/OCR switches remain independent.
@@ -52,6 +52,27 @@ The encrypted vault stores the accepted preview and OCR coordinates; the
 private OCR working image is deleted immediately after recognition.
 
 ## Search and browse
+
+Version 3.4.0 adds a timeline scrubber and groups adjacent near-identical
+screens into scenes when **Group similar scenes** is enabled. Open a scene to
+browse every separately captured window in the filmstrip. Bookmarks,
+collections and notes are stored inside the encrypted moment and are searchable
+locally.
+
+**Related search** now requires a user-selected local SentenceTransformers
+model directory. It never downloads a model. If the optional runtime/model is
+missing, diagnostics explain the issue and normal title/file/accessibility/OCR
+search continues.
+
+Use **OCR diagnostics** to inspect indexing and **Reindex OCR** to process only
+the selected encrypted moment. This does not recapture the screen or weaken
+app/site exclusions. **Ask history** returns a local extractive summary with the
+exact saved moments used as evidence.
+
+Encrypted export/import is available from the portable manager and the
+`--export-archive` / `--import-archive` options. Archives require a passphrase
+of at least 12 characters, are authenticated and size bounded, and Recall is
+re-encrypted for the destination device.
 
 Open **Browse Recall Snapshots…** from the top-bar/tray menu, or use the
 customizable search shortcut (`Ctrl+Alt+Space` by default).
@@ -89,7 +110,7 @@ rendered highlights are not written to a persistent search database.
 
 ## Czech and English OCR
 
-Version 3.3.0 ships pinned Czech and English fast Tesseract models in the Debian
+Version 3.4.0 ships pinned Czech and English fast Tesseract models in the Debian
 package, signed in-app update and portable artifacts. SessionSifu selects both
 models together so mixed-language application interfaces can be searched.
 Recognition is local; the model never sends screenshots or text to a service.

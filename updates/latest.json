@@ -1,11 +1,11 @@
 {
-  "version": "3.3.0",
+  "version": "3.4.0",
   "channel": "stable",
-  "issued_at": "2026-08-25T14:12:11Z",
-  "expires_at": "2026-10-09T14:12:11Z",
+  "issued_at": "2026-08-25T18:09:31Z",
+  "expires_at": "2026-10-09T18:09:31Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.3.0_all.deb",
-  "sha256": "0733d0f74c2f37a9bd0768f2cc86c876c305537466db9cb30701303e368920ba",
-  "size": 3715676,
-  "notes": "SessionSifu 3.3.0 adds accessibility-first Recall search, capture-completeness details, protected-context redaction, selective restore previews and a read-only local integration API."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.4.0_all.deb",
+  "sha256": "ccbe6af300b2596563e52b0e72029d5e6ccc0e9e0fe2bb4b3892561e10ca3261",
+  "size": 3725304,
+  "notes": "SessionSifu 3.4.0 adds offline semantic Recall search, OCR diagnostics and reindexing, restore journals, scene grouping, collections, app adapters, monitor reconciliation, cited local Ask, read-only MCP and encrypted transfer archives."
 }

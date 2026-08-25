@@ -28,6 +28,9 @@ VSCODE_IDENTITY_RE = re.compile(
     r"(?:^|[.\s/_-])(?:code|codium)(?:$|[.\s/_-])|visual studio code",
     re.IGNORECASE,
 )
+JETBRAINS_IDENTITY_RE = re.compile(r"\b(?:idea|pycharm|clion|goland|webstorm|rider|rubymine)\b", re.IGNORECASE)
+LIBREOFFICE_IDENTITY_RE = re.compile(r"\b(?:libreoffice|soffice|writer|calc|impress)\b", re.IGNORECASE)
+BROWSER_IDENTITY_RE = re.compile(r"\b(?:firefox|chrome|chromium|edge|brave|vivaldi|safari)\b", re.IGNORECASE)
 MAX_ACCESSIBLE_BYTES = 64 * 1024
 MAX_ACCESSIBLE_NODES = 384
 MAX_TARGETS = 32
@@ -49,7 +52,11 @@ def capture_protection_reason(window: WindowSnapshot) -> str:
 
 def deep_targets(window: WindowSnapshot) -> list[str]:
     """Return bounded, observable targets for resuming an application moment."""
-    urls = list(dict.fromkeys(URL_RE.findall("\n".join((window.title, *window.command)))))
+    visible_url_text = "\n".join((window.title, *window.command))
+    identity = "\n".join((window.app_id, window.app_name, window.executable)).casefold()
+    if BROWSER_IDENTITY_RE.search(identity):
+        visible_url_text += "\n" + window.accessible_text
+    urls = list(dict.fromkeys(URL_RE.findall(visible_url_text)))
     files: list[Path] = []
     for raw in window.open_files:
         try:
@@ -58,14 +65,17 @@ def deep_targets(window: WindowSnapshot) -> list[str]:
                 files.append(path.resolve())
         except OSError:
             continue
-    identity = "\n".join((window.app_id, window.app_name, window.executable)).casefold()
     targets: list[str] = []
     for path in files:
         quoted = urllib.parse.quote(str(path))
         if VSCODE_IDENTITY_RE.search(identity):
             targets.append(f"vscode://file/{quoted.lstrip('/')}")
+        elif JETBRAINS_IDENTITY_RE.search(identity):
+            targets.append(path.as_uri() + "#jetbrains")
         elif "obsidian" in identity:
             targets.append("obsidian://open?path=" + quoted)
+        elif LIBREOFFICE_IDENTITY_RE.search(identity):
+            targets.append(path.as_uri() + "#libreoffice")
         targets.append(path.as_uri())
     targets.extend(urls)
     return list(dict.fromkeys(targets))[:MAX_TARGETS]
