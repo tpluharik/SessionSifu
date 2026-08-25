@@ -96,6 +96,11 @@ package from the immutable release archives, packs it and submits it using
 must be provisioned through GitHub's encrypted-secret UI or CLI input and must
 never be committed or pasted into logs, issues or documentation.
 
+The `release` environment and `CHOCOLATEY_API_KEY` secret were provisioned on
+25 August 2026. The two Authenticode secrets remain deliberately unset until a
+trusted certificate-authority-issued PFX is available; a self-signed
+certificate is not an acceptable substitute for public distribution.
+
 The generated metadata is attached to every tagged release so downstream
 reviewers can reproduce its hashes. Account credentials and API keys belong in
 the package store or encrypted repository secrets, never in the source tree.
