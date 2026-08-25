@@ -1,3 +1,6 @@
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
@@ -38,12 +41,20 @@ if (!OpenFiles.appInfoSupportsDocumentFiles(appInfo([
     throw new Error('A launcher with a document MIME type was rejected');
 if (OpenFiles.appInfoSupportsDocumentFiles(null))
     throw new Error('A missing launcher was accepted for document restoration');
-const commandFiles = OpenFiles.commandLineFiles([
-    '/usr/bin/document-editor',
-    Gio.File.new_for_path(thisFile).get_uri(),
-]);
-if (commandFiles.length !== 1 || commandFiles[0] !== thisFile)
-    throw new Error('A file URI from the application command line was not captured');
+const thisFileUri = Gio.File.new_for_path(thisFile).get_uri();
+if (OpenFiles.pathFromArgument(thisFileUri) !== thisFile)
+    throw new Error('A file URI from the application command line was not decoded');
+// The source tree is normally in the developer's home and can therefore exercise
+// the complete safety filter. Launchpad intentionally builds outside /home/buildd;
+// the filter must reject that path, while URI decoding remains testable there.
+if (OpenFiles.isCandidatePath(thisFile, true)) {
+    const commandFiles = OpenFiles.commandLineFiles([
+        '/usr/bin/document-editor',
+        thisFileUri,
+    ]);
+    if (commandFiles.length !== 1 || commandFiles[0] !== thisFile)
+        throw new Error('A file URI from the application command line was not captured');
+}
 const recent = OpenFiles.recentFileForWindow([
     {path: '/new/report.odt', basename: 'report.odt', modified: 2},
     {path: '/old/report.odt', basename: 'report.odt', modified: 1},

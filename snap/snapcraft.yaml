@@ -1,3 +1,6 @@
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
 name: sessionsifu
 title: SessionSifu
 base: core24
@@ -40,6 +43,9 @@ parts:
       - psutil==7.2.2
       - PySide6==6.11.2
     stage-packages:
+      # Classic snaps cannot use the interpreter from the core24 base. Bundle
+      # Python explicitly so the launcher and virtual environment are portable.
+      - python3
       - libdbus-1-3
       - libegl1
       - libgl1

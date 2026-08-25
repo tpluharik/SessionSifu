@@ -1,6 +1,10 @@
-sessionsifu (3.2.3-1~ppa1~resolute1) resolute; urgency=medium
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
+sessionsifu (3.2.3-1~ppa2~resolute1) resolute; urgency=medium
 
   * Publish the first Ubuntu 26.04/GNOME Shell 50 PPA package.
   * Include SessionSifu manager, Shell extension and local OCR resources.
+  * Make the open-file smoke test portable to isolated Launchpad builders.
 
  -- Tomas Pluharik <tpluharik@gmail.com>  Tue, 25 Aug 2026 09:30:00 +0200

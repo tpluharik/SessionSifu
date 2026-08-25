@@ -1,3 +1,6 @@
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
 'use strict';
 
 import Gio from 'gi://Gio';
@@ -110,7 +113,7 @@ export function listOpenFiles(pid) {
     return paths.sort((a, b) => a.localeCompare(b));
 }
 
-function pathFromArgument(argument) {
+export function pathFromArgument(argument) {
     if (typeof argument !== 'string')
         return null;
     if (argument.startsWith('file://'))
