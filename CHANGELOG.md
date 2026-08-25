@@ -4,6 +4,29 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.3.0
+
+- Added accessibility-first Recall indexing: supported applications can expose
+  visible text directly, with per-window OCR retained as the fallback. Search
+  identifies these results as application content.
+- Added bounded deep-return targets for validated files, observable URLs, VS
+  Code and Obsidian moments.
+- Added explicit capture-health metadata for expected, eligible, captured,
+  missing, excluded and protected windows, surfaced in the Recall detail view.
+- Added automatic private/protected-context redaction. Individual protected
+  window images are omitted and the shared display overview is withheld while
+  safe independent window images continue to be stored.
+- Added restore previews on GNOME, Windows, macOS, KDE and generic Linux. Users
+  can uncheck applications before any process is launched.
+- Added a read-only local JSON API over inherited stdin/stdout pipes for Recall
+  search, status and restore planning. It exposes no socket and accepts no
+  launch, delete or update method.
+- Added schema-3 portable session fields for accessibility text, deep targets,
+  protection reasons and capture diagnostics, while retaining older-session
+  loading.
+- Added regressions for accessibility search, capture completeness, protected
+  pixels, selective restore, the local API and GNOME/portable parity.
+
 ## 3.2.3
 
 - Added reproducible Ubuntu/Launchpad source packaging for Ubuntu 26.04 and a

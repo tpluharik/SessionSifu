@@ -41,6 +41,9 @@ class WindowSnapshot:
     maximized: bool = False
     fullscreen: bool = False
     open_files: list[str] = field(default_factory=list)
+    accessible_text: str = ""
+    deep_targets: list[str] = field(default_factory=list)
+    capture_protection: str = ""
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "WindowSnapshot":
@@ -64,6 +67,9 @@ class WindowSnapshot:
             maximized=bool(value.get("maximized")),
             fullscreen=bool(value.get("fullscreen")),
             open_files=[_text(path) for path in list(value.get("open_files") or [])[:MAX_FILES_PER_WINDOW]],
+            accessible_text=_text(value.get("accessible_text"), 64 * 1024),
+            deep_targets=[_text(target) for target in list(value.get("deep_targets") or [])[:32]],
+            capture_protection=_text(value.get("capture_protection"), 128),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -81,6 +87,7 @@ class SessionSnapshot:
     schema: int = SCHEMA_VERSION
     sessionsifu_version: str = VERSION
     capabilities: dict[str, bool] = field(default_factory=dict)
+    capture_diagnostics: dict[str, int | str | bool] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "SessionSnapshot":
@@ -103,6 +110,10 @@ class SessionSnapshot:
             schema=schema,
             sessionsifu_version=_text(value.get("sessionsifu_version"), 64),
             capabilities={str(key): bool(val) for key, val in dict(value.get("capabilities") or {}).items()},
+            capture_diagnostics={
+                str(key): val for key, val in dict(value.get("capture_diagnostics") or {}).items()
+                if isinstance(val, (bool, int, str))
+            },
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -113,5 +124,6 @@ class SessionSnapshot:
             "platform": self.platform,
             "desktop": self.desktop,
             "capabilities": self.capabilities,
+            "capture_diagnostics": self.capture_diagnostics,
             "windows": [window.to_dict() for window in self.windows],
         }

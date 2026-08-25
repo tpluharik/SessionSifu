@@ -40,8 +40,20 @@ class SessionController:
     def restore_named(self, name: str) -> dict[str, int]:
         return self.adapter.restore(self.store.load_named(name))
 
+    def plan_named(self, name: str) -> list[dict[str, object]]:
+        return self.adapter.plan_restore(self.store.load_named(name))
+
+    def restore_named_selection(self, name: str, selected: set[str]) -> dict[str, int]:
+        return self.adapter.restore(self.store.load_named(name), selected=selected)
+
     def restore_path(self, path: Path) -> dict[str, int]:
         return self.adapter.restore(self.store.load(path))
+
+    def plan_path(self, path: Path) -> list[dict[str, object]]:
+        return self.adapter.plan_restore(self.store.load(path))
+
+    def restore_path_selection(self, path: Path, selected: set[str]) -> dict[str, int]:
+        return self.adapter.restore(self.store.load(path), selected=selected)
 
     def named_sessions(self) -> list[Path]:
         return self.store.list_named()
@@ -58,16 +70,20 @@ class SessionController:
         include_file_paths: bool = False,
         preview: bytes | None = None,
         visual_provider: Callable[
-            [SessionSnapshot], tuple[bytes | None, dict[int, bytes]]
+            [SessionSnapshot], tuple
         ] | None = None,
         ocr_enabled: bool = False,
         sensitive_filter: bool = True,
         quota_mb: int = 512,
     ) -> Path:
         session = self.adapter.capture(include_files=include_file_paths)
+        self.adapter.enrich_content(session)
         window_previews: dict[int, bytes] = {}
         if visual_provider is not None:
-            preview, window_previews = visual_provider(session)
+            visual_result = visual_provider(session)
+            preview, window_previews = visual_result[:2]
+            if len(visual_result) > 2 and isinstance(visual_result[2], dict):
+                session.capture_diagnostics.update(visual_result[2])
         return self.recall_store.save(
             session,
             retention_hours=retention_hours,
@@ -107,5 +123,5 @@ class SessionController:
             "storage": str(self.store.root),
             "named_sessions": len(self.named_sessions()),
             "history_snapshots": len(self.history()),
-            "privacy_recall_entries": len(self.search_recall()),
+            "privacy_recall_entries": self.recall_store.entry_count(),
         }

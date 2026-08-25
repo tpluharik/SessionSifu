@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.2.3 runtime and release layout. User-facing
+This document describes the 3.3.0 runtime and release layout. User-facing
 Recall steps live in [RECALL_GUIDE.md](RECALL_GUIDE.md).
 
 SessionSifu 3 has a full GNOME runtime, a portable runtime shared by Windows,
@@ -86,7 +86,9 @@ keyboard input.
 The extension exports `org.gnome.Shell.Extensions.SessionSifu.Control` on the
 session D-Bus. The interface supports health checks, named-session operations,
 automatic history operations, previous-session restoration and opening the
-manager.
+manager. In 3.3.0, `PlanSession`/`PlanHistory` return a bounded application
+summary and their selection variants accept only identities confirmed in the
+restore preview.
 
 ## GTK manager
 
@@ -109,7 +111,7 @@ PackageKit or Ubuntu Software.
 ## Portable core and manager
 
 `portable/sessionsifu_portable/` is a Python package independent of GTK, GNOME
-Shell and D-Bus. `model.py` validates schema-2 session JSON and bounds window,
+Shell and D-Bus. `model.py` validates schema-3 session JSON and bounds window,
 text and document collections. `storage.py` performs atomic same-directory
 replacement, confines loads to SessionSifu-owned directories and retains the
 five newest automatic snapshots. `controller.py` is the small application API
@@ -121,12 +123,36 @@ through 30-minute intervals and exits through **Turn Off SessionSifu**. Slow or
 privileged platform operations are delegated to adapters rather than embedded
 in widget code.
 
+Before restore, both managers request a grouped plan and present every
+application as an enabled checkbox. Cancellation or an empty selection launches
+nothing. The identity set is applied before duplicate-app and document
+validation, so the preview is an execution boundary rather than a cosmetic
+summary.
+
 `recall.py` provides the portable activity timeline. It stores a reduced JSON
 shape rather than restorable process commands, writes through an atomic
 same-directory replacement, rejects symbolic-link storage and applies bounded
 retention. It applies the current exclusion list during capture and again before
 constructing search summaries. The Qt timer starts only while its persisted
 feature flag is true.
+
+`content.py` is the accessibility-first enrichment layer. On Linux it matches
+each saved window to its AT-SPI top-level window, then walks a strictly bounded
+subtree and records names/text; sibling windows are not merged into one result.
+It never opens document contents. All platforms derive
+bounded re-entry targets from already observable files and URLs. Private
+browsing, remote-display and explicitly protected contexts receive a protection
+reason before persistent images are selected.
+
+The GNOME capture file carries a temporary process identifier solely to locate
+the matching AT-SPI application. The finalizer caps the accessibility pass at
+1.5 seconds, 3,072 nodes and 512 KiB across the whole moment, and does not copy
+the identifier into the encrypted record.
+
+`api.py` implements the portable read-only integration API. The GNOME manager
+provides the equivalent `--local-api-stdio` mode. Each accepts one bounded JSON
+object per line through inherited stdin/stdout and deliberately implements no
+launch, delete or update method. No TCP or Unix-domain socket is opened.
 
 `shortcut.py` validates and normalizes the editable cross-platform accelerator.
 `hotkey.py` exposes that Recall popup shortcut on portable
@@ -175,7 +201,7 @@ Automatic snapshot filenames use UTC timestamps in the form
 `auto-YYYYMMDD-HHMMSS.json`. Only filenames matching that pattern can be listed
 or restored through the automatic-history D-Bus methods.
 
-Portable storage uses schema-2 JSON under `%APPDATA%/SessionSifu` on Windows,
+Portable storage uses schema-3 JSON under `%APPDATA%/SessionSifu` on Windows,
 `~/Library/Application Support/SessionSifu` on macOS and the XDG configuration
 directory on Linux. Portable snapshot names include microseconds to prevent
 rapid captures from overwriting one another. The portable schema is separate
@@ -199,7 +225,10 @@ permission.
 Search decrypts bounded records into process memory and creates separate
 ephemeral SQLite FTS5 tables for individual windows and display-wide OCR. Each
 window row has a stable record/window identity and independently weighted
-application, title, opted-in file and window-OCR fields. Exact FTS candidates
+application, title, opted-in file, accessible-text and window-OCR fields.
+Accessible application text ranks ahead of OCR because it preserves characters
+without image recognition; OCR remains available for apps that expose no text.
+Exact FTS candidates
 are supplemented by a bounded, recent-first in-memory scan for OCR prefixes
 and small recognition substitutions; optional related matching adds local
 token-similarity candidates and the focused window receives a small rank
@@ -210,7 +239,7 @@ compact JPEG, but recognition receives a temporary `0600` grayscale copy with
 automatic contrast, bounded 3× Lanczos upscaling, sharpening and a 180-DPI hint.
 That working image is deleted immediately after Tesseract exits and is never
 encrypted or retained because the vault already contains the source preview.
-Version 3.2.3 bundles pinned Czech and English fast Tesseract models and their
+Version 3.3.0 bundles pinned Czech and English fast Tesseract models and their
 TSV configuration. The engine locates the signed resources in the system,
 user-local, source or frozen portable layout and selects `ces+eng` together.
 It falls back to installed locale models only when a bundled resource is not
@@ -244,9 +273,10 @@ GNOME Shell performs one asynchronous desktop grab, then serializes compositor
 window actors into private streams without starting overlapping captures. The
 unprivileged manager helper downsizes displays to at most 1,280 pixels/quality
 70 and windows to 960 pixels/quality 65 through private temporary files.
-Encryption, OCR, FTS and decoded images execute outside GNOME Shell. Capture status contains
-only structural diagnostics such as duration, preview count, skip reason and
-vault size.
+Encryption, OCR, FTS and decoded images execute outside GNOME Shell. Capture
+status contains only structural diagnostics such as duration,
+expected/eligible/captured/missing/protected window counts, preview count, skip
+reason and vault size.
 
 ## Debian package and update channel
 

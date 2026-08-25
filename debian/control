@@ -19,6 +19,7 @@ Build-Depends:
  python3-gi,
  python3-keyring,
  python3-pil,
+ python3-pyatspi,
  tesseract-ocr,
  zip
 Standards-Version: 4.7.2
@@ -45,6 +46,7 @@ Depends:
  python3-gi,
  python3-keyring,
  python3-pil,
+ python3-pyatspi,
  tesseract-ocr
 Suggests: ydotool
 Description: restore GNOME applications, workspaces and window layouts

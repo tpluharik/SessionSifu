@@ -29,6 +29,56 @@ import * as FileUtils from '../utils/fileUtils.js';
 
 let _requiredToRestorePrevious = false;
 
+function _restoreApplicationKey(session) {
+    if (session.desktop_file_id)
+        return `desktop:${session.desktop_file_id}`;
+    if (Array.isArray(session.cmd) && session.cmd.length)
+        return `command-sha256:${GLib.compute_checksum_for_string(
+            GLib.ChecksumType.SHA256, JSON.stringify(session.cmd), -1)}`;
+    return `application:${session.app_name ?? ''}`;
+}
+
+function _restorePlan(path) {
+    const file = Gio.File.new_for_path(path);
+    const info = file.query_info(
+        'standard::type,standard::is-symlink,standard::size',
+        Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
+        null);
+    if (info.get_file_type() !== Gio.FileType.REGULAR ||
+        info.get_is_symlink() || info.get_size() > 16 * 1024 * 1024)
+        throw new Error('Saved session must be a bounded regular file');
+    const [success, contents] = file.load_contents(null);
+    if (!success || contents.length > 16 * 1024 * 1024)
+        throw new Error('Saved session is unavailable or too large');
+    const payload = FileUtils.getJsonObj(contents);
+    const sessions = Array.isArray(payload.x_session_config_objects)
+        ? payload.x_session_config_objects.slice(0, 512) : [];
+    const grouped = new Map();
+    for (const session of sessions) {
+        if (!session || typeof session !== 'object')
+            continue;
+        const identity = _restoreApplicationKey(session);
+        if (!identity || identity.endsWith(':'))
+            continue;
+        if (!grouped.has(identity)) {
+            grouped.set(identity, {
+                identity,
+                application: String(session.app_name ?? session.desktop_file_id ?? 'Application').slice(0, 512),
+                windows: 0,
+                documents: [],
+            });
+        }
+        const item = grouped.get(identity);
+        item.windows++;
+        for (const document of Array.isArray(session.open_files) ? session.open_files.slice(0, 32) : []) {
+            const value = String(document).slice(0, 4096);
+            if (value && !item.documents.includes(value))
+                item.documents.push(value);
+        }
+    }
+    return [...grouped.values()];
+}
+
 export const AutostartServiceProvider = GObject.registerClass(
     class AutostartServiceProvider extends GObject.Object {
 
@@ -117,7 +167,7 @@ const AutostartService = GObject.registerClass(
         }
 
         Ping() {
-            return 'SessionSifu 3.2.3 is ready';
+            return 'SessionSifu 3.3.0 is ready';
         }
 
         _validSessionName(sessionName) {
@@ -161,6 +211,36 @@ const AutostartService = GObject.registerClass(
             const restorer = new RestoreSession.RestoreSession();
             restorer.restoreSession(sessionName);
             return `Restoring session '${sessionName}'`;
+        }
+
+        PlanSession(sessionName) {
+            if (!this._validSessionName(sessionName))
+                return JSON.stringify({error: 'Invalid session name', applications: []});
+            const [exists, path] = FileUtils.sessionExists(sessionName);
+            if (!exists)
+                return JSON.stringify({error: 'Session does not exist', applications: []});
+            try {
+                return JSON.stringify({applications: _restorePlan(path)});
+            } catch (error) {
+                return JSON.stringify({error: error.message, applications: []});
+            }
+        }
+
+        RestoreSessionSelection(sessionName, selectedApplicationKeys) {
+            if (!this._allowOperation('restore', 3000))
+                return 'ERROR: Restore request rate limit exceeded';
+            if (!this._validSessionName(sessionName))
+                return 'ERROR: Invalid session name';
+            const [exists] = FileUtils.sessionExists(sessionName);
+            if (!exists)
+                return `ERROR: Session '${sessionName}' does not exist`;
+            const selected = new Set(selectedApplicationKeys.slice(0, 128));
+            if (selected.size === 0)
+                return 'ERROR: Select at least one application';
+            Autoclose.autocloseObject.sessionClosedByUser = false;
+            RestoreSession.restoreSessionObject.restoringApps = new Map();
+            new RestoreSession.RestoreSession().restoreSession(sessionName, selected);
+            return `Restoring selected applications from '${sessionName}'`;
         }
 
         DeleteSession(sessionName) {
@@ -226,6 +306,32 @@ const AutostartService = GObject.registerClass(
             const restorer = new RestoreSession.RestoreSession();
             restorer.restoreSessionFromFile(path);
             return `Restoring automatic snapshot '${snapshotName}'`;
+        }
+
+        PlanHistory(snapshotName) {
+            const path = ContinuousSaver.snapshotPath(snapshotName);
+            if (!path || !GLib.file_test(path, GLib.FileTest.EXISTS))
+                return JSON.stringify({error: 'Automatic snapshot does not exist', applications: []});
+            try {
+                return JSON.stringify({applications: _restorePlan(path)});
+            } catch (error) {
+                return JSON.stringify({error: error.message, applications: []});
+            }
+        }
+
+        RestoreHistorySelection(snapshotName, selectedApplicationKeys) {
+            if (!this._allowOperation('restore-history', 3000))
+                return 'ERROR: Restore request rate limit exceeded';
+            const path = ContinuousSaver.snapshotPath(snapshotName);
+            if (!path || !GLib.file_test(path, GLib.FileTest.EXISTS))
+                return 'ERROR: Automatic snapshot does not exist';
+            const selected = new Set(selectedApplicationKeys.slice(0, 128));
+            if (selected.size === 0)
+                return 'ERROR: Select at least one application';
+            Autoclose.autocloseObject.sessionClosedByUser = false;
+            RestoreSession.restoreSessionObject.restoringApps = new Map();
+            new RestoreSession.RestoreSession().restoreSessionFromFile(path, selected);
+            return `Restoring selected applications from '${snapshotName}'`;
         }
 
         ListRecall(query) {

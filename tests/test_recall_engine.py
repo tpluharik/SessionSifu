@@ -19,6 +19,64 @@ from recall_engine import MAGIC, RecallPolicy, RecallVault, _prepare_ocr_image  
 
 
 class RecallEngineTests(unittest.TestCase):
+    def test_accessibility_roots_do_not_merge_sibling_windows(self) -> None:
+        class FakeText:
+            def __init__(self, value: str) -> None:
+                self.value = value
+                self.characterCount = len(value)
+
+            def getText(self, start: int, end: int) -> str:
+                return self.value[start:end]
+
+        class FakeNode:
+            def __init__(self, name: str, text: str = "", children=()) -> None:
+                self.name = name
+                self.text = text
+                self.children = list(children)
+                self.childCount = len(self.children)
+
+            def getChildAtIndex(self, index: int):
+                return self.children[index]
+
+            def getRoleName(self) -> str:
+                return "text"
+
+            def getState(self):
+                raise RuntimeError("state unavailable")
+
+            def queryText(self):
+                if not self.text:
+                    raise RuntimeError("no text")
+                return FakeText(self.text)
+
+        alpha = FakeNode("Alpha — Editor", children=[FakeNode("body", "secret alpha")])
+        beta = FakeNode("Beta — Editor", children=[FakeNode("body", "visible beta")])
+        application = FakeNode("Editor", children=[alpha, beta])
+        root = recall_engine._atspi_window_root(application, "Beta — Editor", 2)
+        self.assertIs(root, beta)
+        text, consumed = recall_engine._atspi_visible_text(
+            root, object(), 32, 4096, time.monotonic() + 1
+        )
+        self.assertIn("visible beta", text)
+        self.assertNotIn("secret alpha", text)
+        self.assertGreaterEqual(consumed, 2)
+
+    def test_deep_targets_use_validated_files_and_supported_editor_uri(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            document = Path(directory) / "release notes.txt"
+            document.write_text("content is never read by the target adapter")
+            targets = recall_engine._deep_targets(
+                {"app_name": "Visual Studio Code", "app_id": "code.desktop"},
+                [str(document)],
+                "Issue https://example.test/42",
+            )
+            self.assertIn(document.as_uri(), targets)
+            self.assertIn(
+                f"vscode://file/{str(document).lstrip('/').replace(' ', '%20')}",
+                targets,
+            )
+            self.assertIn("https://example.test/42", targets)
+
     def capture(self, root: Path, title: str = "Project notes") -> Path:
         path = root / "recall-20260822-120000-123.json"
         path.write_text(json.dumps({
@@ -289,6 +347,42 @@ class RecallEngineTests(unittest.TestCase):
             self.assertEqual(len(redacted), 2)
             self.assertNotIn("Editor", {result["apps"][0] for result in redacted})
             self.assertTrue(all(result["image_count"] == 0 for result in redacted))
+
+    def test_accessible_text_is_indexed_and_private_windows_are_redacted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            capture = self.capture(root)
+            payload = json.loads(capture.read_text())
+            payload["x_session_config_objects"][0]["accessible_text"] = (
+                "Quarterly narwhal forecast"
+            )
+            payload["x_session_config_objects"][0]["deep_targets"] = [
+                "vscode://file/home/example/notes.txt"
+            ]
+            payload["x_session_config_objects"].append({
+                "app_name": "Browser",
+                "window_title": "Private Browsing",
+                "capture_protection": "private browsing",
+            })
+            capture.write_text(json.dumps(payload))
+            display = root / "recall-20260822-120000-123-display-0.jpg"
+            editor = root / "recall-20260822-120000-123-window-0.jpg"
+            private = root / "recall-20260822-120000-123-window-1.jpg"
+            display.write_bytes(b"shared")
+            editor.write_bytes(b"editor")
+            private.write_bytes(b"private")
+            vault = RecallVault(root, test_key=b"a" * 32)
+            result = vault.finalize(capture, RecallPolicy())
+            record = vault._load(vault.vault / result["record"])
+            self.assertEqual(len(record["windows"]), 1)
+            self.assertEqual(record["images"], [
+                "recall-20260822-120000-123-window-0.ssimg"
+            ])
+            self.assertTrue(record["privacy"]["shared_display_withheld"])
+            self.assertEqual(record["capture_diagnostics"]["protected_windows"], 1)
+            match = vault.search("narwhal")[0]
+            self.assertEqual(match["match_type"], "Application content")
+            self.assertIn("vscode://file/home/example/notes.txt", match["targets"])
 
 
 if __name__ == "__main__":

@@ -326,15 +326,18 @@ class RecallStore:
         has_excluded_window = any(
             _matches_exclusion(window, exclusions) for window in session.windows
         )
+        has_protected_window = any(window.capture_protection for window in session.windows)
         # A desktop image may contain pixels from an excluded window. Individual
         # window images can be retained safely because they are mapped before save.
-        if has_excluded_window:
+        if has_excluded_window or has_protected_window:
             preview = None
         windows = []
         remaining_window_ocr = MAX_TOTAL_WINDOW_OCR_BYTES
         remaining_window_boxes = MAX_TOTAL_WINDOW_OCR_BOXES
         for source_index, window in enumerate(session.windows):
             if _matches_exclusion(window, exclusions):
+                continue
+            if window.capture_protection:
                 continue
             item = {
                 "app_id": window.app_id,
@@ -343,6 +346,8 @@ class RecallStore:
                 "geometry": list(window.geometry),
                 "workspace": window.workspace,
                 "monitor": window.monitor,
+                "accessible_text": window.accessible_text,
+                "targets": list(window.deep_targets),
             }
             if include_file_paths:
                 item["open_files"] = list(window.open_files)
@@ -375,6 +380,7 @@ class RecallStore:
             for value in (
                 item.get("app_name"),
                 item.get("title"),
+                item.get("accessible_text"),
                 *item.get("open_files", []),
                 item.get("ocr_text"),
             )
@@ -431,10 +437,36 @@ class RecallStore:
             "ocr_boxes": ocr_boxes,
             "urls": urls,
             "targets": [
+                *[str(target) for item in windows for target in item.get("targets", [])],
                 *[Path(value).as_uri() for value in (files if include_file_paths else []) if Path(value).is_absolute() and Path(value).is_file()],
                 *urls,
             ][:128],
             "image": image_name,
+            "capture_diagnostics": {
+                **session.capture_diagnostics,
+                "expected_windows": len(session.windows),
+                "eligible_windows": len(windows),
+                "captured_window_images": sum(
+                    1 for item in windows if item.get("image")
+                ),
+                "missing_window_images": max(
+                    0, len(windows) - sum(1 for item in windows if item.get("image"))
+                ),
+                "excluded_windows": sum(
+                    1 for window in session.windows if _matches_exclusion(window, exclusions)
+                ),
+                "protected_windows": sum(
+                    1 for window in session.windows if window.capture_protection
+                ),
+            },
+            "privacy": {
+                "sensitive_filter": bool(sensitive_filter),
+                "excluded_application_visible": bool(has_excluded_window),
+                "protected_context_visible": bool(has_protected_window),
+                "shared_display_withheld": bool(
+                    (has_excluded_window or has_protected_window) and not preview
+                ),
+            },
         }
         contents = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
         if len(contents) > MAX_RECALL_BYTES:
@@ -597,7 +629,7 @@ class RecallStore:
         try:
             connection.execute(
                 "CREATE VIRTUAL TABLE recall_windows USING fts5("
-                "key UNINDEXED, app, title, files, ocr)"
+                "key UNINDEXED, app, title, files, accessible, ocr)"
             )
             connection.execute(
                 "CREATE VIRTUAL TABLE recall_visual USING fts5(name UNINDEXED, ocr)"
@@ -621,12 +653,13 @@ class RecallStore:
                         continue
                     visible_windows.append((index, window))
                     connection.execute(
-                        "INSERT INTO recall_windows VALUES (?, ?, ?, ?, ?)",
+                        "INSERT INTO recall_windows VALUES (?, ?, ?, ?, ?, ?)",
                         (
                             f"{path.name}#{index}",
                             str(window.get("app_name") or window.get("app_id") or ""),
                             str(window.get("title") or ""),
                             "\n".join(str(value) for value in window.get("open_files", [])),
+                            str(window.get("accessible_text") or ""),
                             str(window.get("ocr_text") or ""),
                         ),
                     )
@@ -648,7 +681,7 @@ class RecallStore:
                 if expression:
                     with contextlib.suppress(sqlite3.OperationalError):
                         for key, rank in connection.execute(
-                            "SELECT key, bm25(recall_windows,0,6,5,3,4) "
+                            "SELECT key, bm25(recall_windows,0,6,5,3,5,4) "
                             "FROM recall_windows WHERE recall_windows MATCH ? ORDER BY 2",
                             (expression,),
                         ):
@@ -670,6 +703,7 @@ class RecallStore:
                                 str(window.get("app_name") or window.get("app_id") or ""),
                                 str(window.get("title") or ""),
                                 *(str(value) for value in window.get("open_files", [])),
+                                str(window.get("accessible_text") or ""),
                                 str(window.get("ocr_text") or ""),
                             ]).casefold(),
                         ))
@@ -689,6 +723,8 @@ class RecallStore:
                     "captured_at": str(payload.get("captured_at") or "")[:128],
                     "modified": float(payload.get("modified") or path.stat().st_mtime),
                     "has_preview": bool(payload.get("image")) and preview_allowed,
+                    "capture_diagnostics": dict(payload.get("capture_diagnostics") or {}),
+                    "privacy": dict(payload.get("privacy") or {}),
                 }
                 if not needle and not app:
                     apps = list(dict.fromkeys(
@@ -710,7 +746,11 @@ class RecallStore:
                         "apps": apps,
                         "titles": titles,
                         "files": files,
-                        "targets": self._targets(files, urls),
+                        "targets": list(dict.fromkeys([
+                            *(str(target) for _index, window in windows
+                              for target in window.get("targets", [])),
+                            *self._targets(files, urls),
+                        ]))[:32],
                         "urls": urls,
                         "rank": 0.0,
                         "match_type": "Timeline",
@@ -739,7 +779,10 @@ class RecallStore:
                         "apps": [str(window.get("app_name") or window.get("app_id") or "")],
                         "titles": [title] if title else [],
                         "files": files,
-                        "targets": self._targets(files, urls),
+                        "targets": list(dict.fromkeys([
+                            *(str(target) for target in window.get("targets", [])),
+                            *self._targets(files, urls),
+                        ]))[:32],
                         "urls": urls,
                         "rank": round(window_candidates.get(key, 0.0), 4),
                         "match_type": self._window_match_type(window, needle),
@@ -804,6 +847,8 @@ class RecallStore:
             return "Window text"
         if any(needle in str(value).casefold() for value in window.get("open_files", [])):
             return "Window file"
+        if needle in str(window.get("accessible_text") or "").casefold():
+            return "Application content"
         if needle in "\n".join((
             str(window.get("app_name") or ""), str(window.get("app_id") or "")
         )).casefold():
@@ -843,6 +888,9 @@ class RecallStore:
 
     def clear(self) -> int:
         return self.delete()
+
+    def entry_count(self) -> int:
+        return len(self._paths())
 
     def storage_bytes(self) -> int:
         if not self.vault_dir.is_dir():

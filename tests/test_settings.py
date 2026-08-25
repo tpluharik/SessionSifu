@@ -37,6 +37,13 @@ assert module.recall_window_image_indices(gallery_item) == [3, 1]
 assert module.recall_image_indices(gallery_item) == [3, 1, 0, 2, 4]
 assert module.recall_highlight_image_index(gallery_item) == 3
 assert module.recall_highlight_image_index({"highlight_image_index": 2}) == 2
+assert module.recall_capture_summary({
+    "capture_diagnostics": {
+        "eligible_windows": 4,
+        "captured_window_images": 3,
+        "excluded_windows": 1,
+    }
+}) == "3/4 eligible window images · 1 privacy-filtered · incomplete"
 
 settings = module.settings()
 assert settings.get_boolean("show-indicator") is True
@@ -76,19 +83,19 @@ now = datetime.now(timezone.utc)
 manifest = module.parse_update_manifest(
     json.dumps(
         {
-            "version": "3.2.3",
+            "version": "3.3.0",
             "channel": "stable",
             "issued_at": (now - timedelta(minutes=1)).isoformat(),
             "expires_at": (now + timedelta(days=30)).isoformat(),
             "minimum_version": "2.5.0",
-            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.2.3_all.deb",
+            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.3.0_all.deb",
             "sha256": "a" * 64,
             "size": 12345,
             "notes": "Test update",
         }
     )
 )
-assert manifest["version"] == "3.2.3"
+assert manifest["version"] == "3.3.0"
 assert manifest["size"] == 12345
 
 older_manifest = module.parse_update_manifest(
@@ -234,7 +241,7 @@ try:
     module.parse_update_manifest(
         json.dumps(
             {
-                "version": "3.2.3",
+                "version": "3.3.0",
                 "channel": "stable",
                 "issued_at": (now - timedelta(minutes=1)).isoformat(),
                 "expires_at": (now + timedelta(days=30)).isoformat(),

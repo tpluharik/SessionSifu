@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -179,6 +180,60 @@ def recall_result_pixmap(controller: SessionController, entry: dict) -> QPixmap:
         )
     except (TypeError, ValueError):
         return highlight_recall_pixmap(pixmap, entry.get("highlight_boxes", []))
+
+
+class RestorePreviewDialog(QDialog):
+    """Let people inspect and narrow a restore before applications are launched."""
+
+    def __init__(self, plan: list[dict[str, object]], parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Preview session restoration")
+        self.resize(620, 420)
+        layout = QVBoxLayout(self)
+        heading = QLabel(
+            "<h2>Choose what to restore</h2>"
+            "<p>No application will be launched until you confirm this preview.</p>"
+        )
+        heading.setWordWrap(True)
+        layout.addWidget(heading)
+        self.items = QListWidget()
+        for application in plan:
+            documents = list(application.get("documents", []))
+            targets = list(application.get("targets", []))
+            detail = []
+            if documents:
+                detail.append(f"{len(documents)} open file(s)")
+            if targets:
+                detail.append(f"{len(targets)} deep link(s)")
+            label = (
+                f"{application.get('application') or 'Application'} — "
+                f"{application.get('windows', 0)} window(s)"
+            )
+            if detail:
+                label += " · " + " · ".join(detail)
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, str(application.get("identity") or ""))
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)
+            item.setToolTip("\n".join([*documents, *targets])[:4000])
+            self.items.addItem(item)
+        layout.addWidget(self.items, 1)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok
+        )
+        restore_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        restore_button.setText("Restore selected")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def selected_identities(self) -> set[str]:
+        return {
+            str(item.data(Qt.UserRole))
+            for index in range(self.items.count())
+            for item in (self.items.item(index),)
+            if item.checkState() == Qt.CheckState.Checked and item.data(Qt.UserRole)
+        }
 
 
 class MainWindow(QMainWindow):
@@ -460,12 +515,20 @@ class MainWindow(QMainWindow):
     def restore_named(self) -> None:
         item = self.named.currentItem()
         if item:
-            self._perform(lambda: self.controller.restore_named(item.data(Qt.UserRole)), "Restore started.")
+            name = str(item.data(Qt.UserRole))
+            self._restore_with_preview(
+                self.controller.plan_named(name),
+                lambda selected: self.controller.restore_named_selection(name, selected),
+            )
 
     def restore_history(self) -> None:
         item = self.history.currentItem()
         if item:
-            self._perform(lambda: self.controller.restore_path(Path(item.data(Qt.UserRole))), "Restore started.")
+            path = Path(item.data(Qt.UserRole))
+            self._restore_with_preview(
+                self.controller.plan_path(path),
+                lambda selected: self.controller.restore_path_selection(path, selected),
+            )
 
     def delete_named(self) -> None:
         item = self.named.currentItem()
@@ -475,7 +538,25 @@ class MainWindow(QMainWindow):
     def restore_latest(self) -> None:
         history = self.controller.history()
         if history:
-            self._perform(lambda: self.controller.restore_path(history[0]), "Latest snapshot restore started.")
+            path = history[0]
+            self._restore_with_preview(
+                self.controller.plan_path(path),
+                lambda selected: self.controller.restore_path_selection(path, selected),
+            )
+
+    def _restore_with_preview(self, plan, operation) -> None:
+        if not plan:
+            self.status.setText("This snapshot has no restorable applications.")
+            return
+        dialog = RestorePreviewDialog(plan, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self.status.setText("Restore cancelled; no applications were launched.")
+            return
+        selected = dialog.selected_identities()
+        if not selected:
+            self.status.setText("Select at least one application to restore.")
+            return
+        self._perform(lambda: operation(selected), "Selected applications are being restored.")
 
     def update_interval(self) -> None:
         seconds = int(self.interval.currentData())
@@ -689,10 +770,15 @@ class MainWindow(QMainWindow):
         buffer.close()
         return bytes(data) if saved and 0 < len(data) <= 8 * 1024 * 1024 else None
 
-    def _capture_recall_visuals(self, session) -> tuple[bytes | None, dict[int, bytes]]:
+    def _capture_recall_visuals(self, session) -> tuple[bytes | None, dict[int, bytes], dict]:
         """Capture every renderable window, bounded to one image per window."""
         if not self.recall_screenshots.isChecked():
-            return None, {}
+            return None, {}, {
+                "expected_windows": min(len(session.windows), 64),
+                "captured_window_images": 0,
+                "missing_window_images": min(len(session.windows), 64),
+                "screenshots_enabled": False,
+            }
         screens = []
         for screen in QApplication.screens():
             desktop = screen.grabWindow(0)
@@ -747,7 +833,14 @@ class MainWindow(QMainWindow):
             encoded = self._jpeg_bytes(pixmap, preview_edge, max(60, jpeg_quality - 3))
             if encoded:
                 window_previews[index] = encoded
-        return desktop_preview, window_previews
+        expected = min(len(session.windows), 64)
+        return desktop_preview, window_previews, {
+            "expected_windows": expected,
+            "captured_window_images": len(window_previews),
+            "missing_window_images": max(0, expected - len(window_previews)),
+            "screenshots_enabled": True,
+            "display_overview_captured": desktop_preview is not None,
+        }
 
     def open_recall_item(self, *_args) -> None:
         item = self.recall_results.currentItem()
@@ -1046,9 +1139,13 @@ class RecallSearchDialog(QDialog):
         apps = ", ".join(self._detail_entry.get("apps", [])[:4]) or "Unknown application"
         titles = " · ".join(self._detail_entry.get("titles", [])[:2])
         self.detail_title.setText(f"<h2>{titles or apps}</h2>")
+        diagnostics = self._detail_entry.get("capture_diagnostics", {})
+        captured = int(diagnostics.get("captured_window_images", 0) or 0)
+        expected = int(diagnostics.get("eligible_windows", diagnostics.get("expected_windows", 0)) or 0)
+        completeness = f" · {captured}/{expected} window images" if expected else ""
         self.detail_meta.setText(
             f"{apps} · {self._detail_entry.get('captured_at', '')} · "
-            f"{self._detail_entry.get('match_type', 'Saved moment')}"
+            f"{self._detail_entry.get('match_type', 'Saved moment')}{completeness}"
         )
         self._detail_images = recall_entry_images(self._detail_entry)
         self.filmstrip.blockSignals(True)

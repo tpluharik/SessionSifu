@@ -1,7 +1,7 @@
 name: sessionsifu
 title: SessionSifu
 base: core24
-version: "3.2.3"
+version: "3.3.0"
 summary: Restore desktop applications, files and window layouts
 description: |
   SessionSifu saves desktop sessions and restores applications, documents,
@@ -47,6 +47,7 @@ parts:
       - python3-minimal
       - python3.12-minimal
       - python3.12-venv
+      - python3-pyatspi
       - libdbus-1-3
       - libegl1
       - libgl1

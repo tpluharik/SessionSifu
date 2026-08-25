@@ -17,7 +17,7 @@ is transmitted for OCR.
 | Automatic history | Complete restorable session | On | Five successful snapshots |
 | Named sessions | Complete restorable session | User action | Until deleted |
 | Portable sessions | Applications, executable/arguments, titles, documents and supported layout | User action/history timer | Named: until deleted; history: five |
-| Privacy Recall vault | Encrypted app identity, title, time, layout and optional document paths/OCR | Off | User retention plus 500-entry/30-day and storage-quota bounds |
+| Privacy Recall vault | Encrypted app identity, title, time, layout, bounded accessibility text and optional document paths/OCR | Off | User retention plus 500-entry/30-day and storage-quota bounds |
 | Recall previews | AES-GCM encrypted compressed display and eligible window images | Off, separate opt-in | Deleted with entry; changed exclusions delete affected entries |
 | Update cache | Downloaded Debian package | Created after update download | Until replaced or manually cleared |
 | Logs | Structural operational messages; failures may identify an application | System journal | Operating-system journal policy |
@@ -78,6 +78,15 @@ Recall is designed for data minimization, not invisible monitoring:
   when default-on sensitive filtering recognizes them;
 - search creates an ephemeral in-memory SQLite FTS5 index and never uploads a
   query, preview or OCR result;
+- supported Linux builds prefer bounded visible AT-SPI names/text before OCR;
+  the adapter visits at most 384 accessibility nodes per matched window,
+  records at most 64 KiB and never reads document contents through that path;
+- the full GNOME integration keeps a process identifier only in its short-lived
+  owner-private capture file so it can match an AT-SPI application; that identifier
+  is omitted from the encrypted Recall record;
+- recognized private-browsing, protected/DRM and remote-display contexts omit
+  their individual image and suppress the shared display overview while other
+  independently rendered eligible windows remain capturable;
 - text search is indexed per window. A result exposes only that window's app,
   title, opted-in file targets and optional window-image OCR; full-display OCR
   is returned separately;
@@ -94,6 +103,11 @@ Recall is designed for data minimization, not invisible monitoring:
   non-excluded window in the same entry remains searchable;
 - timed pause controls, quota pruning, unchanged-frame deduplication and the
   capture status row make recording state and failures visible.
+
+The optional stdio integration API is read-only and same-user. It returns
+bounded search metadata and restore plans over inherited pipes, never image
+bytes or encryption keys, and does not open a socket. As with the session D-Bus,
+it is not a defense against malware already running as the same user.
 
 Exclusions and sensitive detection are best effort. Generic Linux window APIs
 do not reliably expose a browser's private-tab state, current URL or individual

@@ -1,6 +1,6 @@
 # SessionSifu documentation
 
-This index describes the current 3.2.3 behavior. Start with the main
+This index describes the current 3.3.0 behavior. Start with the main
 [README](../README.md) for installation and compatibility.
 
 ## Using SessionSifu
@@ -18,6 +18,8 @@ This index describes the current 3.2.3 behavior. Start with the main
   capture/search pipeline and release channel.
 - [Recall research and product decisions](RECALL_RESEARCH.md) — comparison
   baseline, feedback themes and deliberate differences from other products.
+- [Competitive feature analysis](COMPETITIVE_ANALYSIS.md) — ten adjacent
+  products/approaches, feature gaps and the priorities adopted for 3.3.0.
 - [Security audit](SECURITY_AUDIT.md) — findings, remediation and remaining
   hardening work.
 - [Release signing and recovery](RELEASE_SECURITY.md) — maintainer procedure,

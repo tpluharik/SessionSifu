@@ -113,7 +113,8 @@ export const SaveSession = class {
                 ['sessionsifu', ...excludedApps]
                     .map(value => String(value).trim().toLowerCase())
                     .filter(value => value));
-            sessionConfig.x_session_config_objects = sessionConfig.sort()
+            const recallWindows = sessionConfig.sort();
+            sessionConfig.x_session_config_objects = recallWindows
                 .filter(item => {
                     const identity = [item.app_name, item.desktop_file_id, item.wm_class]
                         .map(value => String(value ?? '').toLowerCase())
@@ -122,6 +123,9 @@ export const SaveSession = class {
                 })
                 .map(item => {
                     const sanitized = {...item};
+                    const recallPid = Number.parseInt(sanitized.pid, 10);
+                    sanitized.recall_pid = Number.isSafeInteger(recallPid) && recallPid > 0
+                        ? recallPid : 0;
                     for (const field of [
                         'pid', 'username', 'client_machine_name',
                         'process_create_time', 'cpu_percent', 'memory_percent',
@@ -135,7 +139,13 @@ export const SaveSession = class {
                 });
             if (!sessionConfig.x_session_config_objects.length)
                 return false;
-            sessionConfig.recall_schema = 2;
+            sessionConfig.recall_schema = 3;
+            sessionConfig.recall_capture_diagnostics = {
+                expected_windows: Math.min(recallWindows.length, 64),
+                excluded_windows: Math.min(
+                    Math.max(0, recallWindows.length - sessionConfig.x_session_config_objects.length),
+                    64),
+            };
             sessionConfig.recall_include_file_paths = Boolean(includeFilePaths);
             sessionConfig.recall_displays = Main.layoutManager.monitors
                 .slice(0, 8)

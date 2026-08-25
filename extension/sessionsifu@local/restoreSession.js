@@ -72,7 +72,7 @@ export const RestoreSession = class {
         }).catch(e => Log.Log.getDefault().error(e));
     }
 
-    restoreSession(sessionName) {
+    restoreSession(sessionName, selectedApplicationKeys = null) {
         if (!mayRestoreApplications()) {
             this._log.info('Skipping session restore while the desktop session is ending');
             return;
@@ -90,13 +90,13 @@ export const RestoreSession = class {
 
         this._log.info('Restoring a validated saved session');
         try {
-            this.restoreSessionFromFile(session_file_path);
+            this.restoreSessionFromFile(session_file_path, selectedApplicationKeys);
         } catch (e) {
             logError(e, 'Failed to restore saved session');
         }
     }
 
-    restoreSessionFromFile(session_file_path) {
+    restoreSessionFromFile(session_file_path, selectedApplicationKeys = null) {
         if (!mayRestoreApplications() || this._destroyed)
             return;
 
@@ -112,6 +112,14 @@ export const RestoreSession = class {
             this._log.error(new Error('Saved session details not found'));
             global.notify_error('No session to restore', 'Session configuration is empty.');
             return;
+        }
+
+        if (selectedApplicationKeys !== null) {
+            const selected = selectedApplicationKeys instanceof Set
+                ? selectedApplicationKeys
+                : new Set(selectedApplicationKeys);
+            session_config_objects = session_config_objects.filter(
+                session => selected.has(this._sessionApplicationKey(session)));
         }
 
         session_config_objects = session_config_objects.filter(session_config_object => {
@@ -249,7 +257,8 @@ export const RestoreSession = class {
         if (sessionConfig.desktop_file_id)
             return `desktop:${sessionConfig.desktop_file_id}`;
         if (Array.isArray(sessionConfig.cmd) && sessionConfig.cmd.length)
-            return `command:${sessionConfig.cmd.join('\u0000')}`;
+            return `command-sha256:${GLib.compute_checksum_for_string(
+                GLib.ChecksumType.SHA256, JSON.stringify(sessionConfig.cmd), -1)}`;
         return `application:${sessionConfig.app_name ?? ''}`;
     }
 

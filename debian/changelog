@@ -1,3 +1,11 @@
+sessionsifu (3.3.0-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Add accessibility-first Recall indexing and capture completeness details.
+  * Add previewable, application-selective session restoration.
+  * Add protected-context redaction and a read-only local stdio API.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Tue, 25 Aug 2026 16:00:00 +0200
+
 sessionsifu (3.2.3-1~ppa2~resolute1) resolute; urgency=medium
 
   * Publish the first Ubuntu 26.04/GNOME Shell 50 PPA package.

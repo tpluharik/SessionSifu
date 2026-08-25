@@ -24,6 +24,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--recall-search", action="store_true", help="open the dedicated Privacy Recall search popup"
     )
+    result.add_argument(
+        "--local-api-stdio",
+        action="store_true",
+        help="serve the read-only local JSON API on stdin/stdout",
+    )
     result.add_argument("--no-gui", action="store_true", help="do not launch the desktop interface")
     return result
 
@@ -32,6 +37,10 @@ def main() -> int:
     args = parser().parse_args()
     controller = SessionController()
     handled = False
+    if args.local_api_stdio:
+        from .api import serve_stdio
+
+        return serve_stdio(controller)
     if args.save:
         print(controller.save_named(args.save))
         handled = True

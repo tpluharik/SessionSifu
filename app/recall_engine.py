@@ -62,6 +62,15 @@ SENSITIVE_RE = re.compile(
     r"recovery phrase|private key)\b",
     re.IGNORECASE,
 )
+PROTECTED_CONTEXT_RE = re.compile(
+    r"\b(?:private browsing|incognito|inprivate|guest browsing|password manager|"
+    r"authentication code|two-factor authentication|secret key|private key)\b",
+    re.IGNORECASE,
+)
+VSCODE_IDENTITY_RE = re.compile(
+    r"(?:^|[.\s/_-])(?:code|codium)(?:$|[.\s/_-])|visual studio code",
+    re.IGNORECASE,
+)
 MAGIC = b"SSRF1\0"
 MAX_RECORD_BYTES = 2 * 1024 * 1024
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -83,6 +92,15 @@ TESSERACT_LANGUAGE_ALIASES = {
     "nl": "nld", "pl": "pol", "pt": "por", "sk": "slk", "uk": "ukr",
 }
 MAX_BUNDLED_MODEL_BYTES = 16 * 1024 * 1024
+MAX_ACCESSIBLE_BYTES_PER_WINDOW = 64 * 1024
+MAX_TOTAL_ACCESSIBLE_BYTES = 512 * 1024
+MAX_ACCESSIBLE_NODES_PER_WINDOW = 384
+MAX_TOTAL_ACCESSIBLE_NODES = 3072
+MAX_ACCESSIBILITY_SECONDS = 1.5
+
+
+def _utf8_prefix(value: str, maximum: int) -> str:
+    return value.encode("utf-8", "replace")[:maximum].decode("utf-8", "ignore")
 
 
 def _private(path: Path, mode: int) -> None:
@@ -220,6 +238,195 @@ def _domain(value: str) -> str:
     with contextlib.suppress(ValueError):
         return (urllib.parse.urlparse(value).hostname or "").casefold()
     return ""
+
+
+def _capture_protection(window: dict) -> str:
+    """Return a reason when an app window must not enter the visual timeline."""
+    identity = "\n".join((
+        str(window.get("app_name") or window.get("app_id") or ""),
+        str(window.get("title") or window.get("window_title") or ""),
+        str(window.get("capture_protection") or ""),
+    ))
+    if str(window.get("capture_protection") or "").strip():
+        return str(window["capture_protection"])[:128]
+    return "protected application context" if PROTECTED_CONTEXT_RE.search(identity) else ""
+
+
+def _atspi_window_root(application, title: str, sibling_windows: int):
+    """Match an AT-SPI top-level window without merging sibling window text."""
+    try:
+        children = [
+            application.getChildAtIndex(index)
+            for index in range(min(int(application.childCount), 64))
+        ]
+        children = [child for child in children if child is not None]
+    except Exception:
+        children = []
+    normalized_title = title.strip().casefold()
+    if normalized_title:
+        exact = next((
+            child for child in children
+            if str(getattr(child, "name", "") or "").strip().casefold() == normalized_title
+        ), None)
+        if exact is not None:
+            return exact
+        title_terms = set(re.findall(r"[\w]+", normalized_title))
+        ranked = []
+        for child in children:
+            child_terms = set(re.findall(
+                r"[\w]+", str(getattr(child, "name", "") or "").casefold()
+            ))
+            ranked.append((
+                len(title_terms & child_terms) / max(1, len(title_terms | child_terms)),
+                child,
+            ))
+        if ranked:
+            score, candidate = max(ranked, key=lambda item: item[0])
+            if score >= 0.25:
+                return candidate
+    if sibling_windows == 1:
+        return children[0] if len(children) == 1 else application
+    return None
+
+
+def _atspi_visible_text(root, pyatspi, node_budget: int, byte_budget: int, deadline: float):
+    """Return bounded visible text plus consumed nodes from one AT-SPI subtree."""
+    pending = [root]
+    values: list[str] = []
+    value_set: set[str] = set()
+    consumed = 0
+    size = 0
+    while (
+        pending and consumed < node_budget and size < byte_budget
+        and time.monotonic() < deadline
+    ):
+        node = pending.pop()
+        consumed += 1
+        collect = True
+        protected_node = False
+        try:
+            state = node.getState()
+            protected = getattr(pyatspi, "STATE_PROTECTED", None)
+            if protected is not None and state.contains(protected):
+                protected_node = True
+            visible = getattr(pyatspi, "STATE_VISIBLE", None)
+            showing = getattr(pyatspi, "STATE_SHOWING", None)
+            if (
+                visible is not None and showing is not None
+                and not state.contains(visible) and not state.contains(showing)
+            ):
+                collect = False
+        except Exception:
+            pass
+        try:
+            role = str(node.getRoleName() or "").casefold()
+            if "password" in role:
+                protected_node = True
+        except Exception:
+            pass
+        if protected_node:
+            continue
+        if collect:
+            candidates = []
+            try:
+                candidates.append(str(getattr(node, "name", "") or "").strip()[:1024])
+            except Exception:
+                pass
+            try:
+                text = node.queryText()
+                candidates.append(str(
+                    text.getText(0, min(int(text.characterCount), 4096))
+                ).strip())
+            except Exception:
+                pass
+            for candidate in candidates:
+                if candidate and candidate not in value_set:
+                    candidate = _utf8_prefix(candidate, max(0, byte_budget - size))
+                    values.append(candidate)
+                    value_set.add(candidate)
+                    size += len(candidate.encode("utf-8", "replace"))
+        try:
+            for index in range(min(int(node.childCount), 64)):
+                child = node.getChildAtIndex(index)
+                if child is not None:
+                    pending.append(child)
+        except Exception:
+            pass
+    return _utf8_prefix("\n".join(values), MAX_ACCESSIBLE_BYTES_PER_WINDOW), consumed
+
+
+def _accessible_text_for_windows(windows: list[dict]) -> dict[int, str]:
+    """Read bounded per-window AT-SPI text; fail closed when unavailable."""
+    try:
+        import pyatspi  # type: ignore[import-not-found]
+        desktop = pyatspi.Registry.getDesktop(0)
+    except Exception:
+        return {}
+    applications = {}
+    try:
+        for application in desktop:
+            with contextlib.suppress(Exception):
+                applications[int(application.get_process_id())] = application
+    except Exception:
+        return {}
+    candidates = [
+        (index, window, int(window.get("recall_pid") or 0))
+        for index, window in enumerate(windows[:64])
+        if isinstance(window, dict) and not _capture_protection(window)
+    ]
+    sibling_count = {
+        pid: sum(1 for _index, _window, candidate_pid in candidates if candidate_pid == pid)
+        for pid in {pid for _index, _window, pid in candidates if pid > 0}
+    }
+    deadline = time.monotonic() + MAX_ACCESSIBILITY_SECONDS
+    remaining_nodes = MAX_TOTAL_ACCESSIBLE_NODES
+    remaining_bytes = MAX_TOTAL_ACCESSIBLE_BYTES
+    output: dict[int, str] = {}
+    for index, window, pid in candidates:
+        if pid <= 0 or pid not in applications or remaining_nodes <= 0 or remaining_bytes <= 0:
+            continue
+        title = str(window.get("title") or window.get("window_title") or "")[:4096]
+        root = _atspi_window_root(applications[pid], title, sibling_count.get(pid, 1))
+        if root is None:
+            continue
+        text, consumed = _atspi_visible_text(
+            root,
+            pyatspi,
+            min(MAX_ACCESSIBLE_NODES_PER_WINDOW, remaining_nodes),
+            min(MAX_ACCESSIBLE_BYTES_PER_WINDOW, remaining_bytes),
+            deadline,
+        )
+        remaining_nodes -= consumed
+        remaining_bytes -= len(text.encode("utf-8", "replace"))
+        if text:
+            output[index] = text
+        if time.monotonic() >= deadline:
+            break
+    return output
+
+
+def _deep_targets(window: dict, files: list[str], title: str) -> list[str]:
+    targets = [
+        str(value)[:4096]
+        for value in list(window.get("deep_targets") or [])[:32]
+        if str(value).startswith(("file://", "http://", "https://", "vscode://", "obsidian://"))
+    ]
+    identity = "\n".join((
+        str(window.get("app_name") or ""),
+        str(window.get("app_id") or window.get("desktop_file_id") or ""),
+    )).casefold()
+    for value in files:
+        path = Path(value)
+        if not path.is_absolute() or not path.is_file() or path.is_symlink():
+            continue
+        quoted = urllib.parse.quote(str(path))
+        if VSCODE_IDENTITY_RE.search(identity):
+            targets.append(f"vscode://file/{quoted.lstrip('/')}")
+        elif "obsidian" in identity:
+            targets.append("obsidian://open?path=" + quoted)
+        targets.append(path.as_uri())
+    targets.extend(URL_RE.findall(title))
+    return list(dict.fromkeys(targets))[:32]
 
 
 def _search_tokens(value: str) -> list[str]:
@@ -509,6 +716,16 @@ class RecallVault:
             *sorted(self.root.glob(f"{stem}-display-*.jpg"))[:8],
             *sorted(self.root.glob(f"{stem}-window-*.jpg"))[:64],
         ]
+        windows = payload.get("windows")
+        if not isinstance(windows, list):
+            windows = payload.get("x_session_config_objects")
+        if not isinstance(windows, list):
+            windows = []
+        accessible_by_window = _accessible_text_for_windows(windows)
+        protected_indexes = {
+            index for index, window in enumerate(windows[:512])
+            if isinstance(window, dict) and _capture_protection(window)
+        }
         valid_images = []
         display_ocr_parts = []
         display_ocr_boxes: dict[int, list[dict[str, object]]] = {}
@@ -518,6 +735,12 @@ class RecallVault:
             if image.is_symlink() or not IMAGE_RE.fullmatch(image.name):
                 continue
             if not 0 < image.stat().st_size <= MAX_IMAGE_BYTES:
+                continue
+            image_match = IMAGE_RE.fullmatch(image.name)
+            if image_match and (
+                (image_match.group(1) == "window" and int(image_match.group(2)) in protected_indexes)
+                or (image_match.group(1) == "display" and protected_indexes)
+            ):
                 continue
             valid_images.append(image)
             if policy.ocr:
@@ -539,14 +762,12 @@ class RecallVault:
                         if match:
                             display_ocr_boxes[int(match.group(2))] = boxes
 
-        windows = payload.get("windows")
-        if not isinstance(windows, list):
-            windows = payload.get("x_session_config_objects")
-        if not isinstance(windows, list):
-            windows = []
         apps, titles, files, targets, urls = [], [], [], [], []
-        for window in windows[:512]:
+        accessible_parts = []
+        for window_index, window in enumerate(windows[:512]):
             if not isinstance(window, dict):
+                continue
+            if window_index in protected_indexes:
                 continue
             app = str(
                 window.get("app_name") or window.get("app_id") or
@@ -564,6 +785,11 @@ class RecallVault:
             for value in URL_RE.findall(title):
                 if value not in urls:
                     urls.append(value)
+            accessible = _utf8_prefix(str(
+                window.get("accessible_text") or accessible_by_window.get(window_index, "")
+            ), MAX_ACCESSIBLE_BYTES_PER_WINDOW)
+            if accessible:
+                accessible_parts.append(accessible)
         targets.extend(
             Path(value).as_uri()
             for value in files
@@ -571,7 +797,8 @@ class RecallVault:
         )
         targets.extend(urls)
         searchable = "\n".join([
-            *apps, *titles, *files, *display_ocr_parts, *window_ocr.values()
+            *apps, *titles, *files, *accessible_parts, *display_ocr_parts,
+            *(text for index, text in window_ocr.items() if index not in protected_indexes)
         ])
         excluded_domains = tuple(value.strip().casefold().lstrip(".") for value in policy.excluded_websites if value.strip())
         if any(any(domain == excluded or domain.endswith(f".{excluded}") for excluded in excluded_domains) for domain in map(_domain, urls) if domain):
@@ -651,16 +878,24 @@ class RecallVault:
         for window_index, window in enumerate(windows[:512]):
             if not isinstance(window, dict):
                 continue
+            if window_index in protected_indexes:
+                continue
             position = window.get("window_position") or {}
             ocr_text = window_ocr.get(window_index, "")[:remaining_window_ocr]
             remaining_window_ocr -= len(ocr_text)
             ocr_boxes = window_ocr_boxes.get(window_index, [])[:remaining_window_boxes]
             remaining_window_boxes -= len(ocr_boxes)
+            window_files = [str(value)[:4096] for value in list(window.get("open_files") or [])[:32]]
+            window_title = str(window.get("title") or window.get("window_title") or "")[:4096]
             normalized_windows.append({
                 "app": str(window.get("app_name") or window.get("app_id") or window.get("desktop_file_id") or "")[:512],
                 "app_id": str(window.get("app_id") or window.get("desktop_file_id") or "")[:512],
-                "title": str(window.get("title") or window.get("window_title") or "")[:4096],
-                "files": [str(value)[:4096] for value in list(window.get("open_files") or [])[:32]],
+                "title": window_title,
+                "files": window_files,
+                "accessible_text": _utf8_prefix(str(
+                    window.get("accessible_text") or accessible_by_window.get(window_index, "")
+                ), MAX_ACCESSIBLE_BYTES_PER_WINDOW),
+                "targets": _deep_targets(window, window_files, window_title),
                 "monitor": int(window.get("monitor_number", window.get("monitor", 0)) or 0),
                 "workspace": int(window.get("desktop_number", window.get("workspace", 0)) or 0),
                 "focused": bool(window.get("recall_focused", False)),
@@ -672,6 +907,24 @@ class RecallVault:
                 "ocr_text": ocr_text,
                 "ocr_boxes": ocr_boxes,
             })
+        source_diagnostics = payload.get("recall_capture_diagnostics")
+        if not isinstance(source_diagnostics, dict):
+            source_diagnostics = {}
+        try:
+            expected_windows = max(
+                min(len(windows), 64),
+                min(max(0, int(source_diagnostics.get("expected_windows") or 0)), 64),
+            )
+            excluded_windows = min(
+                max(0, int(source_diagnostics.get("excluded_windows") or 0)), 64
+            )
+        except (TypeError, ValueError):
+            expected_windows = min(len(windows), 64)
+            excluded_windows = 0
+        eligible_windows = min(len(normalized_windows), 64)
+        captured_window_images = sum(
+            1 for window in normalized_windows if int(window.get("image_index", -1)) >= 0
+        )
         record = {
             "schema": 3,
             "captured_at": payload.get("captured_at") or payload.get("session_create_time"),
@@ -692,6 +945,25 @@ class RecallVault:
             "displays": normalized_displays,
             "images": image_names,
             "image_hashes": image_hashes,
+            "capture_diagnostics": {
+                "expected_windows": expected_windows,
+                "eligible_windows": eligible_windows,
+                "captured_window_images": captured_window_images,
+                "missing_window_images": max(0, eligible_windows - captured_window_images),
+                "excluded_windows": excluded_windows,
+                "protected_windows": len(protected_indexes),
+                "accessibility_indexed_windows": sum(
+                    1 for window in normalized_windows if window.get("accessible_text")
+                ),
+                "display_overview_captured": any(
+                    int(display.get("image_index", -1)) >= 0 for display in normalized_displays
+                ),
+            },
+            "privacy": {
+                "sensitive_filter": policy.sensitive_filter,
+                "protected_context_visible": bool(protected_indexes),
+                "shared_display_withheld": bool(protected_indexes),
+            },
         }
         record_target = self.vault / f"{stem}.ssrec"
         record_bytes = json.dumps(
@@ -767,7 +1039,7 @@ class RecallVault:
         try:
             connection.execute(
                 "CREATE VIRTUAL TABLE recall_windows USING fts5("
-                "key UNINDEXED, app, title, files, ocr)"
+                "key UNINDEXED, app, title, files, accessible, ocr)"
             )
             connection.execute(
                 "CREATE VIRTUAL TABLE recall_visual USING fts5(name UNINDEXED, ocr)"
@@ -790,12 +1062,13 @@ class RecallVault:
                         continue
                     visible_windows.append((index, window))
                     connection.execute(
-                        "INSERT INTO recall_windows VALUES (?, ?, ?, ?, ?)",
+                        "INSERT INTO recall_windows VALUES (?, ?, ?, ?, ?, ?)",
                         (
                             f"{path.name}#{index}",
                             str(window.get("app", "")),
                             str(window.get("title", "")),
                             "\n".join(str(item) for item in window.get("files", [])),
+                            str(window.get("accessible_text", "")),
                             str(window.get("ocr_text", "")),
                         ),
                     )
@@ -819,7 +1092,7 @@ class RecallVault:
                 if expression:
                     with contextlib.suppress(sqlite3.OperationalError):
                         for key, rank in connection.execute(
-                            "SELECT key, bm25(recall_windows, 0, 6, 5, 3, 2) "
+                            "SELECT key, bm25(recall_windows, 0, 6, 5, 3, 4, 2) "
                             "FROM recall_windows WHERE recall_windows MATCH ? "
                             "ORDER BY 2 LIMIT 500",
                             (expression,),
@@ -862,6 +1135,7 @@ class RecallVault:
                                 str(window.get("app", "")),
                                 str(window.get("title", "")),
                                 *(str(item) for item in window.get("files", [])),
+                                str(window.get("accessible_text", "")),
                                 str(window.get("ocr_text", "")),
                             ]).casefold(),
                         ))
@@ -881,6 +1155,8 @@ class RecallVault:
                     "modified": float(value.get("modified") or path.stat().st_mtime),
                     "image_count": len(value.get("images", [])) if preview_allowed else 0,
                     "displays": value.get("displays", []) if preview_allowed else [],
+                    "capture_diagnostics": value.get("capture_diagnostics", {}),
+                    "privacy": value.get("privacy", {}),
                 }
                 if not needle and not app:
                     apps = list(dict.fromkeys(
@@ -902,7 +1178,10 @@ class RecallVault:
                         "titles": titles,
                         "files": files,
                         "urls": urls,
-                        "targets": self._targets(files, urls),
+                        "targets": list(dict.fromkeys([
+                            *(str(target) for _index, window in windows for target in window.get("targets", [])),
+                            *self._targets(files, urls),
+                        ]))[:32],
                         "windows": [window for _index, window in windows],
                         "rank": 0.0,
                         "match_type": "Timeline",
@@ -937,7 +1216,10 @@ class RecallVault:
                         "titles": [str(window.get("title", ""))] if window.get("title") else [],
                         "files": files,
                         "urls": urls,
-                        "targets": self._targets(files, urls),
+                        "targets": list(dict.fromkeys([
+                            *(str(target) for target in window.get("targets", [])),
+                            *self._targets(files, urls),
+                        ]))[:32],
                         # Keep the matched window explicit for ranking and
                         # highlighting, but let the gallery browse the whole
                         # captured desktop moment from this search result.
@@ -1009,6 +1291,8 @@ class RecallVault:
             return "Window file"
         if needle in str(window.get("ocr_text", "")).casefold():
             return "Window image text"
+        if needle in str(window.get("accessible_text", "")).casefold():
+            return "Application content"
         if needle in "\n".join(
             (str(window.get("app", "")), str(window.get("app_id", "")))
         ).casefold():

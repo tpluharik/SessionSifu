@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .base import AdapterCapabilities, PlatformAdapter, process_details, process_files
 from ..model import SessionSnapshot, WindowSnapshot
+from ..content import enrich_linux_session
 
 
 def _run(command: list[str], timeout: int = 8) -> str:
@@ -62,6 +63,9 @@ class LinuxAdapter(PlatformAdapter):
                 )
             )
         return windows
+
+    def enrich_content(self, session: SessionSnapshot) -> None:
+        enrich_linux_session(session)
 
     def apply_layout(self, session: SessionSnapshot) -> None:
         if not shutil.which("wmctrl"):

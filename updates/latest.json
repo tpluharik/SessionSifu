@@ -1,11 +1,11 @@
 {
-  "version": "3.2.3",
+  "version": "3.3.0",
   "channel": "stable",
-  "issued_at": "2026-08-24T14:16:08Z",
-  "expires_at": "2026-10-08T14:16:08Z",
+  "issued_at": "2026-08-25T14:12:11Z",
+  "expires_at": "2026-10-09T14:12:11Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.2.3_all.deb",
-  "sha256": "16bb5a72e5ebd39162209075e857421f67463d8a4a761ed43e1beeccc5947f50",
-  "size": 3701592,
-  "notes": "SessionSifu 3.2.3 keeps capturing eligible application windows when another application is excluded, while suppressing the shared display preview for privacy."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.3.0_all.deb",
+  "sha256": "0733d0f74c2f37a9bd0768f2cc86c876c305537466db9cb30701303e368920ba",
+  "size": 3715676,
+  "notes": "SessionSifu 3.3.0 adds accessibility-first Recall search, capture-completeness details, protected-context redaction, selective restore previews and a read-only local integration API."
 }

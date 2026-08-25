@@ -48,8 +48,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.2.3"
-assert metadata["version"] == 32
+assert metadata["version-name"] == "3.3.0"
+assert metadata["version"] == 33
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -82,9 +82,11 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.2.3"' in build_script
+assert 'version="3.3.0"' in build_script
+assert "python3-pyatspi" in (root / "packaging" / "control").read_text()
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
+assert "docs/COMPETITIVE_ANALYSIS.md" in build_script
 assert "CHANGELOG.md" in build_script
 assert "tests/open-files-smoke.js" in build_script
 assert "tests/runtime-safety-smoke.js" in build_script
@@ -162,7 +164,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.2.3"' in app_source
+assert 'CURRENT_VERSION = "3.3.0"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -181,9 +183,12 @@ assert "def _window_pixbuf" in app_source
 assert "def recall_window_image_indices" in app_source
 assert "def recall_image_indices" in app_source
 assert "def recall_highlight_image_index" in app_source
+assert "def recall_capture_summary" in app_source
 assert 'title="Recall Window Gallery"' in app_source
 assert 'Gtk.Button(label="Previous")' in app_source
 assert 'Gtk.Button(label="Next")' in app_source
+assert "RestoreSessionSelection" in app_source
+assert '"--local-api-stdio"' in app_source
 assert '"matched_window"' in (root / "app" / "recall_engine.py").read_text()
 assert "recall_windows" in (root / "app" / "recall_engine.py").read_text()
 recall_engine_source = (root / "app" / "recall_engine.py").read_text()
@@ -199,6 +204,8 @@ assert "def _highlighted_picture" in app_source
 assert "highlight_layer.queue_draw()" in app_source
 assert "recall_screenshot_path" in app_source
 assert "def compress_recall_preview" in app_source
+assert "def _accessible_text_for_windows" in recall_engine_source
+assert 'window.get("recall_pid")' in recall_engine_source
 recorder_source = (
     root / "extension" / "sessionsifu@local" / "recallRecorder.js"
 ).read_text()
@@ -311,6 +318,9 @@ assert "NEW_WINDOW_SETTLE_DELAY_MS = 750" in source_text
 assert "mayRestoreApplications" in source_text
 assert "restorePreviousDelay = this._settings.get_int('restore-previous-delay') * 1000" in source_text
 assert "_sessionApplicationKey" in source_text
+assert "command-sha256:" in source_text
+assert "session.cmd.join('\\u0000')" not in source_text
+assert "Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS" in source_text
 assert "Turn Off SessionSifu" in source_text
 assert "bash -c" not in source_text
 assert "launch-app.sh" not in source_text
@@ -326,6 +336,8 @@ for required in (
     portable / "storage.py",
     portable / "controller.py",
     portable / "recall.py",
+    portable / "api.py",
+    portable / "content.py",
     portable / "hotkey.py",
     portable / "ui.py",
     portable / "adapters" / "windows.py",
@@ -338,8 +350,15 @@ for required in (
 
 roadmap = (root / "ROADMAP.md").read_text()
 assert len(re.findall(r"^## \d+\.", roadmap, re.MULTILINE)) == 10
-assert "## Shipped foundation — 3.2.3" in roadmap
+assert "## Shipped foundation — 3.3.0" in roadmap
 assert "## Explicit non-goals" in roadmap
+assert (root / "docs" / "COMPETITIVE_ANALYSIS.md").is_file()
+
+control_xml = (
+    extension / "dbus-interfaces" / "org.gnome.Shell.Extensions.SessionSifu.Control.xml"
+).read_text()
+for method in ("PlanSession", "RestoreSessionSelection", "PlanHistory", "RestoreHistorySelection"):
+    assert f'name="{method}"' in control_xml
 
 workflow = (root / ".github" / "workflows" / "release.yml").read_text()
 for runner in ("ubuntu-26.04", "windows-2025", "macos-15", "macos-15-intel"):

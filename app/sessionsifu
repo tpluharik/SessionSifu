@@ -49,7 +49,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E4
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.2.3"
+CURRENT_VERSION = "3.3.0"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -406,6 +406,32 @@ def recall_highlight_image_index(item: dict) -> int:
         except (TypeError, ValueError):
             pass
     return -1
+
+
+def recall_capture_summary(item: dict) -> str:
+    """Describe whether a Recall moment contains every eligible window image."""
+    diagnostics = item.get("capture_diagnostics")
+    if not isinstance(diagnostics, dict):
+        return "Capture completeness unavailable"
+    try:
+        captured = max(0, int(diagnostics.get("captured_window_images") or 0))
+        eligible = max(0, int(
+            diagnostics.get("eligible_windows", diagnostics.get("expected_windows", 0)) or 0
+        ))
+        protected = max(0, int(diagnostics.get("protected_windows") or 0))
+        excluded = max(0, int(diagnostics.get("excluded_windows") or 0))
+    except (TypeError, ValueError):
+        return "Capture completeness unavailable"
+    if eligible:
+        summary = f"{captured}/{eligible} eligible window images"
+    else:
+        summary = "No eligible window images"
+    withheld = protected + excluded
+    if withheld:
+        summary += f" · {withheld} privacy-filtered"
+    if captured < eligible:
+        summary += " · incomplete"
+    return summary
 
 
 def recall_preview(
@@ -1572,7 +1598,9 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         titles = " · ".join(item.get("titles", [])[:2])
         self.detail_heading.set_label(titles or apps)
         self.detail_meta.set_label(
-            f"{apps} · {modified} · {self._match_description(str(item.get('match_type', 'Timeline')))}"
+            f"{apps} · {modified} · "
+            f"{self._match_description(str(item.get('match_type', 'Timeline')))} · "
+            f"{recall_capture_summary(item)}"
         )
         self._clear_box(self.detail_filmstrip)
         for position, image_index in enumerate(self._detail_indices):
@@ -1936,7 +1964,10 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             body.append(title)
             match_type = str(item.get("match_type", "Timeline"))
             match = Gtk.Label(
-                label=f"{self._match_description(match_type)} · {modified}",
+                label=(
+                    f"{self._match_description(match_type)} · {modified} · "
+                    f"{recall_capture_summary(item)}"
+                ),
                 xalign=0,
             )
             match.add_css_class("caption")
@@ -2643,7 +2674,94 @@ class ManagerWindow(Adw.ApplicationWindow):
             GLib.timeout_add(900, self._refresh_once)
 
     def _restore(self, _button, name: str) -> None:
-        self._call("RestoreSession", GLib.Variant("(s)", (name,)))
+        self._show_restore_preview(name, history=False)
+
+    def _show_restore_preview(self, name: str, *, history: bool) -> None:
+        plan_method = "PlanHistory" if history else "PlanSession"
+        restore_method = "RestoreHistorySelection" if history else "RestoreSessionSelection"
+        try:
+            plan = json.loads(call(plan_method, GLib.Variant("(s)", (name,))))
+        except (GLib.Error, json.JSONDecodeError) as error:
+            self._message(
+                "Could not preview this restore. Reload the GNOME integration once: "
+                f"{error}"
+            )
+            return
+        applications = plan.get("applications", []) if isinstance(plan, dict) else []
+        if not applications:
+            self._message(str(plan.get("error") or "This snapshot has no restorable applications."))
+            return
+
+        dialog = Adw.Dialog()
+        dialog.set_title("Preview session restoration")
+        dialog.set_content_width(620)
+        dialog.set_content_height(min(640, 210 + len(applications) * 72))
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        root.append(Adw.HeaderBar())
+        content = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=12,
+            margin_top=18,
+            margin_bottom=18,
+            margin_start=18,
+            margin_end=18,
+        )
+        heading = Gtk.Label(
+            label="Choose the applications to restore. Nothing is launched until you confirm.",
+            wrap=True,
+            xalign=0,
+        )
+        content.append(heading)
+        rows = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        rows.add_css_class("boxed-list")
+        checks: list[tuple[Gtk.CheckButton, str]] = []
+        for application in applications[:128]:
+            identity = str(application.get("identity") or "")
+            if not identity:
+                continue
+            documents = list(application.get("documents") or [])
+            check = Gtk.CheckButton(
+                label=(
+                    f"{application.get('application') or 'Application'} — "
+                    f"{application.get('windows', 0)} window(s)"
+                    + (f" · {len(documents)} open file(s)" if documents else "")
+                ),
+                active=True,
+                margin_top=12,
+                margin_bottom=12,
+                margin_start=12,
+                margin_end=12,
+            )
+            check.set_tooltip_text("\n".join(str(value) for value in documents)[:4000])
+            rows.append(check)
+            checks.append((check, identity))
+        scroller = Gtk.ScrolledWindow(vexpand=True, child=rows)
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        content.append(scroller)
+        buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12, halign=Gtk.Align.END)
+        cancel = Gtk.Button(label="Cancel")
+        confirm = Gtk.Button(label="Restore selected")
+        confirm.add_css_class("suggested-action")
+        cancel.connect("clicked", lambda _button: dialog.close())
+
+        def confirm_restore(_button) -> None:
+            selected = [identity for check, identity in checks if check.get_active()]
+            if not selected:
+                self._message("Select at least one application to restore.")
+                return
+            dialog.close()
+            self._call(
+                restore_method,
+                GLib.Variant("(sas)", (name, selected)),
+            )
+
+        confirm.connect("clicked", confirm_restore)
+        buttons.append(cancel)
+        buttons.append(confirm)
+        content.append(buttons)
+        root.append(content)
+        dialog.set_child(root)
+        dialog.present(self)
 
     def _delete(self, _button, name: str) -> None:
         dialog = Adw.AlertDialog(
@@ -2978,7 +3096,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         GLib.timeout_add(1400, self._refresh_once)
 
     def _restore_history(self, _button, name: str) -> None:
-        self._call("RestoreHistory", GLib.Variant("(s)", (name,)))
+        self._show_restore_preview(name, history=True)
 
     def _session_rows(self) -> list[dict]:
         try:
@@ -3221,6 +3339,57 @@ def autostart() -> int:
         return 1
 
 
+def local_api_stdio() -> int:
+    """Serve a read-only, pipe-only API without exposing a socket or vault key."""
+    vault = recall_vault()
+    config = settings()
+    for line in sys.stdin:
+        if len(line.encode("utf-8", "replace")) > 64 * 1024:
+            response = {"ok": False, "error": "request is too large"}
+        else:
+            try:
+                request = json.loads(line)
+                if not isinstance(request, dict):
+                    raise ValueError("request must be a JSON object")
+                request_id = request.get("id")
+                method = str(request.get("method") or "")[:64]
+                params = request.get("params") or {}
+                if not isinstance(params, dict):
+                    raise ValueError("params must be a JSON object")
+                if method == "status":
+                    result = {
+                        "version": CURRENT_VERSION,
+                        "transport": "stdio",
+                        "recall": vault.status(),
+                        "capabilities": ["recall.search", "restore.preview"],
+                    }
+                elif method == "recall.search":
+                    result = {
+                        "results": vault.search(
+                            str(params.get("query") or "")[:512],
+                            app=str(params.get("application") or "")[:256],
+                            semantic=bool(params.get("related")),
+                            excluded_apps=tuple(config.get_strv("recall-excluded-apps")),
+                            limit=100,
+                        )
+                    }
+                    result["count"] = len(result["results"])
+                elif method == "restore.preview":
+                    name = str(params.get("name") or "")[:64]
+                    if not NAME_RE.fullmatch(name):
+                        raise ValueError("restore.preview requires a valid name")
+                    result = json.loads(call("PlanSession", GLib.Variant("(s)", (name,))))
+                else:
+                    raise ValueError("unknown or write-capable method")
+                response = {"ok": True, "result": result}
+                if request_id is not None:
+                    response["id"] = request_id
+            except (GLib.Error, ValueError, TypeError, json.JSONDecodeError) as error:
+                response = {"ok": False, "error": str(error)[:512]}
+        print(json.dumps(response, ensure_ascii=False, separators=(",", ":")), flush=True)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Save and restore GNOME desktop sessions")
     parser.add_argument("--autostart", action="store_true", help=argparse.SUPPRESS)
@@ -3228,6 +3397,10 @@ def main() -> int:
     parser.add_argument("--restore", metavar="NAME")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--recall-search", action="store_true")
+    parser.add_argument(
+        "--local-api-stdio", action="store_true",
+        help="serve the read-only local JSON API on stdin/stdout",
+    )
     parser.add_argument("--finalize-recall", metavar="CAPTURE", help=argparse.SUPPRESS)
     parser.add_argument(
         "--compress-recall-preview",
@@ -3249,6 +3422,8 @@ def main() -> int:
             window_only=args.window_only,
         )
     harden_local_storage()
+    if args.local_api_stdio:
+        return local_api_stdio()
     if args.finalize_recall:
         try:
             result = recall_vault().finalize(Path(args.finalize_recall), recall_policy(settings()))

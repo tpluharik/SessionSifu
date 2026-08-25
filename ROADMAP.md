@@ -1,6 +1,6 @@
 # SessionSifu roadmap
 
-This roadmap describes product direction after 3.2.3. It is ordered by user
+This roadmap describes product direction after 3.3.0. It is ordered by user
 impact, privacy risk and platform feasibility; it is not a release-date promise.
 Operating-system security boundaries take precedence over feature parity.
 
@@ -11,7 +11,7 @@ Status labels used below:
 - **Planned** — accepted direction that still needs design or platform work;
 - **Research** — useful goal without a dependable cross-platform API yet.
 
-## Shipped foundation — 3.2.3
+## Shipped foundation — 3.3.0
 
 SessionSifu currently provides:
 
@@ -31,8 +31,16 @@ SessionSifu currently provides:
 - bounded 960, 1440 and 1920-pixel screenshot quality profiles shared across
   the GNOME and portable editions;
 - app/site exclusions, timed pauses, quotas, capture diagnostics and granular
-  deletion; and
-- pinned Czech and English OCR data in installation and update artifacts.
+  deletion;
+- pinned Czech and English OCR data in installation and update artifacts;
+- accessibility-first application-content indexing with OCR fallback;
+- deep return targets for validated files, observable URLs and supported
+  editors;
+- per-capture expected/eligible/captured/missing/excluded/protected counts;
+- automatic private/protected-context redaction that preserves safe independent
+  window captures;
+- application-selective restore preview before any process is launched;
+- a bounded read-only local JSON API over inherited pipes; and
 - reproducible package-manager definitions for Ubuntu PPA, Snap, WinGet,
   Chocolatey, AUR and Homebrew review.
 
@@ -40,37 +48,43 @@ The [feature overview](README.md#features),
 [architecture](docs/ARCHITECTURE.md), and
 [privacy guide](docs/PRIVACY.md) define the exact shipped boundary.
 
-## 1. Recall correctness and capture health — Next
+## 1. Recall correctness and capture health — Partly shipped, next
 
 Make capture failures and weak OCR easier to understand without exposing user
 content in logs.
 
-- Show per-capture counts for eligible, captured, excluded, unavailable and
-  OCR-indexed windows.
+- **Shipped in 3.3.0:** show expected, eligible, captured, missing, excluded and
+  protected-window counts on every new capture.
 - Add a local OCR diagnostics view with active language models, Tesseract
   version, recognition duration and confidence distribution.
 - Build a synthetic Czech/English UI-text corpus covering scaling, dark mode,
   small fonts and mixed-language windows.
 - Add an explicit retry for metadata-only or partially captured moments without
   silently weakening exclusions.
+- Add optional on-device visual embeddings for genuinely semantic image
+  matches, with a separately enabled local model and no model download during
+  capture.
 
 Completion means users can distinguish permission, compositor, exclusion,
 timeout and recognition problems from the UI alone.
 
-## 2. Restore preview and crash-safe journal — Next
+## 2. Restore preview and crash-safe journal — Partly shipped, next
 
-Add a dry-run page showing which applications, files and windows will be
-started, reused, moved or skipped. Record restoration operations in a bounded
-owner-private journal so interrupted restores can be inspected and safely
-retried.
+Version 3.3.0 ships a dry-run page showing which applications, files and windows
+are candidates, with per-application selection before launch. Next, distinguish
+started, reused, moved and skipped actions and record restoration operations in
+a bounded owner-private journal so interrupted restores can be inspected and
+safely retried.
 
 Completion requires no saved command to reach a shell, no automatic overwrite
 of a newer desktop state, and a clear partial-success report.
 
-## 3. Application-specific document adapters — Planned
+## 3. Application-specific document adapters — Partly shipped, planned
 
-Add opt-in adapters for applications whose public APIs can restore more than a
-generic file launch, beginning with LibreOffice, VS Code and JetBrains IDEs.
+Version 3.3.0 derives bounded file, URL, VS Code and Obsidian deep-return
+targets from already observable state. Add opt-in adapters for applications
+whose public APIs can restore more than a generic file launch, beginning with
+LibreOffice and JetBrains IDEs.
 Document-based macOS applications should use supported restoration APIs where
 available.
 
@@ -129,8 +143,10 @@ general Recall switch.
 Any integration requires a separate per-application opt-in, a data preview and
 a documented deletion path.
 
-## 9. Accessibility, localization and keyboard workflows — Planned
+## 9. Accessibility, localization and keyboard workflows — Partly shipped, planned
 
+Version 3.3.0 can index bounded visible AT-SPI application text on supported
+Linux desktops, improving search before OCR without reading document files.
 Complete screen-reader labels, keyboard-only operation, focus order, reduced
 motion and high-contrast checks. Introduce a translation workflow beginning
 with English, Czech and German, including localized OCR diagnostics rather than

@@ -24,6 +24,11 @@ Choose each separately:
    first visual capture.
 5. Choose a retention period and encrypted storage quota.
 
+On supported Linux applications, 3.3.0 first indexes bounded text that the app
+already exposes to the desktop accessibility interface. This does not open or
+read document files. OCR remains the fallback for visible text that is not
+accessible, and screenshot/OCR switches remain independent.
+
 The top-bar or tray menu shows whether Recall is active, paused or currently
 saving. **Pause** stops new captures for the chosen duration without deleting
 existing history.
@@ -38,6 +43,9 @@ over the 64-window limit or unavailable through the platform capture API.
 If a user-excluded application is visible, the shared display overview is not
 stored because it could contain excluded pixels. Eligible non-excluded windows
 continue to receive their own separately rendered previews and OCR indexes.
+Recognized private-browsing and protected/remote-content windows are treated the
+same way: their window image is omitted and the shared overview is withheld,
+without cancelling independent captures of other eligible applications.
 
 GNOME image processing, OCR, encryption and indexing run outside GNOME Shell.
 The encrypted vault stores the accepted preview and OCR coordinates; the
@@ -70,6 +78,9 @@ customizable search shortcut (`Ctrl+Alt+Space` by default).
   directly before the rest of the filmstrip.
 - Each preview clearly identifies an exact window image, display-overview
   fallback, metadata-only capture, disabled screenshots or compositor limits.
+- Capture details show how many windows were expected, eligible, captured,
+  missing, excluded or protected, so a partial moment is not mistaken for a
+  complete desktop record.
 - **Open** asks the recorded application to reopen that window's validated file
   or observable URL when the platform and application support it.
 
@@ -78,7 +89,7 @@ rendered highlights are not written to a persistent search database.
 
 ## Czech and English OCR
 
-Version 3.2.3 ships pinned Czech and English fast Tesseract models in the Debian
+Version 3.3.0 ships pinned Czech and English fast Tesseract models in the Debian
 package, signed in-app update and portable artifacts. SessionSifu selects both
 models together so mixed-language application interfaces can be searched.
 Recognition is local; the model never sends screenshots or text to a service.
@@ -109,3 +120,17 @@ encryption plus a locked user session.
 For failure-specific checks, see [Troubleshooting](TROUBLESHOOTING.md). For the
 complete data inventory and deletion semantics, see
 [Privacy and local data](PRIVACY.md).
+
+## Restore preview and local integrations
+
+Restoring a named or automatic session now opens a preview first. Every
+application is selected by default and can be unchecked; Cancel and an empty
+selection launch nothing. The preview lists window, open-file and deep-link
+counts without executing the saved configuration.
+
+Trusted desktop launchers can use `sessionsifu --local-api-stdio` (or
+`sessionsifu-portable --local-api-stdio`) for bounded status, Recall search and
+restore-plan queries. The protocol is one JSON object per line on inherited
+stdin/stdout. It does not listen on a network socket and intentionally has no
+restore, delete, update or raw-image method; see the
+[architecture](ARCHITECTURE.md) for the trust boundary.

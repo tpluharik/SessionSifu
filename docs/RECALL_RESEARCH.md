@@ -48,9 +48,11 @@ SessionSifu's corresponding decisions are:
   deletion; and
 - apply exclusions both when recording and when searching old history.
 
-Version 3.1.9 implements the window-first design with separately rendered GNOME
+Version 3.3.0 implements the window-first design with separately rendered GNOME
 window surfaces, encrypted per-window previews, Czech/English OCR, word-box
-highlighting and a complete moment gallery. Metadata-only entries remain an
+highlighting and a complete moment gallery. It also records capture-completeness
+counts, prioritizes bounded accessibility text when available and recognizes
+private/protected contexts before persistence. Metadata-only entries remain an
 intentional, visible fallback when a window has no capturable surface.
 
 ## Open alternatives
@@ -66,9 +68,12 @@ continuous raw capture stream.
 SessionSifu therefore uses shorter-lived plaintext intermediates, authenticated
 encryption at rest, explicit size/count/retention limits, no cloud model, no
 audio, no clipboard or keystroke capture, and no persistent plaintext search
-database. Accessibility-derived content could improve accuracy in the future,
-but only behind a separate permission and with an explicit per-application
-policy.
+database. Version 3.3.0 uses bounded, already exposed AT-SPI application text
+on supported Linux desktops without opening documents, and provides a
+read-only inherited-pipe API instead of a listening automation daemon.
+
+The broader ten-product matrix and prioritized gaps are maintained in the
+[competitive feature analysis](COMPETITIVE_ANALYSIS.md).
 
 ## Platform implementation boundary
 

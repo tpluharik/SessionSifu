@@ -22,6 +22,7 @@ from sessionsifu_portable.storage import HISTORY_LIMIT, SessionStore  # noqa: E4
 from sessionsifu_portable.adapters.linux import GnomeAdapter, KDEAdapter, LinuxAdapter  # noqa: E402
 from sessionsifu_portable.adapters.macos import MacOSAdapter  # noqa: E402
 from sessionsifu_portable.adapters.windows import WindowsAdapter  # noqa: E402
+from sessionsifu_portable.api import LocalApi  # noqa: E402
 from sessionsifu_portable import SCHEMA_VERSION, VERSION  # noqa: E402
 
 
@@ -83,7 +84,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.2.3")
+        self.assertEqual(VERSION, "3.3.0")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -104,6 +105,24 @@ class PortableTests(unittest.TestCase):
             result = controller.restore_named("Work")
             self.assertEqual(result, {"applications": 1, "windows": 1})
             self.assertEqual(adapter.applied.windows[0].title, "Notes")
+
+    def test_restore_preview_and_selection_are_application_scoped(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            adapter = FakeAdapter()
+            controller = SessionController(adapter, SessionStore(Path(directory)))
+            controller.save_named("Work")
+            plan = controller.plan_named("Work")
+            self.assertEqual(plan[0]["application"], "Editor")
+            self.assertEqual(plan[0]["windows"], 1)
+            result = controller.restore_named_selection(
+                "Work", {str(plan[0]["identity"])}
+            )
+            self.assertEqual(result, {"applications": 1, "windows": 1})
+            self.assertEqual(
+                controller.restore_named_selection("Work", {"not-selected"}),
+                {"applications": 0, "windows": 0},
+            )
+            self.assertEqual(adapter.applied.windows, [])
 
     def test_history_retains_five(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -382,6 +401,46 @@ class PortableTests(unittest.TestCase):
             browser = store.search("Project", app="Browser", semantic=True)
             self.assertEqual(len(browser), 1)
             self.assertEqual(browser[0]["apps"], ["Browser"])
+
+    def test_accessible_text_deep_targets_and_capture_completeness(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RecallStore(Path(directory))
+            session = FakeAdapter().capture()
+            session.windows[0].accessible_text = "Quarterly narwhal forecast"
+            session.windows[0].deep_targets = ["vscode://file/home/test/Notes.txt"]
+            session.windows.append(WindowSnapshot(
+                app_id="org.example.Browser",
+                app_name="Browser",
+                title="Private Browsing",
+                capture_protection="private browsing",
+            ))
+            session.capture_diagnostics = {"screenshots_enabled": True}
+            path = store.save(
+                session,
+                preview=b"shared-display",
+                window_previews={0: b"editor", 1: b"private"},
+            )
+            payload = store._load(path)
+            self.assertEqual(len(payload["windows"]), 1)
+            self.assertEqual(payload["image"], "")
+            self.assertEqual(payload["capture_diagnostics"]["captured_window_images"], 1)
+            self.assertEqual(payload["capture_diagnostics"]["protected_windows"], 1)
+            result = store.search("narwhal")[0]
+            self.assertEqual(result["match_type"], "Application content")
+            self.assertEqual(result["targets"], ["vscode://file/home/test/Notes.txt"])
+            self.assertTrue(result["privacy"]["protected_context_visible"])
+
+    def test_local_api_is_read_only_and_returns_bounded_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
+            controller.save_named("Work")
+            api = LocalApi(controller)
+            status = api.dispatch({"method": "status"})
+            self.assertEqual(status["version"], "3.3.0")
+            preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
+            self.assertEqual(preview["applications"][0]["application"], "Editor")
+            with self.assertRaises(ValueError):
+                api.dispatch({"method": "restore.execute", "params": {"name": "Work"}})
 
 
 if __name__ == "__main__":

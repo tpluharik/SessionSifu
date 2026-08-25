@@ -6,10 +6,11 @@ import os
 import subprocess
 import time
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from ..model import SessionSnapshot, WindowSnapshot
+from ..content import enrich_generic_session
 
 try:
     import psutil
@@ -81,6 +82,36 @@ class PlatformAdapter(ABC):
             capabilities=asdict(self.capabilities),
         )
 
+    def enrich_content(self, session: SessionSnapshot) -> None:
+        """Add observable app content before OCR; platform adapters may improve it."""
+        enrich_generic_session(session)
+
+    @staticmethod
+    def restore_identity(window: WindowSnapshot) -> str:
+        return window.app_id or window.executable or "\0".join(window.command)
+
+    def plan_restore(self, session: SessionSnapshot) -> list[dict[str, object]]:
+        grouped: dict[str, dict[str, object]] = {}
+        for window in session.windows:
+            identity = self.restore_identity(window)
+            if not identity:
+                continue
+            item = grouped.setdefault(identity, {
+                "identity": identity,
+                "application": window.app_name or window.app_id or Path(window.executable).name,
+                "windows": 0,
+                "documents": [],
+                "targets": [],
+            })
+            item["windows"] = int(item["windows"]) + 1
+            item["documents"] = list(dict.fromkeys([
+                *list(item["documents"]), *window.open_files,
+            ]))[:32]
+            item["targets"] = list(dict.fromkeys([
+                *list(item["targets"]), *window.deep_targets,
+            ]))[:32]
+        return list(grouped.values())
+
     def launch_window(self, window: WindowSnapshot) -> None:
         command = list(window.command)
         executable = Path(window.executable) if window.executable else None
@@ -102,20 +133,32 @@ class PlatformAdapter(ABC):
     def apply_layout(self, session: SessionSnapshot) -> None:
         del session
 
-    def restore(self, session: SessionSnapshot, settle_seconds: float = 2.0) -> dict[str, int]:
+    def restore(
+        self,
+        session: SessionSnapshot,
+        settle_seconds: float = 2.0,
+        selected: set[str] | None = None,
+    ) -> dict[str, int]:
         launched: set[str] = set()
         launched_count = 0
         for window in session.windows:
-            identity = window.app_id or window.executable or "\0".join(window.command)
+            identity = self.restore_identity(window)
             if not identity or identity in launched:
+                continue
+            if selected is not None and identity not in selected:
                 continue
             launched.add(identity)
             self.launch_window(window)
             launched_count += 1
         if launched_count:
             time.sleep(max(0.0, min(10.0, settle_seconds)))
-        self.apply_layout(session)
-        return {"applications": launched_count, "windows": len(session.windows)}
+        restored = [
+            window for window in session.windows
+            if selected is None or self.restore_identity(window) in selected
+        ]
+        self.apply_layout(replace(session, windows=restored))
+        restored_windows = len(restored)
+        return {"applications": launched_count, "windows": restored_windows}
 
     def diagnostics(self) -> dict[str, object]:
         return {
