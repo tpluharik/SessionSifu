@@ -1,0 +1,47 @@
+Description: Make the open-file smoke test portable to Launchpad builders
+ Launchpad builds outside the build user's home directory. Keep the full
+ command-line safety test when the fixture is under an allowed root, while
+ always testing URI decoding in isolated build paths.
+Author: Tomas Pluharik <tpluharik@gmail.com>
+Forwarded: not-needed
+Last-Update: 2026-08-25
+--- a/extension/sessionsifu@local/openFiles.js
++++ b/extension/sessionsifu@local/openFiles.js
+@@ -110,7 +110,7 @@ export function listOpenFiles(pid) {
+     return paths.sort((a, b) => a.localeCompare(b));
+ }
+ 
+-function pathFromArgument(argument) {
++export function pathFromArgument(argument) {
+     if (typeof argument !== 'string')
+         return null;
+     if (argument.startsWith('file://'))
+--- a/tests/open-files-smoke.js
++++ b/tests/open-files-smoke.js
+@@ -38,12 +38,20 @@ if (!OpenFiles.appInfoSupportsDocumentFiles(appInfo([
+     throw new Error('A launcher with a document MIME type was rejected');
+ if (OpenFiles.appInfoSupportsDocumentFiles(null))
+     throw new Error('A missing launcher was accepted for document restoration');
+-const commandFiles = OpenFiles.commandLineFiles([
+-    '/usr/bin/document-editor',
+-    Gio.File.new_for_path(thisFile).get_uri(),
+-]);
+-if (commandFiles.length !== 1 || commandFiles[0] !== thisFile)
+-    throw new Error('A file URI from the application command line was not captured');
++const thisFileUri = Gio.File.new_for_path(thisFile).get_uri();
++if (OpenFiles.pathFromArgument(thisFileUri) !== thisFile)
++    throw new Error('A file URI from the application command line was not decoded');
++// The source tree is normally in the developer's home and can therefore exercise
++// the complete safety filter. Launchpad intentionally builds outside /home/buildd;
++// the filter must reject that path, while URI decoding remains testable there.
++if (OpenFiles.isCandidatePath(thisFile, true)) {
++    const commandFiles = OpenFiles.commandLineFiles([
++        '/usr/bin/document-editor',
++        thisFileUri,
++    ]);
++    if (commandFiles.length !== 1 || commandFiles[0] !== thisFile)
++        throw new Error('A file URI from the application command line was not captured');
++}
+ const recent = OpenFiles.recentFileForWindow([
+     {path: '/new/report.odt', basename: 'report.odt', modified: 2},
+     {path: '/old/report.odt', basename: 'report.odt', modified: 1},
