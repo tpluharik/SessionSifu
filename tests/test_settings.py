@@ -21,6 +21,7 @@ spec = importlib.util.spec_from_loader(loader.name, loader)
 assert spec is not None
 module = importlib.util.module_from_spec(spec)
 loader.exec_module(module)
+assert module.missing_user_payload_modules() == ()
 
 list_model = module.Gtk.ListStore.new([str, str])
 assert module.tree_model_row_count(list_model) == 0
@@ -83,19 +84,19 @@ now = datetime.now(timezone.utc)
 manifest = module.parse_update_manifest(
     json.dumps(
         {
-            "version": "3.4.0",
+            "version": "3.4.1",
             "channel": "stable",
             "issued_at": (now - timedelta(minutes=1)).isoformat(),
             "expires_at": (now + timedelta(days=30)).isoformat(),
             "minimum_version": "2.5.0",
-            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.4.0_all.deb",
+            "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.4.1_all.deb",
             "sha256": "a" * 64,
             "size": 12345,
             "notes": "Test update",
         }
     )
 )
-assert manifest["version"] == "3.4.0"
+assert manifest["version"] == "3.4.1"
 assert manifest["size"] == 12345
 
 older_manifest = module.parse_update_manifest(
@@ -251,7 +252,7 @@ try:
     module.parse_update_manifest(
         json.dumps(
             {
-                "version": "3.4.0",
+                "version": "3.4.1",
                 "channel": "stable",
                 "issued_at": (now - timedelta(minutes=1)).isoformat(),
                 "expires_at": (now + timedelta(days=30)).isoformat(),

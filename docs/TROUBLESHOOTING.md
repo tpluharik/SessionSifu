@@ -1,5 +1,27 @@
 # Troubleshooting
 
+## The control panel does not open after an in-app update
+
+Version 3.4.0 introduced several support modules, while an updater embedded in
+older releases copied only the main launcher and Recall engine. A partially
+applied update therefore failed at startup with
+`ModuleNotFoundError: restore_journal`; session restoration and Recall
+finalization were unavailable for the same reason.
+
+Install SessionSifu 3.4.1 or newer from the complete Debian package. The repair
+release keeps the restore journal in the two-file compatibility payload, so it
+boots through the old update path, and its current updater installs every
+support module before atomically activating the launcher. If the legacy updater
+omitted optional modules, the Updates section displays **Repair Installation**
+and accepts a signed package of the same version. Existing sessions and encrypted
+Recall records under `~/.config/sessionsifu/` are not removed.
+
+To confirm this exact failure before repairing, run:
+
+```sh
+journalctl --user -b --no-pager | grep -A4 -B2 'restore_journal'
+```
+
 ## The extension does not exist
 
 Open SessionSifu and select **Install & Enable**. The application installs the

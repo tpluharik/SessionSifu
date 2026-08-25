@@ -87,4 +87,41 @@ with tempfile.TemporaryDirectory(prefix="sessionsifu-package-test-") as director
     assert launched.returncode == 0, launched.stderr
     assert "Save and restore GNOME desktop sessions" in launched.stdout
 
+    # Updaters shipped before 3.4.0 copied only the launcher and Recall engine.
+    # A release installed through that legacy path must still boot, otherwise
+    # the user cannot open the panel or run another repair update.
+    for support_module in installed_support_modules:
+        support_module.unlink()
+    legacy_launch = subprocess.run(
+        [str(local_app), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+    assert legacy_launch.returncode == 0, legacy_launch.stderr
+    assert "Save and restore GNOME desktop sessions" in legacy_launch.stdout
+    health_check = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import importlib.machinery,importlib.util;"
+                f"p={str(installed_app)!r};"
+                "l=importlib.machinery.SourceFileLoader('legacy_health',p);"
+                "s=importlib.util.spec_from_loader(l.name,l);"
+                "m=importlib.util.module_from_spec(s);l.exec_module(m);"
+                "print(','.join(m.missing_user_payload_modules()))"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+    assert health_check.returncode == 0, health_check.stderr
+    assert health_check.stdout.strip() == "semantic.py,restore_journal.py,mcp.py"
+
 print("user-local package launch test passed")

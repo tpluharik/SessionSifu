@@ -45,8 +45,7 @@ _portable_module_dir = Path(__file__).resolve().parents[1] / "portable" / "sessi
 if (_portable_module_dir / "semantic.py").is_file():
     sys.path.insert(0, str(_portable_module_dir))
 
-from recall_engine import RecallPolicy, RecallVault  # noqa: E402
-from restore_journal import RestoreJournal  # noqa: E402
+from recall_engine import RecallPolicy, RecallVault, RestoreJournal  # noqa: E402
 
 import gi
 
@@ -59,7 +58,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.4.0"
+CURRENT_VERSION = "3.4.1"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -120,6 +119,27 @@ def recall_vault() -> RecallVault:
 
 def restore_journal_store() -> RestoreJournal:
     return RestoreJournal(Path(GLib.get_user_config_dir()) / "sessionsifu")
+
+
+def missing_user_payload_modules() -> tuple[str, ...]:
+    """Return modules omitted by a legacy user-local updater.
+
+    System packages keep modules in ``/usr/lib/sessionsifu``.  User updates
+    place the launcher and modules together, so the presence of a sibling
+    Recall engine identifies that layout without relying on a home-directory
+    string comparison.
+    """
+    app_directory = Path(__file__).resolve().parent
+    if not (app_directory / "recall_engine.py").is_file():
+        return ()
+    support_names = ("semantic.py", "restore_journal.py", "mcp.py")
+    if all((_portable_module_dir / name).is_file() for name in support_names):
+        return ()
+    return tuple(
+        name
+        for name in support_names
+        if not (app_directory / name).is_file()
+    )
 
 
 def recall_policy(config: Gio.Settings) -> RecallPolicy:
@@ -2760,9 +2780,21 @@ class ManagerWindow(Adw.ApplicationWindow):
         )
         self.update_row = Adw.ActionRow(
             title="SessionSifu software",
-            subtitle=f"Version {CURRENT_VERSION} · GitHub main",
+            subtitle=(
+                "Installation repair required · "
+                + ", ".join(missing_user_payload_modules())
+                if missing_user_payload_modules()
+                else f"Version {CURRENT_VERSION} · GitHub main"
+            ),
         )
-        self.update_button = Gtk.Button(label="Check for Updates", valign=Gtk.Align.CENTER)
+        self.update_button = Gtk.Button(
+            label=(
+                "Repair Installation"
+                if missing_user_payload_modules()
+                else "Check for Updates"
+            ),
+            valign=Gtk.Align.CENTER,
+        )
         self.update_button.connect("clicked", self._update_clicked)
         self.update_row.add_suffix(self.update_button)
         update_group.add(self.update_row)
@@ -3309,6 +3341,18 @@ class ManagerWindow(Adw.ApplicationWindow):
             self.update_row.set_subtitle(f"Update check failed: {error}")
             self.update_button.set_label("Try Again")
             self.update_button.remove_css_class("suggested-action")
+            return GLib.SOURCE_REMOVE
+        repair_modules = missing_user_payload_modules()
+        if (
+            repair_modules
+            and version_tuple(manifest["version"]) == version_tuple(CURRENT_VERSION)
+        ):
+            self._available_update = manifest
+            self.update_row.set_subtitle(
+                "Repair verified package · missing " + ", ".join(repair_modules)
+            )
+            self.update_button.set_label("Download & Repair")
+            self.update_button.add_css_class("suggested-action")
             return GLib.SOURCE_REMOVE
         if version_tuple(manifest["version"]) <= version_tuple(CURRENT_VERSION):
             self.update_row.set_subtitle(f"Version {CURRENT_VERSION} is current")

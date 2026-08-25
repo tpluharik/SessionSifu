@@ -15,10 +15,35 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
 
 import recall_engine  # noqa: E402
-from recall_engine import MAGIC, RecallPolicy, RecallVault, _prepare_ocr_image  # noqa: E402
+from recall_engine import (  # noqa: E402
+    MAGIC,
+    RecallPolicy,
+    RecallVault,
+    RestoreJournal,
+    _prepare_ocr_image,
+)
 
 
 class RecallEngineTests(unittest.TestCase):
+    def test_core_restore_journal_survives_legacy_user_update(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            journal = RestoreJournal(Path(directory))
+            identifier = journal.begin("named:Work", [{"application": "Editor"}])
+            journal.finish(
+                identifier,
+                actions=[{"identity": "editor", "state": "requested"}],
+                summary={"applications": 1},
+            )
+            entry = journal.get(identifier)
+            self.assertIsNotNone(entry)
+            self.assertEqual(entry["state"], "completed")
+            self.assertEqual(journal.list()[0]["id"], identifier)
+            self.assertEqual(journal.directory.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(
+                (journal.directory / f"{identifier}.json").stat().st_mode & 0o777,
+                0o600,
+            )
+
     def test_accessibility_roots_do_not_merge_sibling_windows(self) -> None:
         class FakeText:
             def __init__(self, value: str) -> None:

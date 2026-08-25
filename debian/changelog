@@ -1,3 +1,11 @@
+sessionsifu (3.4.1-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Preserve control-panel and restore startup through legacy user updates.
+  * Keep the restore journal in the two-file updater compatibility payload.
+  * Add a package regression for incomplete legacy updates.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Tue, 25 Aug 2026 21:10:00 +0200
+
 sessionsifu (3.4.0-1~ppa1~resolute1) resolute; urgency=medium
 
   * Add offline semantic Recall, OCR diagnostics/reindex and scene grouping.

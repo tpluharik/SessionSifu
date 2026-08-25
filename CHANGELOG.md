@@ -4,6 +4,20 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.4.1
+
+- Fixed a legacy user-updater compatibility failure that could activate the
+  3.4.0 launcher without its new restore-journal module. The control panel,
+  session restore and Recall finalization now remain bootable when upgrading
+  through the older two-file update path.
+- Kept the crash-safe, owner-private restore journal in the legacy updater's
+  core payload and added package-level regression coverage that deliberately
+  removes the newer support modules before launching SessionSifu.
+- Preserved the full atomic four-module updater for normal 3.4.1 and later
+  updates. The panel detects modules omitted by a legacy update and offers a
+  signed same-version repair, installing optional semantic and MCP components
+  before the launcher is activated.
+
 ## 3.4.0
 
 - Replaced lexical “related match” with optional, strictly offline sentence

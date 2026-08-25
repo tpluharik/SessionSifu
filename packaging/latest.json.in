@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "SessionSifu 3.4.0 adds offline semantic Recall search, OCR diagnostics and reindexing, restore journals, scene grouping, collections, app adapters, monitor reconciliation, cited local Ask, read-only MCP and encrypted transfer archives."
+  "notes": "SessionSifu 3.4.1 repairs control-panel, restore and Recall startup after a legacy user-local updater copied only part of the 3.4.0 payload."
 }

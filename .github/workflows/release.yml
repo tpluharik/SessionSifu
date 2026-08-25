@@ -125,7 +125,7 @@ jobs:
               throw "Authenticode verification failed: $($signature.Status)"
             }
 
-            $archive = 'dist\portable\SessionSifu-3.4.0-windows-x64.zip'
+            $archive = 'dist\portable\SessionSifu-3.4.1-windows-x64.zip'
             Remove-Item $archive -Force
             Compress-Archive `
               -Path 'build\pyinstaller-windows-x64\dist\SessionSifu' `
