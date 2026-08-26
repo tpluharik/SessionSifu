@@ -46,6 +46,8 @@ class AwsIndicator extends PanelMenu.Button {
         this._signal = new Signal.Signal();
 
         this._itemIndex = 0;
+        this._sessionReloadGeneration = 0;
+        this._debugChangedId = 0;
 
         this._sessions_path = FileUtils.sessions_path;
 
@@ -138,7 +140,8 @@ class AwsIndicator extends PanelMenu.Button {
     }
 
     async _restoreWindowOnce(metaWindow, savedWindowSessions) {
-        if (this._isDestroyed || this._closingWindows.has(metaWindow))
+        if (this._isDestroyed || !this._moveSession ||
+            this._closingWindows.has(metaWindow))
             return false;
         if (this._restoredWindows.has(metaWindow))
             return true;
@@ -150,16 +153,19 @@ class AwsIndicator extends PanelMenu.Button {
             try {
                 if (!await this._waitForWindowSettle(metaWindow))
                     return false;
-                const restored = await this._moveSession.moveWindowByMetaWindow(
+                const moveSession = this._moveSession;
+                if (this._isDestroyed || !moveSession)
+                    return false;
+                const restored = await moveSession.moveWindowByMetaWindow(
                     metaWindow, savedWindowSessions);
-                if (restored)
+                if (restored && !this._isDestroyed)
                     this._restoredWindows.add(metaWindow);
                 return restored;
             } catch (error) {
-                this._log.error(error, 'Could not restore a newly created window');
+                this._log?.error(error, 'Could not restore a newly created window');
                 return false;
             } finally {
-                this._restoringWindows.delete(metaWindow);
+                this._restoringWindows?.delete(metaWindow);
             }
         })();
         this._restoringWindows.set(metaWindow, operation);
@@ -168,12 +174,14 @@ class AwsIndicator extends PanelMenu.Button {
 
     // TODO Move this method and related code to a single .js file
     async _windowCreated(display, metaWindow, userData) {
+        if (this._isDestroyed || !this._moveSession)
+            return;
         let metaWindowActor = metaWindow.get_compositor_private();
         // https://github.com/paperwm/PaperWM/blob/10215f57e8b34a044e10b7407cac8fac4b93bbbc/tiling.js#L2120
         // https://gjs-docs.gnome.org/meta8~8_api/meta.windowactor#signal-first-frame
         let firstFrameId = metaWindowActor?.connect('first-frame', async () => {
             if (this._isDestroyed) {
-                metaWindowActor.disconnect(firstFrameId);
+                this._signal.disconnectSafely(metaWindowActor, firstFrameId);
                 return;
             }
 
@@ -204,14 +212,14 @@ class AwsIndicator extends PanelMenu.Button {
 
             if (await this._restoreWindowOnce(metaWindow, saved_window_sessions) &&
                 !this._isDestroyed && firstFrameId) {
-                metaWindowActor.disconnect(firstFrameId);
+                this._signal.disconnectSafely(metaWindowActor, firstFrameId);
                 firstFrameId = 0;
             }
         }) ?? 0;
 
         let shownId = metaWindow.connect('shown', async () => {
             if (this._isDestroyed) {
-                metaWindow.disconnect(shownId);
+                this._signal.disconnectSafely(metaWindow, shownId);
                 return;
             }
 
@@ -242,7 +250,7 @@ class AwsIndicator extends PanelMenu.Button {
 
             if (await this._restoreWindowOnce(metaWindow, saved_window_sessions) &&
                 !this._isDestroyed && shownId) {
-                metaWindow.disconnect(shownId);
+                this._signal.disconnectSafely(metaWindow, shownId);
                 shownId = 0;
             }
         });
@@ -260,7 +268,7 @@ class AwsIndicator extends PanelMenu.Button {
         let unmanagingId = metaWindow.connect('unmanaging', () => {
             this._closingWindows.add(metaWindow);
             this._cancelWindowSettle(metaWindow);
-            this._moveSession.cancelWindow(metaWindow);
+            this._moveSession?.cancelWindow(metaWindow);
             // Fix ../gobject/gsignal.c:2732: instance '0x55629xxxxxx' has no handler with id '11000' when disable this extension right after restore apps
             this._signal.disconnectSafely(metaWindowActor, firstFrameId);
         });
@@ -271,7 +279,7 @@ class AwsIndicator extends PanelMenu.Button {
         // In the above instance, `notify::title` catches the second.
         let titleChangedId = metaWindow.connect('notify::title', async () => {
             if (this._isDestroyed) {
-                metaWindow.disconnect(titleChangedId);
+                this._signal.disconnectSafely(metaWindow, titleChangedId);
                 return;
             }
 
@@ -302,7 +310,7 @@ class AwsIndicator extends PanelMenu.Button {
 
             if (await this._restoreWindowOnce(metaWindow, saved_window_sessions) &&
                 !this._isDestroyed && titleChangedId) {
-                metaWindow.disconnect(titleChangedId);
+                this._signal.disconnectSafely(metaWindow, titleChangedId);
                 titleChangedId = 0;
             }
         });
@@ -335,13 +343,16 @@ class AwsIndicator extends PanelMenu.Button {
 
         this._addScrollableSessionsMenuSection();
         this._addSessionItems().catch(error => {
-            this._log.error(error, 'Error adding session items while creating indicator menu');
+            this._log?.error(error, 'Error adding session items while creating indicator menu');
         });
 
         this._addSessionFolderMonitor();
-        this._settings.connect('changed::debugging-mode', () => {
+        this._debugChangedId = this._settings.connect('changed::debugging-mode', () => {
+            if (this._isDestroyed)
+                return;
             this._addSessionItems().catch(error => {
-                this._log.error(error, 'Error reloading session items while debugging-mode was changed');
+                this._log?.error(
+                    error, 'Error reloading session items while debugging-mode was changed');
             });
         });
 
@@ -462,10 +473,12 @@ class AwsIndicator extends PanelMenu.Button {
     }
 
     async _addSessionItems() {
+        const reloadGeneration = ++this._sessionReloadGeneration;
         if (!GLib.file_test(this._sessions_path, GLib.FileTest.EXISTS)) {
             // TODO Empty session
-            this._log.info(`${this._sessions_path} not found! It's harmless, please save some windows in the panel menu to create it automatically.`);
-            this._sessionsMenuSection.removeAll();
+            this._log?.info(`${this._sessions_path} not found! It's harmless, please save some windows in the panel menu to create it automatically.`);
+            if (!this._isDestroyed && this._sessionsMenuSection)
+                this._sessionsMenuSection.removeAll();
             return;
         }
 
@@ -498,8 +511,12 @@ class AwsIndicator extends PanelMenu.Button {
             });
 
         }).catch(e => {
-            this._log.error(e, 'Error listing all sessions')
+            this._log?.error(e, 'Error listing all sessions')
         });
+
+        if (this._isDestroyed || reloadGeneration !== this._sessionReloadGeneration ||
+            !this._sessionsMenuSection)
+            return;
 
         // Sort by modification time: https://gjs-docs.gnome.org/gio20~2.0/gio.fileenumerator
         // The latest on the top, if a file has no modification time put it on the bottom
@@ -583,6 +600,8 @@ class AwsIndicator extends PanelMenu.Button {
     // https://gjs-docs.gnome.org/gio20~2.66p/gio.filemonitor#signal-changed
     // Looks like the document is wrong ...
     _sessionChanged(monitor, fileMonitored, otherFile, eventType) {
+        if (this._isDestroyed)
+            return;
         const pathMonitored = fileMonitored.get_path();
         const otherFilePath = otherFile?.get_path();
         this._log.debug(`Session changed, readd all session items from ${this._sessions_path}. ${pathMonitored} changed. other_file: ${otherFilePath}. Event type: ${eventType}`);
@@ -638,7 +657,7 @@ class AwsIndicator extends PanelMenu.Button {
         // of this._sessionsMenuSection._getMenuItems() when the performance
         // is a problem to be resolved, it's a more complex implement.
         this._addSessionItems().catch(error => {
-            this._log.error(error, 'Error adding session items while session was changed');
+            this._log?.error(error, 'Error adding session items while session was changed');
         });
     }
 
@@ -691,6 +710,12 @@ class AwsIndicator extends PanelMenu.Button {
 
     destroy() {
         this._isDestroyed = true;
+        this._sessionReloadGeneration++;
+
+        if (this._debugChangedId) {
+            this._signal.disconnectSafely(this._settings, this._debugChangedId);
+            this._debugChangedId = 0;
+        }
 
         if (this._recallChangedId) {
             this._settings.disconnect(this._recallChangedId);

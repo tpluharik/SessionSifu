@@ -11,6 +11,7 @@ import * as Log from './utils/log.js';
 import * as MetaWindowUtils from './utils/metaWindowUtils.js';
 import * as SaveSession from './saveSession.js';
 import {recallActivity} from './recallActivity.js';
+import {isWindowCaptureSafe} from './windowSafety.js';
 import {
     recallExclusions,
     screenshotBlockingExclusions,
@@ -24,6 +25,8 @@ const MAX_RECALL_BYTES = 2 * 1024 * 1024;
 const MAX_SCREENSHOT_BYTES = 64 * 1024 * 1024;
 const MAX_DISPLAYS = 8;
 const MAX_WINDOW_PREVIEWS = 64;
+export const MAX_WINDOW_CAPTURES_PER_PASS = 24;
+export const WINDOW_CAPTURE_BUDGET_US = 4 * 1000 * 1000;
 const PRUNE_INTERVAL_US = 5 * 60 * 1000 * 1000;
 const _summaryCache = new Map();
 
@@ -201,27 +204,34 @@ function _captureScreenshot(path) {
     });
 }
 
-function _captureWindowActor(path, actor) {
+function _yieldToShell() {
+    return new Promise(resolve => {
+        GLib.idle_add(GLib.PRIORITY_LOW, () => {
+            resolve();
+            return GLib.SOURCE_REMOVE;
+        });
+    });
+}
+
+function _captureWindowArea(path, metaWindow, actor) {
     return new Promise((resolve, reject) => {
         let stream;
         try {
-            if (!actor || actor.is_destroyed?.())
-                throw new Error('Recall window actor is no longer available');
-            const content = actor.paint_to_content(null);
-            const texture = content?.get_texture?.();
-            if (!texture)
-                throw new Error('Recall window has no renderable surface');
+            if (!isWindowCaptureSafe(metaWindow, actor))
+                throw new Error('Recall window is not safely visible for capture');
+            const rect = metaWindow.get_frame_rect();
             stream = Gio.File.new_for_path(path).replace(
                 null, false, Gio.FileCreateFlags.PRIVATE, null);
-            Shell.Screenshot.composite_to_stream(
-                texture, 0, 0, -1, -1, 1.0,
-                null, 0, 0, 1.0, stream,
-                (_source, result) => {
+            const screenshot = new Shell.Screenshot();
+            screenshot.screenshot_area(
+                Math.trunc(rect.x), Math.trunc(rect.y),
+                Math.trunc(rect.width), Math.trunc(rect.height), stream,
+                (source, result) => {
                     try {
-                        const pixbuf = Shell.Screenshot.composite_to_stream_finish(result);
+                        const [success] = source.screenshot_area_finish(result);
                         stream.close(null);
-                        if (!pixbuf)
-                            throw new Error('GNOME Shell could not render the Recall window');
+                        if (!success)
+                            throw new Error('GNOME Shell could not capture the Recall window area');
                         const size = Gio.File.new_for_path(path).query_info(
                             'standard::size', Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null)
                             .get_size();
@@ -278,10 +288,11 @@ async function _captureWindowActors(name, excludedApps = []) {
     const exclusions = screenshotBlockingExclusions(excludedApps);
     const tracker = Shell.WindowTracker.get_default();
     for (const actor of global.get_window_actors()) {
-        if (jobs.length >= MAX_WINDOW_PREVIEWS)
+        if (jobs.length >= MAX_WINDOW_CAPTURES_PER_PASS)
             break;
         const metaWindow = _metaWindowForActor(actor);
-        if (!metaWindow || _windowMatchesExclusions(metaWindow, exclusions, tracker))
+        if (!isWindowCaptureSafe(metaWindow, actor) ||
+            _windowMatchesExclusions(metaWindow, exclusions, tracker))
             continue;
         const windowId = _stableWindowKey(
             MetaWindowUtils.getStableWindowId(metaWindow));
@@ -289,15 +300,26 @@ async function _captureWindowActors(name, excludedApps = []) {
         if (index === undefined || scheduledIndexes.has(index))
             continue;
         scheduledIndexes.add(index);
-        jobs.push([index, actor]);
+        jobs.push([index, metaWindow, actor]);
     }
     let captured = 0;
-    // Small batches reduce latency without flooding Mutter with paint requests.
-    for (let offset = 0; offset < jobs.length; offset += 4) {
-        const results = await Promise.allSettled(
-            jobs.slice(offset, offset + 4).map(([index, actor]) =>
-                _captureWindowActor(_windowScreenshotPath(name, index, true), actor)));
-        captured += results.filter(result => result.status === 'fulfilled').length;
+    const startedUs = GLib.get_monotonic_time();
+    // Never repaint Meta.WindowActor objects directly. That code runs inside
+    // Mutter and concurrent/off-workspace paints can take down the Wayland
+    // compositor. Capture only visible screen regions, one at a time, and
+    // yield between requests so Shell input and frame processing stay live.
+    for (const [index, metaWindow, actor] of jobs) {
+        if (GLib.get_monotonic_time() - startedUs >= WINDOW_CAPTURE_BUDGET_US ||
+            Main.sessionMode.isLocked || Main.overview.visible || Main.modalCount > 0)
+            break;
+        try {
+            await _captureWindowArea(
+                _windowScreenshotPath(name, index, true), metaWindow, actor);
+            captured++;
+        } catch (error) {
+            Log.Log.getDefault().error(error, 'Could not capture a Recall window area');
+        }
+        await _yieldToShell();
     }
     return {expected: windowIndexes.size, matched: jobs.length, captured};
 }

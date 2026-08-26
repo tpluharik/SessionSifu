@@ -13,6 +13,11 @@ import * as StringUtils from './utils/stringUtils.js';
 import * as OpenFiles from './openFiles.js';
 import {mayRestoreApplications} from './runtimeSafety.js';
 import {MAX_WORKSPACE_INDEX} from './windowSafety.js';
+import {
+    MAX_PREVIOUS_SESSION_WINDOWS,
+    MIN_RESTORE_INTERVAL_MS,
+    deduplicatePreviousSessionEntries,
+} from './restoreSafety.js';
 
 
 export const restoreSessionObject = {
@@ -31,7 +36,9 @@ export const RestoreSession = class {
         this._defaultAppSystem = Shell.AppSystem.get_default();
         this._windowTracker = Shell.WindowTracker.get_default();
 
-        this._restore_session_interval = this._settings.get_int('restore-session-interval');
+        this._restore_session_interval = Math.max(
+            MIN_RESTORE_INTERVAL_MS,
+            this._settings.get_int('restore-session-interval'));
 
         // TODO Add to Preferences?
         // Launch apps using discrete graphics card might cause issues, like the white main window of superproductivity
@@ -204,22 +211,51 @@ export const RestoreSession = class {
 
                     const sessionConfig = FileUtils.getJsonObj(contents);
                     sessionConfig._file_path = file.get_path();
-                    sessionEntries.push({file, sessionConfig});
+                    let modified = 0;
+                    try {
+                        modified = file.query_info(
+                            'time::modified',
+                            Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
+                            null).get_modification_date_time()?.to_unix() ?? 0;
+                    } catch (_error) {
+                        // A missing timestamp does not make an otherwise valid
+                        // previous-session record unsafe to restore.
+                    }
+                    sessionEntries.push({file, sessionConfig, modified});
                 } catch (error) {
                     this._log.error(error, `Could not load previous-session state from ${file.get_path()}`);
                 }
             }
-            sessionEntries.sort((left, right) => {
+            const deduplicated = deduplicatePreviousSessionEntries(sessionEntries);
+            if (removeAfterRestore) {
+                for (const duplicate of deduplicated.duplicates)
+                    FileUtils.removeFile(duplicate.file.get_path());
+            }
+            if (deduplicated.duplicates.length) {
+                this._log.warn(
+                    `Skipped ${deduplicated.duplicates.length} duplicate previous-session ` +
+                    'window records');
+            }
+
+            const restoreEntries = deduplicated.entries;
+            if (restoreEntries.length > MAX_PREVIOUS_SESSION_WINDOWS) {
+                this._log.warn(
+                    `Restoring only ${MAX_PREVIOUS_SESSION_WINDOWS} of ` +
+                    `${restoreEntries.length} previous-session windows in this login`);
+                restoreEntries.sort((left, right) => right.modified - left.modified);
+                restoreEntries.length = MAX_PREVIOUS_SESSION_WINDOWS;
+            }
+            restoreEntries.sort((left, right) => {
                 const keyComparison = this._sessionApplicationKey(left.sessionConfig)
                     .localeCompare(this._sessionApplicationKey(right.sessionConfig));
                 return keyComparison || left.file.get_path().localeCompare(right.file.get_path());
             });
 
-            for (let index = 0; index < sessionEntries.length; index++) {
+            for (let index = 0; index < restoreEntries.length; index++) {
                 if (!mayRestoreApplications() || this._destroyed)
                     break;
 
-                const {file, sessionConfig} = sessionEntries[index];
+                const {file, sessionConfig} = restoreEntries[index];
                 const [launched, running] = await this._restoreOneSession(sessionConfig);
                 if (removeAfterRestore && launched && !running) {
                     const path = file.get_path();
@@ -227,12 +263,9 @@ export const RestoreSession = class {
                     FileUtils.removeFile(path);
                 }
 
-                const nextEntry = sessionEntries[index + 1];
-                if (nextEntry &&
-                    this._sessionApplicationKey(sessionConfig) !==
-                        this._sessionApplicationKey(nextEntry.sessionConfig) &&
-                    !await this._waitBeforeNextRestore()) {
-                        break;
+                const nextEntry = restoreEntries[index + 1];
+                if (nextEntry && !await this._waitBeforeNextRestore()) {
+                    break;
                 }
             }
         } catch (error) {

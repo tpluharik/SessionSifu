@@ -1,3 +1,11 @@
+sessionsifu (3.5.1-1~ppa1~resolute1) resolute; urgency=high
+
+  * Deduplicate and pace previous-session restoration to protect Mutter.
+  * Replace direct actor painting with serialized visible-area screenshots.
+  * Cancel delayed indicator and window callbacks during Shell teardown.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Wed, 26 Aug 2026 21:40:00 +0200
+
 sessionsifu (3.5.0-1~ppa1~resolute1) resolute; urgency=medium
 
   * Cache the encrypted Recall vault's decrypted search index in memory.

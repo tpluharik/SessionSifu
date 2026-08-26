@@ -4,6 +4,18 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.1
+
+- Prevented Wayland compositor overload during previous-session restoration by
+  collapsing indistinguishable stale window records, retaining at most the 64
+  newest distinct windows per login and pacing every application launch.
+- Replaced direct, concurrent painting of live Mutter window actors with
+  serialized GNOME screenshot-area capture for mapped, visible windows. Recall
+  now yields between captures and enforces a four-second per-pass budget.
+- Made extension disable and Shell shutdown cancel-safe: delayed session-list
+  updates and window callbacks no longer access disposed panel actors or a
+  destroyed move-session controller.
+
 ## 3.5.0
 
 - Reused a bounded, memory-only decrypted-record cache and FTS5 index across

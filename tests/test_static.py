@@ -48,8 +48,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.5.0"
-assert metadata["version"] == 36
+assert metadata["version-name"] == "3.5.1"
+assert metadata["version"] == 37
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -82,7 +82,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.5.0"' in build_script
+assert 'version="3.5.1"' in build_script
 assert "python3-pyatspi" in (root / "packaging" / "control").read_text()
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
@@ -91,6 +91,7 @@ assert "CHANGELOG.md" in build_script
 assert "tests/open-files-smoke.js" in build_script
 assert "tests/runtime-safety-smoke.js" in build_script
 assert "tests/window-safety-smoke.js" in build_script
+assert "tests/restore-safety-smoke.js" in build_script
 assert "tests/security-smoke.js" in build_script
 assert "tests/recall-activity-smoke.js" in build_script
 assert "tests/recall-privacy-smoke.js" in build_script
@@ -164,7 +165,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.5.0"' in app_source
+assert 'CURRENT_VERSION = "3.5.1"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -236,8 +237,12 @@ assert "Gtk.GestureZoom" in app_source
 assert "Gtk.EventControllerScroll" in app_source
 assert "def _touchpad_scroll" in app_source
 assert "def _restore_scroll_center" in app_source
-assert "paint_to_content(null)" in source_text
-assert "Shell.Screenshot.composite_to_stream" in source_text
+assert "paint_to_content(null)" not in recorder_source
+assert "screenshot.screenshot_area(" in recorder_source
+assert "source.screenshot_area_finish(result)" in recorder_source
+assert "MAX_WINDOW_CAPTURES_PER_PASS = 24" in recorder_source
+assert "WINDOW_CAPTURE_BUDGET_US" in recorder_source
+assert "await _yieldToShell()" in recorder_source
 assert "_captureWindowActors(name, exclusions)" in source_text
 assert "_windowMatchesExclusions(metaWindow, exclusions, tracker)" in source_text
 assert "sync_gnome_recall_shortcut" in app_source
@@ -249,6 +254,8 @@ assert "if not live_extension_current():" in app_source
 indicator_source = (extension / "indicator.js").read_text()
 assert "!this._windowSettleWaits || !mayRestoreApplications()" in indicator_source
 assert "this._windowSettleWaits?.delete(metaWindow)" in indicator_source
+assert "this._moveSession?.cancelWindow(metaWindow)" in indicator_source
+assert "reloadGeneration !== this._sessionReloadGeneration" in indicator_source
 save_source = (extension / "saveSession.js").read_text()
 assert "compact ? 0 : 4" in save_source
 assert "replace_contents_bytes_async" in save_source
@@ -319,12 +326,16 @@ assert "_launchedFilesByApp" in source_text
 assert "isWindowUsable" in source_text
 assert "_pendingMonitorWaits" in source_text
 assert "_pendingGeometryRestores" in source_text
-assert "this._moveSession.cancelWindow(metaWindow)" in source_text
+assert "this._moveSession?.cancelWindow(metaWindow)" in source_text
 assert "w === metaWindow && num === toMonitorIndex" in source_text
 assert "currentMonitor < 0" in source_text
 assert "this._moveSession.destroy()" in source_text
 assert "this._restoringWindows" in source_text
 assert "NEW_WINDOW_SETTLE_DELAY_MS = 750" in source_text
+assert "MIN_RESTORE_INTERVAL_MS" in source_text
+assert "MAX_PREVIOUS_SESSION_WINDOWS" in source_text
+assert "deduplicatePreviousSessionEntries(sessionEntries)" in source_text
+assert "nextEntry && !await this._waitBeforeNextRestore()" in source_text
 assert "mayRestoreApplications" in source_text
 assert "restorePreviousDelay = this._settings.get_int('restore-previous-delay') * 1000" in source_text
 assert "_sessionApplicationKey" in source_text
