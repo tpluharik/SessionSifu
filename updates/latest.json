@@ -1,11 +1,11 @@
 {
-  "version": "3.5.0",
+  "version": "3.5.2",
   "channel": "stable",
-  "issued_at": "2026-08-26T03:50:38Z",
-  "expires_at": "2026-10-10T03:50:38Z",
+  "issued_at": "2026-08-26T19:41:06Z",
+  "expires_at": "2026-10-10T19:41:06Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.0_all.deb",
-  "sha256": "a0376eb93e504e3a0d6f1e6e382864211cfa91d66a2892d354ed06f8982ec895",
-  "size": 3729952,
-  "notes": "SessionSifu 3.5.0 makes Recall search responsive with a bounded memory-only index, background query execution, incremental previews and cached offline semantic document vectors."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.2_all.deb",
+  "sha256": "c7712c429a900183d174e79c83edce8a494935d2f47ed91de1c74917266d6e6e",
+  "size": 3733126,
+  "notes": "SessionSifu 3.5.2 prevents Wayland overload by deduplicating and pacing session restoration, serializing safe visible-window Recall capture and cancelling Shell callbacks during teardown."
 }
