@@ -48,8 +48,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.5.2"
-assert metadata["version"] == 38
+assert metadata["version-name"] == "3.5.3"
+assert metadata["version"] == 39
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -82,7 +82,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.5.2"' in build_script
+assert 'version="3.5.3"' in build_script
 assert "python3-pyatspi" in (root / "packaging" / "control").read_text()
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
@@ -165,7 +165,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.5.2"' in app_source
+assert 'CURRENT_VERSION = "3.5.3"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -335,12 +335,18 @@ assert "NEW_WINDOW_SETTLE_DELAY_MS = 750" in source_text
 assert "MIN_RESTORE_INTERVAL_MS" in source_text
 assert "MAX_PREVIOUS_SESSION_WINDOWS" in source_text
 assert "deduplicatePreviousSessionEntries(sessionEntries)" in source_text
-assert "nextEntry && !await this._waitBeforeNextRestore()" in source_text
+assert "AUTOMATIC_RESTORE_INTERVAL_MS" in source_text
+assert "automaticRestoreGroups(entries)" in source_text
+assert "restoreCommandAllowed(cmd)" in source_text
+assert "appInfo.should_show?.() === false" in source_text
+assert "!await this._waitBeforeNextRestore(AUTOMATIC_RESTORE_INTERVAL_MS)" in source_text
 assert "mayRestoreApplications" in source_text
 assert "restorePreviousDelay = this._settings.get_int('restore-previous-delay') * 1000" in source_text
 assert "_sessionApplicationKey" in source_text
 assert "command-sha256:" in source_text
 assert "session.cmd.join('\\u0000')" not in source_text
+assert "[Meta.WindowType.NORMAL, Meta.WindowType.UTILITY]" in source_text
+assert "GObject.signal_handler_is_connected" in source_text
 assert "Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS" in source_text
 assert "Turn Off SessionSifu" in source_text
 assert "bash -c" not in source_text

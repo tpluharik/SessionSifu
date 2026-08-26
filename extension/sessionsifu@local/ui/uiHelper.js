@@ -16,6 +16,15 @@ export function isDialog(metaWindow) {
 }
 
 export function ignoreWindows(metaWindow) {
+    // Only application-owned windows belong in a restorable session. Desktop,
+    // dock, menu, notification and drag actors are Shell infrastructure. In
+    // particular, saving DING's DESKTOP window records its raw gjs command;
+    // replaying that command at login can replace desktop services and take
+    // the Wayland compositor down with them.
+    const restorableTypes = [Meta.WindowType.NORMAL, Meta.WindowType.UTILITY];
+    if (!restorableTypes.includes(metaWindow.get_window_type()))
+        return true;
+
     if (isDialog(metaWindow)) {
         return true;
     }

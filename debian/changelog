@@ -1,3 +1,12 @@
+sessionsifu (3.5.3-1~ppa1~resolute1) resolute; urgency=high
+
+  * Reject Shell helpers and command-only processes during automatic restore.
+  * Bound and pace automatic launches by desktop application.
+  * Exclude compositor infrastructure from saved sessions.
+  * Make Shell signal teardown idempotent.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Wed, 26 Aug 2026 22:20:00 +0200
+
 sessionsifu (3.5.2-1~ppa1~resolute1) resolute; urgency=high
 
   * Publish the Wayland restore and Recall stability corrections.

@@ -4,6 +4,20 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.3
+
+- Stopped previous-session and automatic named-session restoration from
+  relaunching command-only processes, GNOME Shell/session helpers, hidden
+  desktop services or SessionSifu itself.
+- Grouped automatic restoration by visible desktop application, retained at
+  most eight windows per app and twelve apps per login, and increased pacing
+  between application groups to three seconds.
+- Excluded desktop, dock, menu, notification and drag actors from future saved
+  sessions, preventing Desktop Icons NG's internal `gjs` process from entering
+  the restore queue.
+- Made window-tracker and tiling signal teardown idempotent when GNOME has
+  already disposed display/window objects during a compositor restart.
+
 ## 3.5.2
 
 - Published the Wayland restore pacing, Recall capture and extension teardown

@@ -14,9 +14,13 @@ import * as OpenFiles from './openFiles.js';
 import {mayRestoreApplications} from './runtimeSafety.js';
 import {MAX_WORKSPACE_INDEX} from './windowSafety.js';
 import {
+    AUTOMATIC_RESTORE_INTERVAL_MS,
     MAX_PREVIOUS_SESSION_WINDOWS,
     MIN_RESTORE_INTERVAL_MS,
+    automaticRestoreDesktopIdAllowed,
+    automaticRestoreGroups,
     deduplicatePreviousSessionEntries,
+    restoreCommandAllowed,
 } from './restoreSafety.js';
 
 
@@ -79,7 +83,7 @@ export const RestoreSession = class {
         }).catch(e => Log.Log.getDefault().error(e));
     }
 
-    restoreSession(sessionName, selectedApplicationKeys = null) {
+    restoreSession(sessionName, selectedApplicationKeys = null, automatic = false) {
         if (!mayRestoreApplications()) {
             this._log.info('Skipping session restore while the desktop session is ending');
             return;
@@ -97,13 +101,16 @@ export const RestoreSession = class {
 
         this._log.info('Restoring a validated saved session');
         try {
-            this.restoreSessionFromFile(session_file_path, selectedApplicationKeys);
+            this.restoreSessionFromFile(
+                session_file_path, selectedApplicationKeys, automatic);
         } catch (e) {
             logError(e, 'Failed to restore saved session');
         }
     }
 
-    restoreSessionFromFile(session_file_path, selectedApplicationKeys = null) {
+    restoreSessionFromFile(
+        session_file_path, selectedApplicationKeys = null, automatic = false
+    ) {
         if (!mayRestoreApplications() || this._destroyed)
             return;
 
@@ -127,6 +134,18 @@ export const RestoreSession = class {
                 : new Set(selectedApplicationKeys);
             session_config_objects = session_config_objects.filter(
                 session => selected.has(this._sessionApplicationKey(session)));
+        }
+
+        if (automatic) {
+            const planned = this._automaticRestorePlan(session_config_objects.map(
+                sessionConfig => ({sessionConfig, modified: 0})));
+            session_config_objects = planned.groups.flatMap(group =>
+                group.entries.map(entry => entry.sessionConfig));
+            if (planned.rejected.length || planned.discarded.length) {
+                this._log.warn(
+                    `Skipped ${planned.rejected.length} unsafe and ` +
+                    `${planned.discarded.length} excess automatic restore records`);
+            }
         }
 
         session_config_objects = session_config_objects.filter(session_config_object => {
@@ -159,7 +178,9 @@ export const RestoreSession = class {
         this._restoreSessionTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
             // In milliseconds.
             // Note that this timing might not be precise, see https://gjs-docs.gnome.org/glib20~2.66.1/glib.timeout_add
-            this._restore_session_interval,
+            automatic
+                ? Math.max(this._restore_session_interval, AUTOMATIC_RESTORE_INTERVAL_MS)
+                : this._restore_session_interval,
             () => {
                 if (!session_config_objects.length || !mayRestoreApplications() ||
                     this._destroyed) {
@@ -245,28 +266,37 @@ export const RestoreSession = class {
                 restoreEntries.sort((left, right) => right.modified - left.modified);
                 restoreEntries.length = MAX_PREVIOUS_SESSION_WINDOWS;
             }
-            restoreEntries.sort((left, right) => {
-                const keyComparison = this._sessionApplicationKey(left.sessionConfig)
-                    .localeCompare(this._sessionApplicationKey(right.sessionConfig));
-                return keyComparison || left.file.get_path().localeCompare(right.file.get_path());
-            });
+            const planned = this._automaticRestorePlan(restoreEntries);
+            if (planned.rejected.length || planned.discarded.length) {
+                this._log.warn(
+                    `Skipped ${planned.rejected.length} unsafe and ` +
+                    `${planned.discarded.length} excess automatic restore records`);
+                if (removeAfterRestore) {
+                    // Unsafe infrastructure records can never become valid user
+                    // applications. Keep bounded excess records, however, so a
+                    // later login can restore them instead of losing user state.
+                    for (const entry of planned.rejected)
+                        FileUtils.removeFile(entry.file.get_path());
+                }
+            }
 
-            for (let index = 0; index < restoreEntries.length; index++) {
+            for (let groupIndex = 0; groupIndex < planned.groups.length; groupIndex++) {
                 if (!mayRestoreApplications() || this._destroyed)
                     break;
 
-                const {file, sessionConfig} = restoreEntries[index];
-                const [launched, running] = await this._restoreOneSession(sessionConfig);
-                if (removeAfterRestore && launched && !running) {
-                    const path = file.get_path();
-                    this._log.debug(`Restored one window for ${sessionConfig.app_name}`);
-                    FileUtils.removeFile(path);
+                for (const {file, sessionConfig} of planned.groups[groupIndex].entries) {
+                    if (!mayRestoreApplications() || this._destroyed)
+                        break;
+                    const [launched, running] = await this._restoreOneSession(sessionConfig);
+                    if (removeAfterRestore && launched && !running) {
+                        this._log.debug(`Restored one window for ${sessionConfig.app_name}`);
+                        FileUtils.removeFile(file.get_path());
+                    }
                 }
 
-                const nextEntry = restoreEntries[index + 1];
-                if (nextEntry && !await this._waitBeforeNextRestore()) {
+                if (planned.groups[groupIndex + 1] &&
+                    !await this._waitBeforeNextRestore(AUTOMATIC_RESTORE_INTERVAL_MS))
                     break;
-                }
             }
         } catch (error) {
             this._log.error(error);
@@ -295,14 +325,35 @@ export const RestoreSession = class {
         return `application:${sessionConfig.app_name ?? ''}`;
     }
 
-    _waitBeforeNextRestore() {
+    _automaticRestorePlan(entries) {
+        const availableEntries = [];
+        const unavailableEntries = [];
+        for (const entry of entries) {
+            const desktopFileId = entry?.sessionConfig?.desktop_file_id;
+            const shellApp = desktopFileId
+                ? this._defaultAppSystem.lookup_app(desktopFileId)
+                : null;
+            const appInfo = shellApp?.get_app_info?.();
+            if (!automaticRestoreDesktopIdAllowed(desktopFileId) ||
+                !shellApp || !appInfo || appInfo.should_show?.() === false) {
+                unavailableEntries.push(entry);
+                continue;
+            }
+            availableEntries.push(entry);
+        }
+        const planned = automaticRestoreGroups(availableEntries);
+        planned.rejected.push(...unavailableEntries);
+        return planned;
+    }
+
+    _waitBeforeNextRestore(minimumIntervalMs = MIN_RESTORE_INTERVAL_MS) {
         if (!mayRestoreApplications() || this._destroyed)
             return Promise.resolve(false);
 
         return new Promise(resolve => {
             const sourceId = GLib.timeout_add(
                 GLib.PRIORITY_LOW,
-                Math.max(100, this._restore_session_interval),
+                Math.max(minimumIntervalMs, this._restore_session_interval),
                 () => {
                     this._pendingRestoreDelays.delete(sourceId);
                     resolve(mayRestoreApplications() && !this._destroyed);
@@ -361,6 +412,15 @@ export const RestoreSession = class {
 
                     const cmd = session_config_object.cmd;
                     if (cmd && cmd.length) {
+                        if (!restoreCommandAllowed(cmd)) {
+                            const message = `Refused to launch unsafe Shell helper ${app_name}`;
+                            this._log.warn(message);
+                            global.notify_error(
+                                message,
+                                'SessionSifu will not relaunch compositor or desktop services.');
+                            resolve([launched, running]);
+                            return;
+                        }
                         const cmdKey = cmd.join('\0');
                         const pid = this._cmdAppIdMap.get(cmdKey);
                         if (pid) {

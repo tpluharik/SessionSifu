@@ -167,7 +167,7 @@ const AutostartService = GObject.registerClass(
         }
 
         Ping() {
-            return 'SessionSifu 3.5.2 is ready';
+            return 'SessionSifu 3.5.3 is ready';
         }
 
         _validSessionName(sessionName) {
@@ -538,7 +538,7 @@ const AutostartDialog = GObject.registerClass(
         _confirm() {
             Autoclose.autocloseObject.sessionClosedByUser = false;
             const _restoreSession = new RestoreSession.RestoreSession();
-            _restoreSession.restoreSession(this._sessionName);
+            _restoreSession.restoreSession(this._sessionName, null, true);
         }
 
         _cancel() {

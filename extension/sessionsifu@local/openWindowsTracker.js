@@ -4,6 +4,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Shell from 'gi://Shell';
 import Meta from 'gi://Meta';
+import GObject from 'gi://GObject';
 
 import * as SystemActions from 'resource:///org/gnome/shell/misc/systemActions.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
@@ -140,10 +141,11 @@ export const OpenWindowsTracker = class {
             'enable-restore-previous-session'
         ];
         settingsChangedToSaveAllWindows.forEach((setting) => {
-            this._settings.connect(`changed::${setting}`, () => {
+            const settingsId = this._settings.connect(`changed::${setting}`, () => {
                 if (this._settings.get_boolean(`${setting}`))
                     this._saveAllWindows();
             });
+            this._signals.push([settingsId, this._settings]);
         });
 
         const windowTiledId = WindowTilingSupport.connect('window-tiled', (signals, w1, w2) => {
@@ -599,6 +601,11 @@ export const OpenWindowsTracker = class {
     destroy() {
         this._cancelAllRunningSave();
 
+        this._moveSession?.destroy();
+        this._moveSession = null;
+        this._saveSession?.destroy();
+        this._saveSession = null;
+
         if (this._busWatchId) {
             Gio.bus_unwatch_name(this._busWatchId);
             this._busWatchId = 0;
@@ -644,8 +651,11 @@ export const OpenWindowsTracker = class {
 
         if (this._signals && this._signals.length) {
             this._signals.forEach(([id, obj]) => {
-                if (id && obj) {
-                    obj.disconnect(id);
+                try {
+                    if (id && obj && GObject.signal_handler_is_connected(obj, id))
+                        obj.disconnect(id);
+                } catch (_error) {
+                    // GNOME may dispose display/window objects before extension teardown.
                 }
             });
             this._signals = null;
