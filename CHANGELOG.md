@@ -20,6 +20,9 @@ All notable SessionSifu changes are documented here.
   bounded thumbnail per visible result.
 - Added cross-worker cache/index regressions, semantic-cache coverage and
   documented performance, privacy and invalidation boundaries.
+- Made tagged releases withhold unsigned Windows/Chocolatey assets while
+  allowing verified GNOME, Linux and macOS artifacts to publish during the
+  external SignPath approval wait.
 
 ## 3.4.1
 

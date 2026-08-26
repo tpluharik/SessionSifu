@@ -1,11 +1,11 @@
 {
-  "version": "3.4.1",
+  "version": "3.5.0",
   "channel": "stable",
-  "issued_at": "2026-08-25T18:45:25Z",
-  "expires_at": "2026-10-09T18:45:25Z",
+  "issued_at": "2026-08-26T03:50:38Z",
+  "expires_at": "2026-10-10T03:50:38Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.4.1_all.deb",
-  "sha256": "7b3b5aae15b828d2a0800707faf1aeabd4348ce8d15318cd172bb21e1f8905a8",
-  "size": 3725984,
-  "notes": "SessionSifu 3.4.1 repairs control-panel, restore and Recall startup after a legacy user-local updater copied only part of the 3.4.0 payload."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.0_all.deb",
+  "sha256": "a0376eb93e504e3a0d6f1e6e382864211cfa91d66a2892d354ed06f8982ec895",
+  "size": 3729952,
+  "notes": "SessionSifu 3.5.0 makes Recall search responsive with a bounded memory-only index, background query execution, incremental previews and cached offline semantic document vectors."
 }

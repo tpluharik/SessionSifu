@@ -50,4 +50,27 @@ with tempfile.TemporaryDirectory() as temporary:
     cask = (output / "homebrew/Casks/sessionsifu.rb").read_text()
     assert "on_arm do" in cask and "on_intel do" in cask
 
+    without_windows = temp / "without-windows"
+    without_windows.mkdir()
+    for name in names[1:]:
+        (without_windows / name).write_bytes((assets / name).read_bytes())
+    partial_output = temp / "partial-output"
+    subprocess.run(
+        [
+            "python3",
+            str(ROOT / "packaging/generate-marketplace-metadata.py"),
+            "--asset-dir",
+            str(without_windows),
+            "--output",
+            str(partial_output),
+            "--project-root",
+            str(ROOT),
+        ],
+        check=True,
+    )
+    assert (partial_output / "aur/sessionsifu-bin/PKGBUILD").is_file()
+    assert (partial_output / "homebrew/Casks/sessionsifu.rb").is_file()
+    assert not (partial_output / "winget").exists()
+    assert not (partial_output / "chocolatey").exists()
+
 print("marketplace metadata checks passed")

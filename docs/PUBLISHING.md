@@ -103,16 +103,18 @@ organization, project and policy identifiers; placeholder identifiers are not
 committed.
 
 The existing certificate-authority-issued PFX path remains a fallback. Tagged
-Windows releases are blocked unless either the approved SignPath integration is
-configured or the `release` GitHub environment contains both
+releases withhold the Windows archive unless either the approved SignPath
+integration is configured or the `release` GitHub environment contains both
 `WINDOWS_CERTIFICATE_PFX_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD`. The PFX
 fallback decodes the certificate only into the runner's temporary directory,
 signs and verifies `SessionSifu.exe`, rebuilds the ZIP and deletes the temporary
 PFX. A development build from a branch may be unsigned, but it is never
-submitted to Chocolatey.
+attached to a public release or submitted to Chocolatey. Linux, GNOME and macOS
+assets can still ship while Windows signing is pending.
 
-After a tagged GitHub Release is created, the Chocolatey job regenerates its
-package from the immutable release archives, packs it and submits it using
+After a tagged GitHub Release with a signed Windows asset is created, the
+Chocolatey job regenerates its package from the immutable release archives,
+packs it and submits it using
 `CHOCOLATEY_API_KEY` from the same `release` environment. The API key and PFX
 must be provisioned through GitHub's encrypted-secret UI or CLI input and must
 never be committed or pasted into logs, issues or documentation.

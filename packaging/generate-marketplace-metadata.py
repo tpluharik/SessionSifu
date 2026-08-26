@@ -31,13 +31,13 @@ def project_version(root: Path) -> str:
     return match.group(1)
 
 
-def require_one(asset_dir: Path, pattern: str) -> Path:
+def optional_one(asset_dir: Path, pattern: str) -> Path | None:
     matches = sorted(asset_dir.rglob(pattern))
-    if len(matches) != 1:
+    if len(matches) > 1:
         raise SystemExit(
-            f"Expected exactly one {pattern!r} below {asset_dir}, found {len(matches)}"
+            f"Expected at most one {pattern!r} below {asset_dir}, found {len(matches)}"
         )
-    return matches[0]
+    return matches[0] if matches else None
 
 
 def write(path: Path, content: str) -> None:
@@ -212,14 +212,21 @@ def main() -> None:
     )
     args = parser.parse_args()
     version = project_version(args.project_root)
-    windows = require_one(args.asset_dir, f"SessionSifu-{version}-windows-x64.zip")
-    linux = require_one(args.asset_dir, f"SessionSifu-{version}-linux-x64.tar.gz")
-    mac_arm = require_one(args.asset_dir, f"SessionSifu-{version}-macos-arm64.zip")
-    mac_intel = require_one(args.asset_dir, f"SessionSifu-{version}-macos-x64.zip")
-    generate_winget(args.output, version, windows)
-    generate_chocolatey(args.output, version, windows)
-    generate_aur(args.output, version, linux)
-    generate_homebrew(args.output, version, mac_arm, mac_intel)
+    windows = optional_one(args.asset_dir, f"SessionSifu-{version}-windows-x64.zip")
+    linux = optional_one(args.asset_dir, f"SessionSifu-{version}-linux-x64.tar.gz")
+    mac_arm = optional_one(args.asset_dir, f"SessionSifu-{version}-macos-arm64.zip")
+    mac_intel = optional_one(args.asset_dir, f"SessionSifu-{version}-macos-x64.zip")
+    if windows is not None:
+        generate_winget(args.output, version, windows)
+        generate_chocolatey(args.output, version, windows)
+    if linux is not None:
+        generate_aur(args.output, version, linux)
+    if mac_arm is not None and mac_intel is not None:
+        generate_homebrew(args.output, version, mac_arm, mac_intel)
+    elif mac_arm is not None or mac_intel is not None:
+        raise SystemExit("Both macOS architectures are required for Homebrew metadata")
+    if not any((windows, linux, mac_arm, mac_intel)):
+        raise SystemExit(f"No SessionSifu {version} release artifacts were found")
     print(args.output)
 
 

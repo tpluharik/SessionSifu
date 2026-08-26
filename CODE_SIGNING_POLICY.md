@@ -64,8 +64,10 @@ The release workflow must:
 7. keep service tokens in the protected GitHub `release` environment.
 
 Until the SignPath Foundation application is approved and project identifiers
-are provisioned, tagged Windows releases remain blocked. A public release must
-never be unblocked with a self-signed certificate.
+are provisioned, tagged releases withhold the Windows archive and the
+Chocolatey/WinGet metadata derived from it. Linux, GNOME and macOS artifacts may
+still be published with their signing status stated accurately. A Windows
+release must never be unblocked with a self-signed certificate.
 
 ## Key custody and compromise response
 
@@ -79,4 +81,3 @@ the affected tags and hashes, publishes a security advisory when users may be
 affected, and restores the workflow only after new credentials and a clean
 build are verified. General release-key recovery is documented in
 [docs/RELEASE_SECURITY.md](docs/RELEASE_SECURITY.md).
-
