@@ -1,11 +1,11 @@
 {
-  "version": "3.5.2",
+  "version": "3.5.3",
   "channel": "stable",
-  "issued_at": "2026-08-26T19:41:06Z",
-  "expires_at": "2026-10-10T19:41:06Z",
+  "issued_at": "2026-08-26T20:23:26Z",
+  "expires_at": "2026-10-10T20:23:26Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.2_all.deb",
-  "sha256": "c7712c429a900183d174e79c83edce8a494935d2f47ed91de1c74917266d6e6e",
-  "size": 3733126,
-  "notes": "SessionSifu 3.5.2 prevents Wayland overload by deduplicating and pacing session restoration, serializing safe visible-window Recall capture and cancelling Shell callbacks during teardown."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.3_all.deb",
+  "sha256": "cc86ca257845ff38dd34040489ba800fbde48225aea2cb81986be02156c8e5e4",
+  "size": 3736198,
+  "notes": "SessionSifu 3.5.3 prevents Wayland restarts by rejecting Shell helpers and command-only processes from automatic restoration, bounding and pacing application launches, excluding desktop infrastructure from saved sessions and making signal teardown idempotent."
 }
