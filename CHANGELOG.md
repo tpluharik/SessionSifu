@@ -4,6 +4,11 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.2
+
+- Published the Wayland restore pacing, Recall capture and extension teardown
+  stability corrections as a distinct patch release.
+
 ## 3.5.1
 
 - Prevented Wayland compositor overload during previous-session restoration by

@@ -125,7 +125,7 @@ jobs:
             }
             "signed=true" >> $env:GITHUB_OUTPUT
 
-            $archive = 'dist\portable\SessionSifu-3.5.1-windows-x64.zip'
+            $archive = 'dist\portable\SessionSifu-3.5.2-windows-x64.zip'
             Remove-Item $archive -Force
             Compress-Archive `
               -Path 'build\pyinstaller-windows-x64\dist\SessionSifu' `
