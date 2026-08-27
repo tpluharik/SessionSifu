@@ -66,6 +66,30 @@ def process_files(pid: int, limit: int = 32) -> list[str]:
     return found
 
 
+def cached_process_snapshot(
+    cache: dict[int, tuple[str, list[str], list[str]]],
+    pid: int,
+    *,
+    include_files: bool = True,
+) -> tuple[str, list[str], list[str]]:
+    """Resolve process metadata once per PID during a capture operation.
+
+    Desktop APIs commonly return several windows for one application process.
+    Repeating executable, command-line and open-file discovery for each window
+    is expensive on every supported OS and can race a process that is exiting.
+    The cache is deliberately capture-scoped so no process information survives
+    longer than the snapshot operation.
+    """
+    cached = cache.get(pid)
+    if cached is not None:
+        executable, command, files = cached
+        return executable, list(command), list(files) if include_files else []
+    executable, command = process_details(pid, include_command=include_files)
+    files = process_files(pid) if include_files else []
+    cache[pid] = (executable, list(command), list(files))
+    return executable, list(command), list(files)
+
+
 class PlatformAdapter(ABC):
     key = "unknown"
     desktop = "Unknown"

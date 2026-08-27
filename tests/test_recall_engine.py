@@ -183,6 +183,29 @@ class RecallEngineTests(unittest.TestCase):
             self.assertEqual(vault.delete(record=record.name), 1)
             self.assertEqual(list(vault.vault.iterdir()), [])
 
+    def test_exact_duplicate_is_rejected_before_ocr(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            vault = RecallVault(root, test_key=b"d" * 32)
+            calls: list[str] = []
+
+            def recognize(path: Path):
+                calls.append(path.name)
+                return "visible text", []
+
+            vault._ocr = recognize
+            first = self.capture(root)
+            (root / f"{first.stem}-display-0.jpg").write_bytes(b"same-pixels")
+            self.assertTrue(vault.finalize(first, RecallPolicy(ocr=True))["saved"])
+
+            second = self.capture(root)
+            second_target = root / "recall-20260822-120001-123.json"
+            second.replace(second_target)
+            (root / f"{second_target.stem}-display-0.jpg").write_bytes(b"same-pixels")
+            result = vault.finalize(second_target, RecallPolicy(ocr=True))
+            self.assertEqual(result, {"saved": False, "reason": "screen unchanged"})
+            self.assertEqual(len(calls), 1)
+
     def test_structured_ocr_filters_noise_and_normalizes_word_boxes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

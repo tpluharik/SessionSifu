@@ -1,11 +1,11 @@
 {
-  "version": "3.5.3",
+  "version": "3.5.4",
   "channel": "stable",
-  "issued_at": "2026-08-26T20:23:26Z",
-  "expires_at": "2026-10-10T20:23:26Z",
+  "issued_at": "2026-08-27T05:42:38Z",
+  "expires_at": "2026-10-11T05:42:38Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.3_all.deb",
-  "sha256": "cc86ca257845ff38dd34040489ba800fbde48225aea2cb81986be02156c8e5e4",
-  "size": 3736198,
-  "notes": "SessionSifu 3.5.3 prevents Wayland restarts by rejecting Shell helpers and command-only processes from automatic restoration, bounding and pacing application launches, excluding desktop infrastructure from saved sessions and making signal teardown idempotent."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.4_all.deb",
+  "sha256": "73dc0497baae434019246abb4afcfe361e23d19b454978613303736387c4fd35",
+  "size": 3738378,
+  "notes": "SessionSifu 3.5.4 makes Recall capture and search substantially lighter: unchanged captures skip OCR, duplicate images reuse encrypted OCR, CPU-heavy work and thumbnails are bounded in background workers, process/accessibility discovery is cached, KDE uses batched KWin requests and GNOME tracking is event-driven."
 }

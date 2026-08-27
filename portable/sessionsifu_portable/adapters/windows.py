@@ -9,7 +9,7 @@ import subprocess
 from collections import defaultdict
 from pathlib import Path
 
-from .base import AdapterCapabilities, PlatformAdapter, process_details, process_files
+from .base import AdapterCapabilities, PlatformAdapter, cached_process_snapshot
 from ..model import MonitorSnapshot, SessionSnapshot, WindowSnapshot
 
 
@@ -87,6 +87,7 @@ class WindowsAdapter(PlatformAdapter):
 
     def _enumerate(self, include_files: bool = True) -> list[WindowSnapshot]:
         windows: list[WindowSnapshot] = []
+        process_cache: dict[int, tuple[str, list[str], list[str]]] = {}
 
         def visit(hwnd: int, _data: int) -> bool:
             if not self.user32.IsWindowVisible(hwnd):
@@ -102,7 +103,9 @@ class WindowsAdapter(PlatformAdapter):
                 return True
             pid = ctypes.c_ulong()
             self.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-            executable, command = process_details(pid.value, include_command=include_files)
+            executable, command, open_files = cached_process_snapshot(
+                process_cache, pid.value, include_files=include_files
+            )
             if not executable:
                 return True
             app_name = Path(executable).stem
@@ -126,7 +129,7 @@ class WindowsAdapter(PlatformAdapter):
                     geometry=[rect.left, rect.top, width, height],
                     minimized=bool(self.user32.IsIconic(hwnd)),
                     maximized=bool(self.user32.IsZoomed(hwnd)),
-                    open_files=process_files(pid.value) if include_files else [],
+                    open_files=open_files,
                 )
             )
             return True
@@ -159,7 +162,7 @@ class WindowsAdapter(PlatformAdapter):
     def apply_layout(self, session: SessionSnapshot) -> None:
         session = self.reconciled_session(session)
         available: dict[str, list[WindowSnapshot]] = defaultdict(list)
-        for current in self._enumerate():
+        for current in self._enumerate(include_files=False):
             available[current.app_id].append(current)
         used: set[str] = set()
         for saved in session.windows:

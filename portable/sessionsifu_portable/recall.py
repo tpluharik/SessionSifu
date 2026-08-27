@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import csv
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -17,6 +18,7 @@ import time
 import urllib.parse
 import threading
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -241,6 +243,7 @@ class RecallStore:
         self._index_signature: tuple[tuple[str, int, int], ...] = ()
         self._index_connection: sqlite3.Connection | None = None
         self._storage_cache: tuple[int, int] | None = None
+        self._paths_cache: tuple[int, list[Path]] | None = None
 
     def _ensure_directory(self) -> None:
         if self.recall_dir.is_symlink() or self.vault_dir.is_symlink():
@@ -342,9 +345,15 @@ class RecallStore:
         # window images can be retained safely because they are mapped before save.
         if has_excluded_window or has_protected_window:
             preview = None
+        previous_path = next(iter(self._paths()), None)
+        previous = self._load(previous_path) if previous_path else None
+        previous_windows_by_digest = {
+            str(item.get("image_digest")): item
+            for item in list((previous or {}).get("windows") or [])[:MAX_WINDOW_PREVIEWS]
+            if isinstance(item, dict) and item.get("image_digest")
+        }
+        previous_display_digest = str((previous or {}).get("image_digest") or "")
         windows = []
-        remaining_window_ocr = MAX_TOTAL_WINDOW_OCR_BYTES
-        remaining_window_boxes = MAX_TOTAL_WINDOW_OCR_BOXES
         for source_index, window in enumerate(session.windows):
             if _matches_exclusion(window, exclusions):
                 continue
@@ -367,32 +376,80 @@ class RecallStore:
                 if not isinstance(image, bytes) or len(image) > MAX_PREVIEW_BYTES:
                     raise ValueError("Recall window preview exceeds the safety limit")
                 item["_preview"] = image
-                if ocr_enabled and remaining_window_ocr:
-                    text, boxes = self._ocr(image)
-                    ocr_diagnostics = {
-                        "state": "completed", "engine": "tesseract",
-                        "word_count": len(text.split()), "recognized_characters": len(text),
-                    }
-                    text = text.encode("utf-8")[
-                        :min(MAX_WINDOW_OCR_BYTES, remaining_window_ocr)
-                    ].decode("utf-8", "ignore")
-                    if text:
-                        item["ocr_text"] = text
-                        item["ocr_boxes"] = boxes[:remaining_window_boxes]
-                        remaining_window_boxes -= len(item["ocr_boxes"])
-                        remaining_window_ocr -= len(text.encode("utf-8"))
-                    item["ocr_diagnostics"] = ocr_diagnostics
+                item["image_digest"] = hashlib.sha256(image).hexdigest()
             item["_source_index"] = source_index
             windows.append(item)
         if not windows:
             raise RuntimeError("No non-excluded windows were available for Privacy Recall")
         stamp = datetime.now(timezone.utc).strftime("recall-%Y%m%d-%H%M%S-%f")
-        if preview and ocr_enabled:
-            ocr_text, ocr_boxes = self._ocr(preview)
-            display_ocr_diagnostics = {
-                "state": "completed", "engine": "tesseract",
-                "word_count": len(ocr_text.split()), "recognized_characters": len(ocr_text),
-            }
+        display_digest = hashlib.sha256(preview).hexdigest() if preview else ""
+        pending_ocr: list[tuple[str, int, bytes]] = []
+        if ocr_enabled:
+            for index, item in enumerate(windows):
+                image = item.get("_preview")
+                digest = str(item.get("image_digest") or "")
+                reused = previous_windows_by_digest.get(digest)
+                if reused is not None:
+                    item["_raw_ocr"] = (
+                        str(reused.get("ocr_text") or ""),
+                        list(reused.get("ocr_boxes") or []),
+                        {**dict(reused.get("ocr_diagnostics") or {}), "reused": True},
+                    )
+                elif isinstance(image, bytes):
+                    pending_ocr.append(("window", index, image))
+            if preview and display_digest == previous_display_digest:
+                display_result = (
+                    str((previous or {}).get("ocr_text") or ""),
+                    list((previous or {}).get("ocr_boxes") or []),
+                    {**dict((previous or {}).get("ocr_diagnostics") or {}), "reused": True},
+                )
+            else:
+                display_result = None
+                if preview:
+                    pending_ocr.append(("display", -1, preview))
+            if pending_ocr:
+                with ThreadPoolExecutor(
+                    max_workers=min(2, len(pending_ocr)),
+                    thread_name_prefix="sessionsifu-ocr",
+                ) as executor:
+                    recognized = list(executor.map(
+                        self._ocr, (item[2] for item in pending_ocr)
+                    ))
+                for (kind, index, _image), (text, boxes) in zip(pending_ocr, recognized):
+                    result = (text, boxes, {
+                        "state": "completed", "engine": "tesseract",
+                        "word_count": len(text.split()),
+                        "recognized_characters": len(text),
+                    })
+                    if kind == "display":
+                        display_result = result
+                    else:
+                        windows[index]["_raw_ocr"] = result
+        else:
+            display_result = None
+
+        remaining_window_ocr = MAX_TOTAL_WINDOW_OCR_BYTES
+        remaining_window_boxes = MAX_TOTAL_WINDOW_OCR_BOXES
+        for item in windows:
+            raw_text, raw_boxes, diagnostics = item.pop(
+                "_raw_ocr", ("", [], {
+                    "state": "disabled" if not ocr_enabled else "no-preview",
+                    "engine": "tesseract",
+                })
+            )
+            text = str(raw_text).encode("utf-8")[
+                :min(MAX_WINDOW_OCR_BYTES, remaining_window_ocr)
+            ].decode("utf-8", "ignore")
+            boxes = list(raw_boxes)[:remaining_window_boxes]
+            if text:
+                item["ocr_text"] = text
+                item["ocr_boxes"] = boxes
+                remaining_window_ocr -= len(text.encode("utf-8"))
+                remaining_window_boxes -= len(boxes)
+            item["ocr_diagnostics"] = dict(diagnostics)
+
+        if display_result is not None:
+            ocr_text, ocr_boxes, display_ocr_diagnostics = display_result
         else:
             ocr_text, ocr_boxes, display_ocr_diagnostics = "", [], {
                 "state": "disabled" if not ocr_enabled else "no-display-preview",
@@ -460,6 +517,7 @@ class RecallStore:
             "ocr_text": ocr_text,
             "ocr_boxes": ocr_boxes,
             "ocr_diagnostics": display_ocr_diagnostics,
+            "image_digest": display_digest,
             "urls": urls,
             "targets": [
                 *[str(target) for item in windows for target in item.get("targets", [])],
@@ -624,11 +682,19 @@ class RecallStore:
     def _paths(self) -> list[Path]:
         if not self.vault_dir.is_dir() or self.vault_dir.is_symlink():
             return []
-        return sorted(
+        try:
+            modified = self.vault_dir.stat().st_mtime_ns
+        except OSError:
+            return []
+        if self._paths_cache and self._paths_cache[0] == modified:
+            return list(self._paths_cache[1])
+        paths = sorted(
             (path for path in self.vault_dir.glob("*.ssrec") if path.is_file() and not path.is_symlink() and RECORD_RE.fullmatch(path.name)),
             key=lambda path: path.stat().st_mtime_ns,
             reverse=True,
         )
+        self._paths_cache = (modified, paths)
+        return list(paths)
 
     def _load(self, path: Path) -> dict | None:
         with self._search_lock:
@@ -736,9 +802,23 @@ class RecallStore:
         hours = max(1, min(24 * 30, int(retention_hours)))
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         quota = max(64, min(16384, int(quota_mb))) * 1024 * 1024
+        inventory: dict[str, int] = {}
+        with contextlib.suppress(OSError):
+            inventory = {
+                path.name: path.stat().st_size
+                for path in self.vault_dir.iterdir()
+                if path.is_file() and not path.is_symlink()
+            }
+        total = sum(inventory.values())
         for index, path in enumerate(self._paths()):
             modified = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
-            if index >= RECALL_MAX_ENTRIES or modified < cutoff or self.storage_bytes() > quota:
+            if index >= RECALL_MAX_ENTRIES or modified < cutoff or total > quota:
+                payload = self._load(path)
+                total -= inventory.get(path.name, 0)
+                if payload:
+                    total -= sum(
+                        inventory.get(name, 0) for name in self._payload_images(payload)
+                    )
                 self._delete_path(path)
         referenced = {
             name
@@ -755,6 +835,8 @@ class RecallStore:
                 and not image.is_symlink()
             ):
                 image.unlink(missing_ok=True)
+        self._storage_cache = None
+        self._paths_cache = None
 
     def _delete_path(self, path: Path) -> None:
         payload = self._load(path)
@@ -804,6 +886,7 @@ class RecallStore:
         records = [(path, payload) for path, payload in records if payload]
         connection = self._ensure_search_index(records, signature)
         try:
+            path_validity: dict[str, bool] = {}
             loaded = []
             for path, payload in records:
                 visible_windows = []
@@ -833,11 +916,12 @@ class RecallStore:
                     for term in terms
                 )
                 if expression:
+                    candidate_limit = max(500, min(2000, max(1, int(limit)) * 8))
                     with contextlib.suppress(sqlite3.OperationalError):
                         for key, rank in connection.execute(
                             "SELECT key, bm25(recall_windows,0,6,5,3,5,4) "
-                            "FROM recall_windows WHERE recall_windows MATCH ? ORDER BY 2",
-                            (expression,),
+                            "FROM recall_windows WHERE recall_windows MATCH ? ORDER BY 2 LIMIT ?",
+                            (expression, candidate_limit),
                         ):
                             window_candidates[key] = -float(rank)
                     with contextlib.suppress(sqlite3.OperationalError):
@@ -860,6 +944,39 @@ class RecallStore:
                         ])
                 for key, score in self.semantic.rank(needle, documents).items():
                     window_candidates[key] = max(window_candidates.get(key, 0.0), score * 4.0)
+
+            result_limit = max(1, min(250, int(limit)))
+            if not needle and not app:
+                loaded.sort(
+                    key=lambda item: float(
+                        item[1].get("modified") or item[0].stat().st_mtime
+                    ),
+                    reverse=True,
+                )
+                loaded = loaded[:result_limit]
+            selected_window_keys: set[str] | None = None
+            if needle or app:
+                ranked_windows: list[tuple[float, float, str]] = []
+                app_token = app.casefold()
+                for path, payload, windows, _preview_allowed in loaded:
+                    modified = float(payload.get("modified") or path.stat().st_mtime)
+                    for index, window in windows:
+                        identities = {
+                            str(window.get("app_id", "")).casefold(),
+                            str(window.get("app_name", "")).casefold(),
+                        }
+                        if app and app_token not in identities:
+                            continue
+                        key = f"{path.name}#{index}"
+                        if needle and key not in window_candidates:
+                            continue
+                        ranked_windows.append((
+                            float(window_candidates.get(key, 0.0)), modified, key
+                        ))
+                ranked_windows.sort(key=lambda item: (-item[0], -item[1]))
+                selected_window_keys = {
+                    key for _rank, _modified, key in ranked_windows[:result_limit]
+                }
 
             results = []
             for path, payload, windows, preview_allowed in loaded:
@@ -897,7 +1014,7 @@ class RecallStore:
                         "targets": list(dict.fromkeys([
                             *(str(target) for _index, window in windows
                               for target in window.get("targets", [])),
-                            *self._targets(files, urls),
+                            *self._targets(files, urls, path_validity),
                         ]))[:32],
                         "urls": urls,
                         "rank": 0.0,
@@ -916,7 +1033,7 @@ class RecallStore:
                     if app and app_token not in identities:
                         continue
                     key = f"{path.name}#{index}"
-                    if needle and key not in window_candidates:
+                    if selected_window_keys is not None and key not in selected_window_keys:
                         continue
                     files = [str(value) for value in window.get("open_files", [])]
                     title = str(window.get("title") or "")
@@ -929,7 +1046,7 @@ class RecallStore:
                         "files": files,
                         "targets": list(dict.fromkeys([
                             *(str(target) for target in window.get("targets", [])),
-                            *self._targets(files, urls),
+                            *self._targets(files, urls, path_validity),
                         ]))[:32],
                         "urls": urls,
                         "rank": round(window_candidates.get(key, 0.0), 4),
@@ -981,12 +1098,20 @@ class RecallStore:
             pass
 
     @staticmethod
-    def _targets(files: list[str], urls: list[str]) -> list[str]:
-        targets = [
-            Path(value).as_uri()
-            for value in files
-            if Path(value).is_absolute() and Path(value).is_file()
-        ]
+    def _targets(
+        files: list[str], urls: list[str],
+        validity: dict[str, bool] | None = None,
+    ) -> list[str]:
+        validity = validity if validity is not None else {}
+        targets = []
+        for value in files:
+            path = Path(value)
+            if not path.is_absolute():
+                continue
+            if value not in validity:
+                validity[value] = path.is_file()
+            if validity[value]:
+                targets.append(path.as_uri())
         targets.extend(urls)
         return list(dict.fromkeys(targets))[:32]
 

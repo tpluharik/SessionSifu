@@ -103,14 +103,47 @@ class SessionController:
         sensitive_filter: bool = True,
         quota_mb: int = 512,
     ) -> Path:
-        session = self.adapter.capture(include_files=include_file_paths)
-        self.adapter.enrich_content(session)
+        session = self.prepare_recall(include_file_paths=include_file_paths)
         window_previews: dict[int, bytes] = {}
         if visual_provider is not None:
             visual_result = visual_provider(session)
             preview, window_previews = visual_result[:2]
             if len(visual_result) > 2 and isinstance(visual_result[2], dict):
                 session.capture_diagnostics.update(visual_result[2])
+        return self.save_prepared_recall(
+            session,
+            retention_hours=retention_hours,
+            excluded_apps=excluded_apps,
+            excluded_websites=excluded_websites,
+            include_file_paths=include_file_paths,
+            preview=preview,
+            window_previews=window_previews,
+            ocr_enabled=ocr_enabled,
+            sensitive_filter=sensitive_filter,
+            quota_mb=quota_mb,
+        )
+
+    def prepare_recall(self, *, include_file_paths: bool = False) -> SessionSnapshot:
+        """Capture and enrich plain snapshot data before GUI-owned image grabs."""
+        session = self.adapter.capture(include_files=include_file_paths)
+        self.adapter.enrich_content(session)
+        return session
+
+    def save_prepared_recall(
+        self,
+        session: SessionSnapshot,
+        *,
+        retention_hours: int = 24,
+        excluded_apps: list[str] | tuple[str, ...] = (),
+        excluded_websites: list[str] | tuple[str, ...] = (),
+        include_file_paths: bool = False,
+        preview: bytes | None = None,
+        window_previews: dict[int, bytes] | None = None,
+        ocr_enabled: bool = False,
+        sensitive_filter: bool = True,
+        quota_mb: int = 512,
+    ) -> Path:
+        """Finalize an already captured snapshot without touching GUI objects."""
         return self.recall_store.save(
             session,
             retention_hours=retention_hours,

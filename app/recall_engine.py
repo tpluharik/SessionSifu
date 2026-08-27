@@ -26,6 +26,7 @@ import urllib.parse
 import uuid
 import threading
 from collections import OrderedDict, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -668,6 +669,7 @@ class RecallVault:
         self._index_connection: sqlite3.Connection | None = None
         self._fuzzy_terms: dict[int, dict[str, set[str]]] = {}
         self._storage_cache: tuple[int, int] | None = None
+        self._paths_cache: tuple[int, list[Path]] | None = None
 
     def _ensure(self) -> None:
         if self.root.is_symlink() or self.vault.is_symlink():
@@ -900,24 +902,6 @@ class RecallVault:
             ):
                 continue
             valid_images.append(image)
-            if policy.ocr:
-                ocr_result = self._ocr(image)
-                # Preserve compatibility with third-party test/finalizer
-                # integrations that supplied a text-only OCR callback.
-                if isinstance(ocr_result, tuple):
-                    text, boxes = ocr_result
-                else:
-                    text, boxes = str(ocr_result), []
-                if text:
-                    match = IMAGE_RE.fullmatch(image.name)
-                    if match and match.group(1) == "window":
-                        index = int(match.group(2))
-                        window_ocr[index] = text[:MAX_WINDOW_OCR_BYTES]
-                        window_ocr_boxes[index] = boxes
-                    else:
-                        display_ocr_parts.append(text)
-                        if match:
-                            display_ocr_boxes[int(match.group(2))] = boxes
 
         apps, titles, files, targets, urls = [], [], [], [], []
         accessible_parts = []
@@ -947,6 +931,53 @@ class RecallVault:
             ), MAX_ACCESSIBLE_BYTES_PER_WINDOW)
             if accessible:
                 accessible_parts.append(accessible)
+
+        # Exact duplicate captures were already discarded after OCR.  Move the
+        # identical decision before OCR so unchanged desktops do no expensive
+        # recognition work.  Digests contain no plaintext and are persisted in
+        # the encrypted record exactly as before.
+        image_hashes = [
+            hashlib.sha256(image.read_bytes()).hexdigest()
+            for image in valid_images
+        ]
+        previous_path = next(iter(self._record_paths()), None)
+        previous = self._load(previous_path) if previous_path else None
+        if (
+            image_hashes and previous and previous.get("image_hashes") == image_hashes and
+            previous.get("apps") == apps and previous.get("titles") == titles
+        ):
+            self._discard_legacy(capture, image_paths)
+            self._write_status(
+                state="skipped", reason="screen unchanged", screenshots=len(image_hashes),
+                duration_ms=round((time.monotonic() - started) * 1000),
+            )
+            return {"saved": False, "reason": "screen unchanged"}
+
+        if policy.ocr and valid_images:
+            # Tesseract runs outside GNOME Shell and is capped at two workers to
+            # avoid CPU/memory spikes when many windows are visible.
+            with ThreadPoolExecutor(
+                max_workers=min(2, len(valid_images)),
+                thread_name_prefix="sessionsifu-ocr",
+            ) as executor:
+                ocr_results = list(executor.map(self._ocr, valid_images))
+            for image, ocr_result in zip(valid_images, ocr_results):
+                # Preserve compatibility with third-party text-only callbacks.
+                if isinstance(ocr_result, tuple):
+                    text, boxes = ocr_result
+                else:
+                    text, boxes = str(ocr_result), []
+                if not text:
+                    continue
+                match = IMAGE_RE.fullmatch(image.name)
+                if match and match.group(1) == "window":
+                    index = int(match.group(2))
+                    window_ocr[index] = text[:MAX_WINDOW_OCR_BYTES]
+                    window_ocr_boxes[index] = boxes
+                else:
+                    display_ocr_parts.append(text)
+                    if match:
+                        display_ocr_boxes[int(match.group(2))] = boxes
         targets.extend(
             Path(value).as_uri()
             for value in files
@@ -991,27 +1022,14 @@ class RecallVault:
                     normalized_displays.append(normalized)
 
         image_names = []
-        image_hashes = []
-        for image in valid_images:
-            image_hashes.append(hashlib.sha256(image.read_bytes()).hexdigest())
-        previous_path = next(iter(self._record_paths()), None)
-        previous = self._load(previous_path) if previous_path else None
-        if (
-            image_hashes and previous and previous.get("image_hashes") == image_hashes and
-            previous.get("apps") == apps and previous.get("titles") == titles
-        ):
-            self._discard_legacy(capture, image_paths)
-            self._write_status(
-                state="skipped", reason="screen unchanged", screenshots=len(image_hashes),
-                duration_ms=round((time.monotonic() - started) * 1000),
-            )
-            return {"saved": False, "reason": "screen unchanged"}
-        image_hashes = []
         image_index_by_display = {}
         image_index_by_window = {}
+        scene_id = ""
         try:
             for image in valid_images:
                 raw = image.read_bytes()
+                if not scene_id:
+                    scene_id = _visual_hash_bytes(raw)
                 target = self.vault / f"{image.stem}.ssimg"
                 self._atomic_encrypted(target, raw)
                 match = IMAGE_RE.fullmatch(image.name)
@@ -1022,7 +1040,6 @@ class RecallVault:
                     else:
                         image_index_by_window[index] = len(image_names)
                 image_names.append(target.name)
-                image_hashes.append(hashlib.sha256(raw).hexdigest())
         except Exception:
             for name in image_names:
                 (self.vault / name).unlink(missing_ok=True)
@@ -1102,7 +1119,7 @@ class RecallVault:
             "displays": normalized_displays,
             "images": image_names,
             "image_hashes": image_hashes,
-            "scene_id": _visual_hash_bytes(valid_images[0].read_bytes()) if valid_images else "",
+            "scene_id": scene_id,
             "annotations": {"bookmarked": False, "collection": "", "note": ""},
             "ocr_diagnostics": {
                 "state": "completed" if policy.ocr else "disabled",
@@ -1181,11 +1198,19 @@ class RecallVault:
     def _record_paths(self) -> list[Path]:
         if not self.vault.is_dir() or self.vault.is_symlink():
             return []
-        return sorted(
+        try:
+            modified = self.vault.stat().st_mtime_ns
+        except OSError:
+            return []
+        if self._paths_cache and self._paths_cache[0] == modified:
+            return list(self._paths_cache[1])
+        paths = sorted(
             (path for path in self.vault.glob("*.ssrec") if VAULT_RE.fullmatch(path.name) and path.is_file() and not path.is_symlink()),
             key=lambda path: path.stat().st_mtime_ns,
             reverse=True,
         )
+        self._paths_cache = (modified, paths)
+        return list(paths)
 
     def _load(self, path: Path) -> dict[str, object] | None:
         with self._search_lock:
@@ -1349,6 +1374,7 @@ class RecallVault:
         )
         connection = self._ensure_search_index(records, signature)
         try:
+            path_validity: dict[str, bool] = {}
             loaded = []
             for path, value in records:
                 captured = str(value.get("captured_at") or "")
@@ -1416,6 +1442,39 @@ class RecallVault:
                 if self.semantic is not None:
                     for key, score in self.semantic.rank(needle, documents).items():
                         window_candidates[key] = max(window_candidates.get(key, 0.0), score * 4.0)
+            result_limit = max(1, min(250, int(limit)))
+            if not needle and not app:
+                loaded.sort(
+                    key=lambda item: float(
+                        item[1].get("modified") or item[0].stat().st_mtime
+                    ),
+                    reverse=True,
+                )
+                loaded = loaded[:result_limit]
+            selected_window_keys: set[str] | None = None
+            if needle or app:
+                ranked_windows: list[tuple[float, float, str]] = []
+                app_token = app.casefold()
+                for path, value, windows, _preview_allowed in loaded:
+                    modified = float(value.get("modified") or path.stat().st_mtime)
+                    for index, window in windows:
+                        identities = {
+                            str(window.get("app", "")).casefold(),
+                            str(window.get("app_id", "")).casefold(),
+                        }
+                        if app and app_token not in identities:
+                            continue
+                        key = f"{path.name}#{index}"
+                        if needle and key not in window_candidates:
+                            continue
+                        rank = float(window_candidates.get(key, 0.0))
+                        if window.get("focused"):
+                            rank += 0.15
+                        ranked_windows.append((rank, modified, key))
+                ranked_windows.sort(key=lambda item: (-item[0], -item[1]))
+                selected_window_keys = {
+                    key for _rank, _modified, key in ranked_windows[:result_limit]
+                }
             output = []
             for path, value, windows, preview_allowed in loaded:
                 common = {
@@ -1452,7 +1511,7 @@ class RecallVault:
                         "urls": urls,
                         "targets": list(dict.fromkeys([
                             *(str(target) for _index, window in windows for target in window.get("targets", [])),
-                            *self._targets(files, urls),
+                            *self._targets(files, urls, path_validity),
                         ]))[:32],
                         "windows": [window for _index, window in windows],
                         "rank": 0.0,
@@ -1473,7 +1532,7 @@ class RecallVault:
                     if app and app_token not in identities:
                         continue
                     key = f"{path.name}#{index}"
-                    if needle and key not in window_candidates:
+                    if selected_window_keys is not None and key not in selected_window_keys:
                         continue
                     files = [str(item) for item in window.get("files", [])]
                     urls = list(dict.fromkeys(
@@ -1490,7 +1549,7 @@ class RecallVault:
                         "urls": urls,
                         "targets": list(dict.fromkeys([
                             *(str(target) for target in window.get("targets", [])),
-                            *self._targets(files, urls),
+                            *self._targets(files, urls, path_validity),
                         ]))[:32],
                         # Keep the matched window explicit for ranking and
                         # highlighting, but let the gallery browse the whole
@@ -1543,12 +1602,20 @@ class RecallVault:
             pass
 
     @staticmethod
-    def _targets(files: list[str], urls: list[str]) -> list[str]:
-        targets = [
-            Path(value).as_uri()
-            for value in files
-            if Path(value).is_absolute() and Path(value).is_file()
-        ]
+    def _targets(
+        files: list[str], urls: list[str],
+        validity: dict[str, bool] | None = None,
+    ) -> list[str]:
+        validity = validity if validity is not None else {}
+        targets = []
+        for value in files:
+            path = Path(value)
+            if not path.is_absolute():
+                continue
+            if value not in validity:
+                validity[value] = path.is_file()
+            if validity[value]:
+                targets.append(path.as_uri())
         targets.extend(urls)
         return list(dict.fromkeys(targets))[:32]
 
@@ -1869,11 +1936,21 @@ class RecallVault:
         quota = max(64, min(16_384, int(quota_mb))) * 1024 * 1024
         cutoff = time.time() - max(1, min(24 * 365, int(retention_hours))) * 3600
         paths = self._record_paths()
+        inventory: dict[str, int] = {}
+        with contextlib.suppress(OSError):
+            inventory = {
+                path.name: path.stat().st_size
+                for path in self.vault.iterdir()
+                if path.is_file() and not path.is_symlink()
+            }
+        total = sum(inventory.values())
         for index, path in enumerate(paths):
             value = self._load(path)
-            if index >= MAX_ENTRIES or path.stat().st_mtime < cutoff or self.storage_bytes() > quota:
+            if index >= MAX_ENTRIES or path.stat().st_mtime < cutoff or total > quota:
+                total -= inventory.get(path.name, 0)
                 if value:
                     for image in value.get("images", []):
+                        total -= inventory.get(str(image), 0)
                         with contextlib.suppress(OSError):
                             (self.vault / str(image)).unlink(missing_ok=True)
                 path.unlink(missing_ok=True)
@@ -1892,6 +1969,8 @@ class RecallVault:
                 and not image.is_symlink()
             ):
                 image.unlink(missing_ok=True)
+        self._storage_cache = None
+        self._paths_cache = None
         # Interrupted or legacy finalizers may leave compressed screenshots in
         # the plaintext staging directory. Keep a short grace period for an
         # overlapping capture, then remove files that can no longer belong to

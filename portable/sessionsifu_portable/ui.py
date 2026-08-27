@@ -6,13 +6,15 @@ import json
 import sys
 import threading
 import time
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from PySide6.QtCore import (
     QByteArray, QBuffer, QEvent, QIODevice, QObject, QSettings, QSize,
     QTimer, Qt, QUrl, Signal,
 )
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QImage, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -243,6 +245,13 @@ class RestorePreviewDialog(QDialog):
         }
 
 
+class RecallCaptureBridge(QObject):
+    """Move plain capture work across threads without moving Qt widgets."""
+
+    prepared = Signal(object, object, str)
+    completed = Signal(bool, str, bool)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, controller: SessionController) -> None:
         super().__init__()
@@ -253,6 +262,9 @@ class MainWindow(QMainWindow):
         self.resize(760, 560)
         self._recall_state_callback = None
         self._recall_saving = False
+        self._recall_capture_bridge = RecallCaptureBridge(self)
+        self._recall_capture_bridge.prepared.connect(self._prepare_recall_visuals)
+        self._recall_capture_bridge.completed.connect(self._finish_recall_capture)
 
         root = QWidget()
         layout = QVBoxLayout(root)
@@ -703,30 +715,94 @@ class MainWindow(QMainWindow):
         self.recall_settings_changed()
         self._recall_saving = True
         self._notify_recall_state()
-        QApplication.processEvents()
-        try:
-            self._perform(
-                lambda: self.controller.save_recall(
-                    retention_hours=int(self.recall_retention.currentData()),
-                    excluded_apps=self._excluded_apps(),
-                    excluded_websites=[
-                        value.strip().casefold().lstrip(".")
-                        for value in self.recall_websites.text().split(",")
-                        if value.strip()
-                    ],
-                    include_file_paths=self.recall_files.isChecked(),
-                    visual_provider=self._capture_recall_visuals,
-                    ocr_enabled=self.recall_ocr.isChecked(),
-                    sensitive_filter=self.recall_sensitive.isChecked(),
-                    quota_mb=int(self.recall_quota.currentData()),
-                ),
-                "Saved an encrypted private Recall entry.",
-                silent=silent,
+        request = {
+            "retention_hours": int(self.recall_retention.currentData()),
+            "excluded_apps": tuple(self._excluded_apps()),
+            "excluded_websites": tuple(
+                value.strip().casefold().lstrip(".")
+                for value in self.recall_websites.text().split(",")
+                if value.strip()
+            ),
+            "include_file_paths": self.recall_files.isChecked(),
+            "ocr_enabled": self.recall_ocr.isChecked(),
+            "sensitive_filter": self.recall_sensitive.isChecked(),
+            "quota_mb": int(self.recall_quota.currentData()),
+            "silent": bool(silent),
+        }
+
+        def prepare() -> None:
+            try:
+                session = self.controller.prepare_recall(
+                    include_file_paths=request["include_file_paths"]
+                )
+                error = ""
+            except Exception as caught:
+                session = None
+                error = str(caught)[:1024]
+            self._recall_capture_bridge.prepared.emit(request, session, error)
+
+        threading.Thread(
+            target=prepare, name="sessionsifu-recall-prepare", daemon=True
+        ).start()
+
+    def _prepare_recall_visuals(self, request: object, session: object, error: str) -> None:
+        request = request if isinstance(request, dict) else {}
+        silent = bool(request.get("silent"))
+        if error or session is None:
+            self._recall_capture_bridge.completed.emit(
+                False, error or "No desktop session was captured.", silent
             )
-        finally:
-            self._recall_saving = False
-            self._notify_recall_state()
-            QApplication.processEvents()
+            return
+        try:
+            display, windows, diagnostics, edge, quality = self._capture_recall_images(session)
+        except Exception as caught:
+            self._recall_capture_bridge.completed.emit(False, str(caught)[:1024], silent)
+            return
+
+        def finalize() -> None:
+            try:
+                preview = self._jpeg_bytes(display, edge, quality) if display else None
+                window_previews = {
+                    index: encoded
+                    for index, image in windows.items()
+                    for encoded in [self._jpeg_bytes(image, edge, max(60, quality - 3))]
+                    if encoded
+                }
+                diagnostics["captured_window_images"] = len(window_previews)
+                diagnostics["missing_window_images"] = max(
+                    0, int(diagnostics.get("expected_windows", 0)) - len(window_previews)
+                )
+                diagnostics["display_overview_captured"] = preview is not None
+                session.capture_diagnostics.update(diagnostics)
+                self.controller.save_prepared_recall(
+                    session,
+                    retention_hours=int(request["retention_hours"]),
+                    excluded_apps=request["excluded_apps"],
+                    excluded_websites=request["excluded_websites"],
+                    include_file_paths=bool(request["include_file_paths"]),
+                    preview=preview,
+                    window_previews=window_previews,
+                    ocr_enabled=bool(request["ocr_enabled"]),
+                    sensitive_filter=bool(request["sensitive_filter"]),
+                    quota_mb=int(request["quota_mb"]),
+                )
+                success, message = True, "Saved an encrypted private Recall entry."
+            except Exception as caught:
+                success, message = False, str(caught)[:1024]
+            self._recall_capture_bridge.completed.emit(success, message, silent)
+
+        threading.Thread(
+            target=finalize, name="sessionsifu-recall-finalize", daemon=True
+        ).start()
+
+    def _finish_recall_capture(self, success: bool, message: str, silent: bool) -> None:
+        self._recall_saving = False
+        self._notify_recall_state()
+        self.status.setText(message)
+        if success:
+            self.refresh()
+        elif not silent:
+            QMessageBox.warning(self, "SessionSifu", message)
 
     def pause_recall(self, seconds: int) -> None:
         if seconds < 0:
@@ -776,11 +852,11 @@ class MainWindow(QMainWindow):
         return bytes(data)
 
     @staticmethod
-    def _jpeg_bytes(pixmap: QPixmap, maximum_edge: int = 960, quality: int = 65) -> bytes | None:
-        if pixmap.isNull():
+    def _jpeg_bytes(image: QImage | QPixmap, maximum_edge: int = 960, quality: int = 65) -> bytes | None:
+        if image.isNull():
             return None
-        if max(pixmap.width(), pixmap.height()) > maximum_edge:
-            pixmap = pixmap.scaled(
+        if max(image.width(), image.height()) > maximum_edge:
+            image = image.scaled(
                 maximum_edge,
                 maximum_edge,
                 Qt.AspectRatioMode.KeepAspectRatio,
@@ -789,36 +865,56 @@ class MainWindow(QMainWindow):
         data = QByteArray()
         buffer = QBuffer(data)
         buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-        saved = pixmap.save(buffer, "JPEG", quality)
+        saved = image.save(buffer, "JPEG", quality)
         buffer.close()
         return bytes(data) if saved and 0 < len(data) <= 8 * 1024 * 1024 else None
 
     def _capture_recall_visuals(self, session) -> tuple[bytes | None, dict[int, bytes], dict]:
-        """Capture every renderable window, bounded to one image per window."""
+        """Synchronous compatibility wrapper used by non-GUI integrations."""
+        display, windows, diagnostics, edge, quality = self._capture_recall_images(session)
+        preview = self._jpeg_bytes(display, edge, quality) if display else None
+        window_previews = {
+            index: encoded
+            for index, image in windows.items()
+            for encoded in [self._jpeg_bytes(image, edge, max(60, quality - 3))]
+            if encoded
+        }
+        diagnostics.update({
+            "captured_window_images": len(window_previews),
+            "missing_window_images": max(
+                0, int(diagnostics.get("expected_windows", 0)) - len(window_previews)
+            ),
+            "display_overview_captured": preview is not None,
+        })
+        return preview, window_previews, diagnostics
+
+    def _capture_recall_images(
+        self, session
+    ) -> tuple[QImage | None, dict[int, QImage], dict, int, int]:
+        """Grab GUI-owned pixels; compression happens later in a worker."""
         if not self.recall_screenshots.isChecked():
             return None, {}, {
                 "expected_windows": min(len(session.windows), 64),
                 "captured_window_images": 0,
                 "missing_window_images": min(len(session.windows), 64),
                 "screenshots_enabled": False,
-            }
+            }, 960, 68
         screens = []
         for screen in QApplication.screens():
             desktop = screen.grabWindow(0)
             if not desktop.isNull():
-                screens.append((screen.geometry(), desktop, screen))
+                screens.append((screen.geometry(), desktop.toImage(), screen))
         primary = QApplication.primaryScreen()
         primary_desktop = next(
             (desktop for _geometry, desktop, screen in screens if screen is primary),
-            screens[0][1] if screens else QPixmap(),
+            screens[0][1] if screens else QImage(),
         )
         preview_edge, jpeg_quality = recall_preview_profile(
             str(self.recall_preview_quality.currentData() or "storage")
         )
-        desktop_preview = self._jpeg_bytes(primary_desktop, preview_edge, jpeg_quality)
-        window_previews: dict[int, bytes] = {}
+        window_images: dict[int, QImage] = {}
         for index, window in enumerate(session.windows[:64]):
-            pixmap = QPixmap()
+            image = QImage()
             native_id = str(window.window_id or "")
             try:
                 if ":" not in native_id:
@@ -832,10 +928,10 @@ class MainWindow(QMainWindow):
                             QApplication.primaryScreen(),
                         )
                         if screen is not None:
-                            pixmap = screen.grabWindow(handle)
+                            image = screen.grabWindow(handle).toImage()
             except (TypeError, ValueError):
                 pass
-            if pixmap.isNull() and not window.minimized:
+            if image.isNull() and not window.minimized:
                 wx, wy, width, height = window.geometry
                 for geometry, desktop, _screen in screens:
                     left = max(wx, geometry.x())
@@ -846,24 +942,23 @@ class MainWindow(QMainWindow):
                         continue
                     scale_x = desktop.width() / max(1, geometry.width())
                     scale_y = desktop.height() / max(1, geometry.height())
-                    pixmap = desktop.copy(
+                    image = desktop.copy(
                         round((left - geometry.x()) * scale_x),
                         round((top - geometry.y()) * scale_y),
                         max(1, round((right - left) * scale_x)),
                         max(1, round((bottom - top) * scale_y)),
                     )
                     break
-            encoded = self._jpeg_bytes(pixmap, preview_edge, max(60, jpeg_quality - 3))
-            if encoded:
-                window_previews[index] = encoded
+            if not image.isNull():
+                window_images[index] = image
         expected = min(len(session.windows), 64)
-        return desktop_preview, window_previews, {
+        return (primary_desktop if not primary_desktop.isNull() else None), window_images, {
             "expected_windows": expected,
-            "captured_window_images": len(window_previews),
-            "missing_window_images": max(0, expected - len(window_previews)),
+            "captured_window_images": len(window_images),
+            "missing_window_images": max(0, expected - len(window_images)),
             "screenshots_enabled": True,
-            "display_overview_captured": desktop_preview is not None,
-        }
+            "display_overview_captured": not primary_desktop.isNull(),
+        }, preview_edge, jpeg_quality
 
     def open_recall_item(self, *_args) -> None:
         item = self.recall_results.currentItem()
@@ -978,6 +1073,7 @@ class RecallSearchBridge(QObject):
     """Deliver worker results to Qt's GUI thread without polling."""
 
     completed = Signal(int, object, str)
+    thumbnail = Signal(int, int, str, object)
 
 
 class RecallSearchDialog(QDialog):
@@ -1006,6 +1102,14 @@ class RecallSearchDialog(QDialog):
         self._visible_count = 24
         self._search_bridge = RecallSearchBridge(self)
         self._search_bridge.completed.connect(self._finish_refresh)
+        self._search_bridge.thumbnail.connect(self._finish_thumbnail)
+        self._thumbnail_executor = ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="sessionsifu-thumbnail"
+        )
+        self._thumbnail_cache: OrderedDict[str, QImage] = OrderedDict()
+        self.destroyed.connect(
+            lambda: self._thumbnail_executor.shutdown(wait=False, cancel_futures=True)
+        )
         layout = QVBoxLayout(self)
         title = QLabel("<h2>Search Privacy Recall</h2>")
         title.setTextFormat(Qt.RichText)
@@ -1242,7 +1346,7 @@ class RecallSearchDialog(QDialog):
         self.results.clear()
         mode = str(self.view_mode.currentData() or "visual")
         visible_entries = self._all_entries[:self._visible_count]
-        for entry in visible_entries:
+        for row, entry in enumerate(visible_entries):
             apps = ", ".join(entry.get("apps", [])[:4]) or "Unknown application"
             titles = " · ".join(entry.get("titles", [])[:3])
             label = f"{apps} — {titles or 'Window moment'}\n{entry.get('captured_at', '')}"
@@ -1258,12 +1362,13 @@ class RecallSearchDialog(QDialog):
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, entry)
             if mode == "visual":
-                pixmap = recall_result_pixmap(self.controller, entry)
-                if not pixmap.isNull():
-                    item.setIcon(QIcon(pixmap.scaled(
-                        240, 135, Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )))
+                key = self._thumbnail_key(entry)
+                cached = self._thumbnail_cache.get(key)
+                if cached is not None:
+                    self._thumbnail_cache.move_to_end(key)
+                    item.setIcon(QIcon(QPixmap.fromImage(cached)))
+                else:
+                    self._queue_thumbnail(self._search_generation, row, key, entry)
             self.results.addItem(item)
         self.notice.setText(
             f"{len(self._all_entries)} matching window moments. "
@@ -1279,6 +1384,78 @@ class RecallSearchDialog(QDialog):
         self.timeline.blockSignals(False)
         if self.results.count():
             self.results.setCurrentRow(0)
+
+    @staticmethod
+    def _thumbnail_key(entry: dict) -> str:
+        return "\0".join((
+            str(entry.get("name") or ""),
+            str(recall_highlight_image_name(entry) or ""),
+            json.dumps(entry.get("highlight_boxes") or [], sort_keys=True)[:8192],
+        ))
+
+    def _queue_thumbnail(
+        self, generation: int, row: int, key: str, entry: dict
+    ) -> None:
+        record = str(entry.get("name") or "")
+        window = entry.get("matched_window")
+        image_name = str(window.get("image") or "") if isinstance(window, dict) else ""
+        entry_copy = dict(entry)
+        screen = QApplication.primaryScreen()
+        screen_geometry = screen.geometry() if screen is not None else None
+        geometry = (
+            [screen_geometry.x(), screen_geometry.y(), screen_geometry.width(), screen_geometry.height()]
+            if screen_geometry is not None else []
+        )
+
+        def worker() -> None:
+            data = self.controller.recall_store.preview_bytes(
+                record, image_name=image_name
+            ) if image_name else None
+            exact = bool(data and image_name)
+            if not data:
+                data = self.controller.recall_store.preview_bytes(record)
+            image = QImage()
+            if data:
+                image.loadFromData(data)
+            if not image.isNull() and not exact:
+                window_geometry = window.get("geometry", []) if isinstance(window, dict) else []
+                if len(window_geometry) == 4 and len(geometry) == 4:
+                    try:
+                        scale_x = image.width() / max(1, geometry[2])
+                        scale_y = image.height() / max(1, geometry[3])
+                        x = round((float(window_geometry[0]) - geometry[0]) * scale_x)
+                        y = round((float(window_geometry[1]) - geometry[1]) * scale_y)
+                        width = round(float(window_geometry[2]) * scale_x)
+                        height = round(float(window_geometry[3]) * scale_y)
+                        x = max(0, min(x, image.width() - 1))
+                        y = max(0, min(y, image.height() - 1))
+                        width = max(1, min(width, image.width() - x))
+                        height = max(1, min(height, image.height() - y))
+                        image = image.copy(x, y, width, height)
+                    except (TypeError, ValueError):
+                        pass
+            if not image.isNull():
+                image = highlight_recall_pixmap(
+                    image, entry_copy.get("highlight_boxes", [])
+                ).scaled(
+                    240, 135, Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            self._search_bridge.thumbnail.emit(generation, row, key, image)
+
+        self._thumbnail_executor.submit(worker)
+
+    def _finish_thumbnail(
+        self, generation: int, row: int, key: str, image: object
+    ) -> None:
+        if not isinstance(image, QImage) or image.isNull():
+            return
+        self._thumbnail_cache[key] = image
+        self._thumbnail_cache.move_to_end(key)
+        while len(self._thumbnail_cache) > 128:
+            self._thumbnail_cache.popitem(last=False)
+        if generation == self._search_generation and 0 <= row < self.results.count():
+            self.results.item(row).setIcon(QIcon(QPixmap.fromImage(image)))
 
     def load_more_results(self) -> None:
         self._visible_count = min(len(self._all_entries), self._visible_count + 24)

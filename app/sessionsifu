@@ -23,6 +23,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 import io
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -58,7 +59,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.5.3"
+CURRENT_VERSION = "3.5.4"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -1394,6 +1395,10 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         self._search_inflight = False
         self._pending_search: dict | None = None
         self._render_limit = 24
+        self._render_generation = 0
+        self._preview_executor = ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="sessionsifu-thumbnail"
+        )
         self._detail_item: dict | None = None
         self._detail_indices: list[int] = []
         self._detail_position = 0
@@ -2071,13 +2076,13 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         return more
 
     def _render(self, entries: list[dict]) -> None:
+        self._render_generation += 1
+        render_generation = self._render_generation
         for row in self._rows:
             self.results.remove(row)
         self._rows.clear()
         visible_entries = entries[:self._render_limit]
         for item in visible_entries:
-            if self._view_mode == "visual":
-                self._prepare_previews(item)
             modified = datetime.fromtimestamp(item.get("modified", 0)).strftime("%Y-%m-%d %H:%M:%S")
             apps = ", ".join(item.get("apps", [])[:4]) or "Unknown application"
             titles = " · ".join(item.get("titles", [])[:3])
@@ -2091,9 +2096,20 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             )
             row.add_css_class("card")
             if self._view_mode == "visual":
-                preview = recall_preview(item, width=190, height=108, show_all=False)
-                preview.set_size_request(190, 108)
-                row.append(preview)
+                preview_slot = Gtk.Box()
+                preview_slot.append(Gtk.Spinner(
+                    spinning=True, width_request=190, height_request=108,
+                ))
+                row.append(preview_slot)
+
+                def prepare_preview(
+                    target: dict = item, slot: Gtk.Box = preview_slot,
+                    generation: int = render_generation,
+                ) -> None:
+                    self._prepare_previews(target)
+                    GLib.idle_add(self._finish_preview, target, slot, generation)
+
+                self._preview_executor.submit(prepare_preview)
             body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=7, hexpand=True)
             if item.get("result_kind") == "window":
                 heading = f"{apps} — {titles}" if titles else apps
@@ -2182,6 +2198,22 @@ class RecallSearchWindow(Adw.ApplicationWindow):
             self.detail_picture.set_paintable(None)
             self.detail_state.set_label(self._empty_preview_state())
             self._clear_box(self.detail_filmstrip)
+
+    def _finish_preview(
+        self, item: dict, slot: Gtk.Box, generation: int
+    ) -> bool:
+        if generation != self._render_generation or slot.get_parent() is None:
+            return GLib.SOURCE_REMOVE
+        self._clear_box(slot)
+        preview = recall_preview(item, width=190, height=108, show_all=False)
+        preview.set_size_request(190, 108)
+        slot.append(preview)
+        if (
+            self._detail_item
+            and self._detail_item.get("name") == item.get("name")
+        ):
+            self._show_detail(item)
+        return GLib.SOURCE_REMOVE
 
     def _timeline_changed(self, scale) -> None:
         if self._entries:

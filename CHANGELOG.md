@@ -4,6 +4,24 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.4
+
+- Moved portable Recall preparation, image compression, OCR, encryption and
+  pruning off the interface thread while keeping compositor-owned pixel grabs
+  on the native GUI thread.
+- Rejected unchanged GNOME captures before OCR, reused encrypted OCR for
+  byte-identical portable images and capped OCR to two workers per capture.
+- Reused one process snapshot per PID, traversed Linux accessibility data once
+  per capture and replaced KDE's per-window KWin discovery/restore loop with a
+  bounded batched request plus compatibility fallback.
+- Replaced GNOME's permanent 500 ms window-tracking timer with event-driven,
+  one-shot debouncing and guarded duplicate signal connections.
+- Cached immutable Recall record inventories and file checks, pruned storage in
+  one pass, bounded FTS candidates, selected top results before building heavy
+  targets/highlights, and decoded thumbnails in two-worker LRU pipelines.
+- Derived the Windows release archive version from package metadata instead of
+  a stale hard-coded workflow value.
+
 ## 3.5.3
 
 - Stopped previous-session and automatic named-session restoration from

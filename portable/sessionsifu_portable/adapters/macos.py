@@ -6,7 +6,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from .base import AdapterCapabilities, PlatformAdapter, process_details, process_files
+from .base import AdapterCapabilities, PlatformAdapter, cached_process_snapshot
 from ..model import MonitorSnapshot, SessionSnapshot, WindowSnapshot
 
 CAPTURE_SCRIPT = r"""
@@ -46,26 +46,39 @@ function run(argv) {
   const payload = JSON.parse(argv[0]);
   const systemEvents = Application('System Events');
   const processes = systemEvents.applicationProcesses();
+  const processById = {};
+  const windowCache = {};
+  processes.forEach(function (process) {
+    let name = '', bundle = '';
+    try { name = process.name(); } catch (_) {}
+    try { bundle = process.bundleIdentifier(); } catch (_) {}
+    const identity = bundle || name;
+    if (identity && !processById[identity]) processById[identity] = process;
+  });
   payload.windows.forEach(function (saved) {
-    for (let p = 0; p < processes.length; p++) {
-      let name = '', bundle = '';
-      try { name = processes[p].name(); } catch (_) {}
-      try { bundle = processes[p].bundleIdentifier(); } catch (_) {}
-      if ((bundle || name) !== saved.app_id) continue;
+    const process = processById[saved.app_id];
+    if (!process) return;
+    if (!windowCache[saved.app_id]) {
       let windows = [];
-      try { windows = processes[p].windows(); } catch (_) {}
-      let selected = null;
-      for (let w = 0; w < windows.length; w++) {
+      try { windows = process.windows(); } catch (_) {}
+      windowCache[saved.app_id] = windows.map(function (window) {
         let title = '';
-        try { title = windows[w].name(); } catch (_) {}
-        if (title === saved.title) { selected = windows[w]; break; }
+        try { title = window.name(); } catch (_) {}
+        return {window: window, title: title};
+      });
+    }
+    const candidates = windowCache[saved.app_id];
+    let selected = null;
+    for (let w = 0; w < candidates.length; w++) {
+      if (candidates[w].title === saved.title) {
+        selected = candidates[w].window;
+        break;
       }
-      if (!selected && windows.length) selected = windows[0];
-      if (selected) {
-        try { selected.position = [saved.geometry[0], saved.geometry[1]]; } catch (_) {}
-        try { selected.size = [saved.geometry[2], saved.geometry[3]]; } catch (_) {}
-      }
-      break;
+    }
+    if (!selected && candidates.length) selected = candidates[0].window;
+    if (selected) {
+      try { selected.position = [saved.geometry[0], saved.geometry[1]]; } catch (_) {}
+      try { selected.size = [saved.geometry[2], saved.geometry[3]]; } catch (_) {}
     }
   });
   return 'ok';
@@ -123,18 +136,21 @@ class MacOSAdapter(PlatformAdapter):
     def capture_windows(self, include_files: bool = True) -> list[WindowSnapshot]:
         raw = json.loads(self._jxa(CAPTURE_SCRIPT) or "[]")
         windows: list[WindowSnapshot] = []
+        process_cache: dict[int, tuple[str, list[str], list[str]]] = {}
         for item in raw:
             pid = int(item.get("pid") or 0)
             if str(item.get("app_name") or "").casefold() in {"sessionsifu", "finder", "dock"}:
                 continue
-            executable, command = process_details(pid, include_command=include_files)
+            executable, command, open_files = cached_process_snapshot(
+                process_cache, pid, include_files=include_files
+            )
             windows.append(
                 WindowSnapshot.from_dict(
                     {
                         **item,
                         "executable": executable,
                         "command": command,
-                        "open_files": process_files(pid) if include_files else [],
+                        "open_files": open_files,
                     }
                 )
             )

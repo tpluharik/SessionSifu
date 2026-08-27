@@ -1,7 +1,8 @@
 # Recall search performance
 
-SessionSifu 3.5.0 removes repeated vault-wide work from the interactive Recall
-search path. The optimization does not create a persistent plaintext database.
+SessionSifu 3.5.4 removes repeated vault-wide work from both Recall capture and
+interactive search. The optimization does not create a persistent plaintext
+database and does not move compositor APIs onto worker threads.
 
 ## Bottlenecks addressed
 
@@ -14,9 +15,23 @@ visible.
 
 The current design:
 
+- rejects unchanged GNOME captures before OCR and reuses encrypted OCR for
+  byte-identical portable images;
+- caps CPU-heavy OCR and thumbnail decoding at two workers;
+- keeps only the short native pixel grab on the GUI/compositor thread, then
+  compresses, recognizes, encrypts and prunes in background work;
+- snapshots process metadata once per PID and Linux accessibility applications
+  once per capture;
+- batches KDE KWin discovery and restore, with the previous compatible tools as
+  a fallback;
+- makes GNOME window tracking event-driven instead of waking every 500 ms;
 - caches at most 128 MiB of decrypted record JSON in an in-process LRU;
 - reuses one memory-only FTS5 index until a record name, size or modification
   time changes;
+- bounds database candidates and selects the top result set before validating
+  file targets or computing highlights;
+- caches immutable record inventories and prunes the encrypted vault in one
+  storage pass;
 - compares typo queries with a dictionary bounded to 100,000 unique OCR terms
   and 500,000 window references;
 - caches up to 4,096 offline semantic document vectors by key and content
@@ -34,12 +49,13 @@ an excluded window or shared preview visible.
 ## Reproducible synthetic check
 
 The development benchmark uses 500 encrypted metadata records containing 4,000
-synthetic windows. On the development machine, the initial empty query took
-about 187 ms to decrypt and index the corpus. A repeated empty query took about
-9 ms; a warm exact query about 19 ms; and a warm missing-term query about 7 ms.
-The former implementation measured roughly 78 ms for every empty query, 106 ms
-for a common exact query and 259–411 ms for missing/fuzzy queries on the same
-fixture.
+synthetic windows. After the 3.5.4 changes, repeated exact search measured about
+9.7 ms mean (9.4 ms median, 11.9 ms p95) in the portable store and about 7.9 ms
+mean (7.4 ms median, 9.2 ms p95) in the GNOME store. Earlier 3.5.0 engineering
+checks on the same corpus class measured about 19 ms for portable warm exact
+search, while the pre-index design repeatedly took 78–411 ms depending on the
+query. Fixture generation and hardware vary, so only orders of magnitude are
+meaningful across runs.
 
 These figures are engineering measurements, not hardware guarantees. OCR model
 execution, screenshot capture and first-vault indexing remain proportional to

@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.5.3 runtime and release layout. User-facing
+This document describes the 3.5.4 runtime and release layout. User-facing
 Recall steps live in [RECALL_GUIDE.md](RECALL_GUIDE.md).
 
 SessionSifu 3 has a full GNOME runtime, a portable runtime shared by Windows,

@@ -84,7 +84,8 @@ export const OpenWindowsTracker = class {
         this._restoringSession = false;
         this._runningSaveCancelableMap = new Map();
         this._windowsAboutToSaveSet = new Set();
-        this._saveWindowSessionPeriodically();
+        this._saveSessionByBatchTimeoutId = 0;
+        this._windowsWithSaveSignals = new WeakSet();
 
         this._confirmedLogoutId = 0;
         this._confirmedRebootId = 0;
@@ -207,6 +208,7 @@ export const OpenWindowsTracker = class {
             e.signals.forEach(signal => {
                 const id = e.instance.connect(signal, () => {
                     this._summaryAboutToSave = true;
+                    this._saveWindowSessionPeriodically();
                 });
                 this._signals.push([id, e.instance]);
             });
@@ -253,6 +255,9 @@ export const OpenWindowsTracker = class {
     }
 
     _connectWindowSignalsToSaveSession(window) {
+        if (!window || this._windowsWithSaveSignals.has(window))
+            return;
+        this._windowsWithSaveSignals.add(window);
         this._windowInterestingSignalsWhileSave.forEach(signal => {
             const windowSignalId = window.connect(signal, () => {
                 this._prepareToSaveWindowSession(window);
@@ -315,17 +320,23 @@ export const OpenWindowsTracker = class {
 
             // this._log.debug(`Adding window ${window.get_title()} to queue (current size: ${this._windowsAboutToSaveSet.size}) to prepare to save window session`);
             this._windowsAboutToSaveSet.add(window);
+            this._saveWindowSessionPeriodically();
         } catch (error) {
             this._log.error(error);
         }
     }
 
     _saveWindowSessionPeriodically() {
-        // TODO Add an option: save session config delay
+        // One-shot debounce: sleeping desktops should not wake twice a second.
+        if (this._saveSessionByBatchTimeoutId)
+            return;
         this._saveSessionByBatchTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
+            this._saveSessionByBatchTimeoutId = 0;
             if (this._summaryAboutToSave) {
+                this._summaryAboutToSave = false;
                 this._saveSummary().then(() => {
-                    this._summaryAboutToSave = false;
+                    if (this._summaryAboutToSave)
+                        this._saveWindowSessionPeriodically();
                 });
             }
 
@@ -357,9 +368,16 @@ export const OpenWindowsTracker = class {
                     } catch (e) {
                         this._log.error(e);
                     }
+                }).catch(error => {
+                    this._log.error(error);
+                }).finally(() => {
+                    // Changes that arrived while the asynchronous batch was
+                    // being written need one more debounce pass.
+                    if (this._summaryAboutToSave || this._windowsAboutToSaveSet.size)
+                        this._saveWindowSessionPeriodically();
                 });
             }
-            return GLib.SOURCE_CONTINUE;
+            return GLib.SOURCE_REMOVE;
         });
     }
 

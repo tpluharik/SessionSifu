@@ -8,13 +8,16 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 import sys
 
 sys.path.insert(0, str(ROOT / "portable"))
 
-from sessionsifu_portable.adapters.base import AdapterCapabilities, PlatformAdapter  # noqa: E402
+from sessionsifu_portable.adapters.base import (  # noqa: E402
+    AdapterCapabilities, PlatformAdapter, cached_process_snapshot,
+)
 from sessionsifu_portable.controller import SessionController  # noqa: E402
 from sessionsifu_portable.model import MonitorSnapshot, SessionSnapshot, WindowSnapshot  # noqa: E402
 from sessionsifu_portable.mcp import ReadOnlyMcp  # noqa: E402
@@ -87,7 +90,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.5.3")
+        self.assertEqual(VERSION, "3.5.4")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -275,6 +278,46 @@ class PortableTests(unittest.TestCase):
             self.assertEqual(
                 result["highlight_image"], result["matched_window"]["image"]
             )
+
+    def test_identical_portable_images_reuse_encrypted_ocr_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RecallStore(Path(directory))
+            calls: list[bytes] = []
+
+            def recognize(preview: bytes):
+                calls.append(preview)
+                return "reusable falcon text", [{
+                    "t": "falcon", "x": 1, "y": 2, "w": 3, "h": 4, "c": 95,
+                }]
+
+            store._ocr = recognize
+            for _index in range(2):
+                store.save(
+                    FakeAdapter().capture(),
+                    preview=b"same-display",
+                    window_previews={0: b"same-window"},
+                    ocr_enabled=True,
+                )
+            self.assertEqual(calls, [b"same-window", b"same-display"])
+            newest = store._load(store._paths()[0])
+            self.assertTrue(newest["windows"][0]["ocr_diagnostics"]["reused"])
+            self.assertTrue(newest["ocr_diagnostics"]["reused"])
+            self.assertTrue(store.search("falcon"))
+
+    def test_process_snapshot_cache_resolves_each_pid_once(self) -> None:
+        cache = {}
+        with mock.patch(
+            "sessionsifu_portable.adapters.base.process_details",
+            return_value=("/usr/bin/editor", ["editor"]),
+        ) as details, mock.patch(
+            "sessionsifu_portable.adapters.base.process_files",
+            return_value=["/home/test/Notes.txt"],
+        ) as files:
+            first = cached_process_snapshot(cache, 42)
+            second = cached_process_snapshot(cache, 42)
+        self.assertEqual(first, second)
+        details.assert_called_once_with(42, include_command=True)
+        files.assert_called_once_with(42)
 
     def test_display_ocr_highlight_targets_display_overview(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -479,7 +522,7 @@ class PortableTests(unittest.TestCase):
             controller.save_named("Work")
             api = LocalApi(controller)
             status = api.dispatch({"method": "status"})
-            self.assertEqual(status["version"], "3.5.3")
+            self.assertEqual(status["version"], "3.5.4")
             preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
             self.assertEqual(preview["applications"][0]["application"], "Editor")
             with self.assertRaises(ValueError):
@@ -540,7 +583,7 @@ class PortableTests(unittest.TestCase):
             controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
             controller.save_named("Work")
             mcp = ReadOnlyMcp(controller)
-            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.3")
+            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.4")
             self.assertTrue(mcp.call("restore_preview", {"name": "Work"}))
             with self.assertRaises(ValueError):
                 mcp.call("restore_execute", {"name": "Work"})

@@ -125,7 +125,13 @@ jobs:
             }
             "signed=true" >> $env:GITHUB_OUTPUT
 
-            $archive = 'dist\portable\SessionSifu-3.5.2-windows-x64.zip'
+            $version = (Select-String `
+              -Path 'portable\sessionsifu_portable\__init__.py' `
+              -Pattern '^VERSION = "([^"]+)"$').Matches[0].Groups[1].Value
+            if ([string]::IsNullOrWhiteSpace($version)) {
+              throw 'Could not read the portable SessionSifu version.'
+            }
+            $archive = "dist\portable\SessionSifu-$version-windows-x64.zip"
             Remove-Item $archive -Force
             Compress-Archive `
               -Path 'build\pyinstaller-windows-x64\dist\SessionSifu' `

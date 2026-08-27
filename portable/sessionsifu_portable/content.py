@@ -100,6 +100,32 @@ def _accessible_application(pid: int):
     return None
 
 
+def _accessible_applications(pids: set[int]) -> dict[int, object]:
+    """Build one capture-scoped PID map with a single AT-SPI desktop walk."""
+    wanted = {pid for pid in pids if pid > 0}
+    if not wanted:
+        return {}
+    try:
+        import pyatspi  # type: ignore[import-not-found]
+        desktop = pyatspi.Registry.getDesktop(0)
+    except Exception:
+        return {}
+    applications: dict[int, object] = {}
+    try:
+        for application in desktop:
+            try:
+                pid = int(application.get_process_id())
+            except Exception:
+                continue
+            if pid in wanted:
+                applications[pid] = application
+                if len(applications) == len(wanted):
+                    break
+    except Exception:
+        return applications
+    return applications
+
+
 def _matching_accessible_root(application, window_title: str, sibling_windows: int):
     """Select a top-level AT-SPI window without mixing sibling window content."""
     try:
@@ -135,7 +161,10 @@ def _matching_accessible_root(application, window_title: str, sibling_windows: i
     return None
 
 
-def linux_accessible_text(pid: int, window_title: str = "", sibling_windows: int = 1) -> str:
+def linux_accessible_text(
+    pid: int, window_title: str = "", sibling_windows: int = 1,
+    *, application=None,
+) -> str:
     """Collect visible AT-SPI names/text with strict node and byte limits."""
     if pid <= 0 or os.environ.get("XDG_SESSION_TYPE", "").casefold() not in {"", "x11", "wayland"}:
         return ""
@@ -143,7 +172,7 @@ def linux_accessible_text(pid: int, window_title: str = "", sibling_windows: int
         import pyatspi  # type: ignore[import-not-found]
     except ImportError:
         return ""
-    application = _accessible_application(pid)
+    application = application if application is not None else _accessible_application(pid)
     if application is None:
         return ""
     root = _matching_accessible_root(application, window_title, sibling_windows)
@@ -209,12 +238,18 @@ def enrich_linux_session(session: SessionSnapshot) -> None:
         pid: sum(1 for candidate in session.windows if candidate.pid == pid)
         for pid in {window.pid for window in session.windows}
     }
+    applications = _accessible_applications(set(window_count_by_pid))
     accessible_by_window: dict[tuple[int, str], str] = {}
     for window in session.windows:
         key = (window.pid, window.title)
         if key not in accessible_by_window:
-            accessible_by_window[key] = linux_accessible_text(
-                window.pid, window.title, window_count_by_pid.get(window.pid, 1)
+            application = applications.get(window.pid)
+            accessible_by_window[key] = (
+                linux_accessible_text(
+                    window.pid, window.title, window_count_by_pid.get(window.pid, 1),
+                    application=application,
+                )
+                if application is not None else ""
             )
         window.accessible_text = accessible_by_window[key]
         window.deep_targets = deep_targets(window)

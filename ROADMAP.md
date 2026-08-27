@@ -1,6 +1,6 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.5.3. It separates shipped
+This roadmap describes the product after version 3.5.4. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
 
