@@ -1,11 +1,11 @@
 {
-  "version": "3.5.4",
+  "version": "3.5.5",
   "channel": "stable",
-  "issued_at": "2026-08-27T05:42:38Z",
-  "expires_at": "2026-10-11T05:42:38Z",
+  "issued_at": "2026-08-28T12:54:10Z",
+  "expires_at": "2026-10-12T12:54:10Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.4_all.deb",
-  "sha256": "73dc0497baae434019246abb4afcfe361e23d19b454978613303736387c4fd35",
-  "size": 3738378,
-  "notes": "SessionSifu 3.5.4 makes Recall capture and search substantially lighter: unchanged captures skip OCR, duplicate images reuse encrypted OCR, CPU-heavy work and thumbnails are bounded in background workers, process/accessibility discovery is cached, KDE uses batched KWin requests and GNOME tracking is event-driven."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.5_all.deb",
+  "sha256": "dd510f4ab244d13c8901d755dbe95a92e4e4f40a9a41aee0562446a5b01153a4",
+  "size": 3737806,
+  "notes": "SessionSifu 3.5.5 adds a GNOME extension-management tool to DEB/PPA installations when one is not already present, while retaining the lighter Recall capture and search pipeline introduced in 3.5.4."
 }
