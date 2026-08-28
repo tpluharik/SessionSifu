@@ -1,3 +1,10 @@
+sessionsifu (3.5.5-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Install Extension Manager or GNOME Extensions preferences when missing.
+  * Keep the bundled SessionSifu Shell extension as the integration payload.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Fri, 28 Aug 2026 13:53:58 +0200
+
 sessionsifu (3.5.4-1~ppa1~resolute1) resolute; urgency=medium
 
   * Move Recall CPU and storage work off interface threads.

@@ -4,6 +4,15 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.5
+
+- Added an alternative Debian dependency on Extension Manager or GNOME's
+  Extensions preferences tool. APT now keeps an already installed compatible
+  manager and installs one only when neither is present.
+- Kept the SessionSifu Shell extension bundled with the application package;
+  the additional manager provides a standard GNOME interface for inspecting,
+  enabling and disabling it.
+
 ## 3.5.4
 
 - Moved portable Recall preparation, image compression, OCR, encryption and

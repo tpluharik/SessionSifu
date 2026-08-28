@@ -38,6 +38,7 @@ Depends:
  gir1.2-gtop-2.0,
  gjs,
  gnome-shell (>= 50),
+ gnome-shell-extension-manager | gnome-shell-extension-prefs,
  libglib2.0-bin,
  openssl,
  procps,
