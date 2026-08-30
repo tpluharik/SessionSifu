@@ -272,6 +272,7 @@ export const SaveSession = class {
         sessionConfig.session_name = sessionName ? sessionName : FileUtils.default_sessionName;
         sessionConfig.session_create_time = new Date().toLocaleString();
         sessionConfig.active_workspace_index = global.workspace_manager.get_active_workspace_index();
+        sessionConfig.n_workspace = global.workspace_manager.n_workspaces;
         const processInfoMap = await _getProcessInfoPromise;
 
         for (const runningShellApp of runningShellApps) {

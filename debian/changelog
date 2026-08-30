@@ -1,3 +1,11 @@
+sessionsifu (3.5.8-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Add bounded in-memory multi-workspace Recall preview reuse.
+  * Preserve original preview timestamps and reject overlapped screen regions.
+  * Save total workspace count and add privacy/lifecycle regression coverage.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Sun, 30 Aug 2026 22:00:00 +0200
+
 sessionsifu (3.5.7-1~ppa1~resolute1) resolute; urgency=high
 
   * Derive the live GNOME integration version from extension metadata.

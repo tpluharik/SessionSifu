@@ -77,16 +77,16 @@ The broader ten-product matrix and prioritized gaps are maintained in the
 
 ## Platform implementation boundary
 
-On GNOME, `Shell.Screenshot` supplies the display image while Mutter's
-`Meta.WindowActor` render content supplies occlusion-free per-window images.
-The relevant platform APIs are:
+On GNOME, `Shell.Screenshot` supplies visible display/area images. Direct
+`Meta.WindowActor` repainting was removed after compositor instability; the
+implementation must not claim fresh hidden-window capture. Version 3.5.8 checks
+the current workspace and [Mutter stacking order](https://mutter.gnome.org/meta/method.Display.sort_windows_by_stacking.html)
+before taking an unobscured screen-region preview, then retains it in a bounded
+memory-only cache. Workspace and focus changes refresh that cache without
+switching workspaces or raising windows. A later moment can reuse the last
+visible preview and labels its actual capture time.
 
-- [GNOME Shell focused-window screenshot API](https://gnome.pages.gitlab.gnome.org/gnome-shell/shell/method.Screenshot.screenshot_window.html)
-- [Mutter `Meta.WindowActor.paint_to_content`](https://gnome.pages.gitlab.gnome.org/mutter/meta/method.WindowActor.paint_to_content.html)
-- [GNOME Shell texture composition](https://gnome.pages.gitlab.gnome.org/gnome-shell/shell/type_func.Screenshot.composite_to_stream.html)
-
-Window actors can preserve the last rendered frame even when obscured, but a
-minimized, destroyed or not-yet-mapped window may have no capturable surface.
-Such a window remains in searchable metadata and is shown without an exact
-preview. Portable builds similarly depend on native screen-recording permission
-and window-handle support.
+Minimized, destroyed, never-visited or not-yet-mapped windows can remain
+metadata-only. This deliberately favors stability and honest provenance over
+claiming a simultaneous screenshot of every hidden window. Portable builds
+similarly depend on native screen-recording permission and window-handle support.

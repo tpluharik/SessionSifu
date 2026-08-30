@@ -41,3 +41,27 @@ export function isWindowCaptureSafe(metaWindow, actor = null, monitorCount = nul
         return false;
     }
 }
+
+// Screen-area capture must never label another app's pixels as this window.
+// Mutter returns this stack bottom-to-top; any overlapping window above the
+// candidate makes the full rectangular preview unsafe to capture.
+export function isWindowRegionUnobscured(metaWindow, stackingOrder) {
+    try {
+        const index = stackingOrder.indexOf(metaWindow);
+        if (index < 0)
+            return false;
+        const rect = metaWindow.get_frame_rect();
+        for (const other of stackingOrder.slice(index + 1)) {
+            const actor = other.get_compositor_private?.();
+            if (!actor || actor.visible === false || actor.mapped === false || other.minimized)
+                continue;
+            const above = other.get_frame_rect();
+            if (rect.x < above.x + above.width && rect.x + rect.width > above.x &&
+                rect.y < above.y + above.height && rect.y + rect.height > above.y)
+                return false;
+        }
+        return true;
+    } catch (_error) {
+        return false;
+    }
+}

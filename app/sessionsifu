@@ -59,7 +59,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.5.7"
+CURRENT_VERSION = "3.5.8"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -470,6 +470,7 @@ def recall_capture_summary(item: dict) -> str:
         ))
         protected = max(0, int(diagnostics.get("protected_windows") or 0))
         excluded = max(0, int(diagnostics.get("excluded_windows") or 0))
+        cached = max(0, int(diagnostics.get("cached_workspace_previews") or 0))
     except (TypeError, ValueError):
         return "Capture completeness unavailable"
     if eligible:
@@ -479,9 +480,18 @@ def recall_capture_summary(item: dict) -> str:
     withheld = protected + excluded
     if withheld:
         summary += f" · {withheld} privacy-filtered"
+    if cached:
+        summary += f" · {cached} cached workspace previews"
     if captured < eligible:
         summary += " · incomplete"
     return summary
+
+
+def recall_window_preview_state(window: dict) -> str:
+    if window.get("preview_source") == "workspace-cache":
+        captured = str(window.get("preview_captured_at") or "earlier in this login")
+        return f"Cached workspace preview · captured {captured}"
+    return "Window preview captured with this snapshot"
 
 
 def recall_preview(
@@ -1765,7 +1775,7 @@ class RecallSearchWindow(Adw.ApplicationWindow):
         window = self._window_for_image(self._detail_item, image_index)
         if window:
             title = str(window.get("title") or window.get("app") or "Application window")
-            state = "Exact application-window screenshot"
+            state = recall_window_preview_state(window)
         else:
             title = "Display overview"
             state = "Display overview · useful for minimized or uncaptured windows"
@@ -2454,6 +2464,7 @@ class RecallSearchWindow(Adw.ApplicationWindow):
                 description = "Display overview"
             position_label.set_label(
                 f"{position + 1} of {len(indices)} — {description[:80]}"
+                + (" · " + recall_window_preview_state(window) if window else "")
             )
             previous_button.set_sensitive(position > 0)
             next_button.set_sensitive(position + 1 < len(indices))

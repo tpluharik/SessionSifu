@@ -4,6 +4,22 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.8
+
+- Added GNOME multi-workspace Recall coverage using a bounded, process-memory
+  cache of previously visible window previews. Workspace/focus changes refresh
+  the cache after settling; snapshots reuse it for inactive or obscured windows.
+- Kept capture serialized and compositor-safe: no workspace switching, window
+  activation or off-workspace actor repainting. Overlapped screen regions are
+  rejected so another application's pixels are not mislabeled or cached.
+- Preserved each cached image's original capture time through encryption and
+  search, with explicit cached-preview labels and completeness diagnostics.
+- Limited the ephemeral cache to 64 previews / 64 MiB, cleared it on extension
+  startup/shutdown and privacy-policy changes, and retained no persistent
+  plaintext cache. Native screenshot staging uses private runtime files.
+- Saved the total workspace count in named and automatic session snapshots.
+- Added cache, occlusion, provenance and workspace-count regression coverage.
+
 ## 3.5.7
 
 - Fixed the GNOME integration health check reporting version 3.5.5 while the

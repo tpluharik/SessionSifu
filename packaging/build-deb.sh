@@ -5,7 +5,7 @@ project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 extension_dir="$project_dir/extension/sessionsifu@local"
 dist_dir="$project_dir/dist"
 updates_dir="$project_dir/updates"
-version="3.5.7"
+version="3.5.8"
 package="$dist_dir/sessionsifu_${version}_all.deb"
 update_package="$updates_dir/sessionsifu_${version}_all.deb"
 stage=$(mktemp -d /tmp/sessionsifu-package.XXXXXX)
@@ -29,6 +29,9 @@ gjs -m "$project_dir/tests/restore-safety-smoke.js"
 gjs -m "$project_dir/tests/security-smoke.js"
 gjs -m "$project_dir/tests/recall-activity-smoke.js"
 gjs -m "$project_dir/tests/recall-privacy-smoke.js"
+mkdir -m 0700 "$stage/cache-test-runtime"
+XDG_RUNTIME_DIR="$stage/cache-test-runtime" \
+    gjs -m "$project_dir/tests/recall-workspace-cache-smoke.js" "$stage/cache-test-runtime"
 python3 "$project_dir/tests/test_static.py" "$project_dir"
 python3 "$project_dir/tests/test_portable.py"
 python3 "$project_dir/tests/test_recall_engine.py"

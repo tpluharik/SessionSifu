@@ -1,11 +1,11 @@
 {
-  "version": "3.5.7",
+  "version": "3.5.8",
   "channel": "stable",
-  "issued_at": "2026-08-30T12:04:14Z",
-  "expires_at": "2026-10-14T12:04:14Z",
+  "issued_at": "2026-08-30T19:12:36Z",
+  "expires_at": "2026-10-14T19:12:36Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.7_all.deb",
-  "sha256": "7f3188393bb866896d2f6ddd1e8d6ee4f02a93f0ec61f65ab3eb91c81f51adbd",
-  "size": 3779484,
-  "notes": "SessionSifu 3.5.7 fixes false stale-integration warnings by deriving the live GNOME integration version from extension metadata. It retains the Ubuntu 24.04 installation fix and encrypted Workspace Capsules from 3.5.6."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.8_all.deb",
+  "sha256": "06f5c50abba5634738041b703569ea7d0d1bf44773fcd562e7f9acc6f5f04905",
+  "size": 3757660,
+  "notes": "SessionSifu 3.5.8 adds compositor-safe multi-workspace Recall previews using a bounded memory cache of previously visible windows, with honest capture timestamps and no forced workspace switching. It also saves the total workspace count and prevents overlapping apps from being captured as another window."
 }

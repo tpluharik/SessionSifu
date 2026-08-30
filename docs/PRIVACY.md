@@ -87,7 +87,13 @@ Recall is designed for data minimization, not invisible monitoring:
 - file paths are removed unless separately enabled;
 - screenshots are skipped while locked; when a user-excluded application is
   visible, its metadata/window image and the shared display image are omitted,
-  while independently rendered images of allowed windows can still be saved;
+  while unobscured allowed-window previews can still be saved;
+- GNOME's cross-workspace preview cache is memory-only, limited to 64 previews
+  and 64 MiB, and cleared on extension restart, disable or exclusion changes.
+  Owner-private runtime staging files exist only while native screenshot output
+  is transferred into memory. Cached images keep their original capture time
+  and pass through the same sensitive-content filtering and encryption as live
+  images when added to a Recall moment;
 - OCR preprocessing uses a private temporary grayscale image that is deleted
   immediately after local Tesseract recognition; only the compact preview and
   accepted OCR words/coordinates enter the encrypted vault;

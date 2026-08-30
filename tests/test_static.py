@@ -48,8 +48,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.5.7"
-assert metadata["version"] == 42
+assert metadata["version-name"] == "3.5.8"
+assert metadata["version"] == 43
 autostart_source = (extension / "ui" / "autostart.js").read_text()
 file_utils_source = (extension / "utils" / "fileUtils.js").read_text()
 assert "extensionObject.metadata['version-name']" in file_utils_source
@@ -87,7 +87,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.5.7"' in build_script
+assert 'version="3.5.8"' in build_script
 package_control = (root / "packaging" / "control").read_text()
 assert "python3-pyatspi" in package_control
 assert "gnome-settings-daemon-common" in package_control
@@ -184,7 +184,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.5.7"' in app_source
+assert 'CURRENT_VERSION = "3.5.8"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -240,8 +240,8 @@ assert (
     "windowIndexes.get(MetaWindowUtils.getStableWindowId(metaWindow))"
     not in recorder_source
 )
-assert "Captured ${windowCapture.captured} of ${windowCapture.expected}" in recorder_source
-assert "${windowCapture.matched} live actors matched" in recorder_source
+assert "Prepared ${windowCapture.available} of ${windowCapture.expected}" in recorder_source
+assert "${windowCapture.cached} from workspace cache" in recorder_source
 assert 'if not bool(match.get("focused", False)):' in app_source
 assert '"storage": (960, 68)' in app_source
 assert '"readable": (1440, 74)' in app_source
@@ -262,7 +262,15 @@ assert "source.screenshot_area_finish(result)" in recorder_source
 assert "MAX_WINDOW_CAPTURES_PER_PASS = 24" in recorder_source
 assert "WINDOW_CAPTURE_BUDGET_US" in recorder_source
 assert "await _yieldToShell()" in recorder_source
-assert "_captureWindowActors(name, exclusions)" in source_text
+assert "_captureWindowActors(name, exclusions, shouldContinue)" in source_text
+assert "WorkspaceCache.restorePreview(" in recorder_source
+assert "WorkspaceCache.storePreview(" in recorder_source
+assert "active-workspace-changed" in recorder_source
+assert "notify::focus-window" in recorder_source
+assert "await this._workspaceCachePromise" in recorder_source
+assert "isWindowRegionUnobscured(metaWindow, stack)" in recorder_source
+assert "recall_preview_captured_at" in recorder_source
+assert "tests/recall-workspace-cache-smoke.js" in build_script
 assert "_windowMatchesExclusions(metaWindow, exclusions, tracker)" in source_text
 assert "sync_gnome_recall_shortcut" in app_source
 assert "def live_extension_current" in app_source
@@ -279,6 +287,7 @@ save_source = (extension / "saveSession.js").read_text()
 assert "compact ? 0 : 4" in save_source
 assert "replace_contents_bytes_async" in save_source
 assert "this._saveSessionIdleId" not in save_source
+assert "sessionConfig.n_workspace = global.workspace_manager.n_workspaces;" in save_source.split("async _buildSession", 1)[1]
 open_files_source = (extension / "openFiles.js").read_text()
 assert "OPEN_FD_SCAN_LIMIT = 128" in open_files_source
 assert "RECENT_FILE_SCAN_LIMIT = 512" in open_files_source
@@ -398,7 +407,7 @@ for required in (
     assert required.is_file(), required
 
 roadmap = (root / "ROADMAP.md").read_text()
-assert "## Shipped foundation — 3.5.6" in roadmap
+assert "## Shipped foundation — 3.5.8" in roadmap
 for shipped_feature in ("semantic embedding", "restore journals", "scene grouping", "collections", "JetBrains", "monitor identity", "Ask history", "MCP", "export/import"):
     assert shipped_feature in roadmap
 assert "## Explicit non-goals" in roadmap

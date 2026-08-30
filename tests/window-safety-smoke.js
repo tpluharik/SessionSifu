@@ -2,6 +2,7 @@ import {
     MAX_WORKSPACE_INDEX,
     isValidWorkspaceIndex,
     isWindowCaptureSafe,
+    isWindowRegionUnobscured,
     isWindowUsable,
 } from '../extension/sessionsifu@local/windowSafety.js';
 
@@ -59,3 +60,15 @@ if (!isValidWorkspaceIndex(0) || !isValidWorkspaceIndex(MAX_WORKSPACE_INDEX))
     throw new Error('A safe workspace index was rejected');
 if (isValidWorkspaceIndex(-1) || isValidWorkspaceIndex(MAX_WORKSPACE_INDEX + 1))
     throw new Error('An unsafe workspace index was accepted');
+
+const back = fakeWindow({actor: visibleActor});
+const front = fakeWindow({actor: visibleActor, rect: {x: 20, y: 20, width: 400, height: 300}});
+const separate = fakeWindow({actor: visibleActor, rect: {x: 900, y: 0, width: 400, height: 300}});
+if (isWindowRegionUnobscured(back, [back, front]))
+    throw new Error('An overlapped window was accepted for screen-area capture');
+if (!isWindowRegionUnobscured(front, [back, front]))
+    throw new Error('The unobscured top window was rejected');
+if (!isWindowRegionUnobscured(back, [back, separate]))
+    throw new Error('A non-overlapping window was rejected');
+if (isWindowRegionUnobscured(back, [front]))
+    throw new Error('A window missing from the current stack was accepted');

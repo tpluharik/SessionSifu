@@ -47,6 +47,30 @@ Recognized private-browsing and protected/remote-content windows are treated the
 same way: their window image is omitted and the shared overview is withheld,
 without cancelling independent captures of other eligible applications.
 
+### GNOME workspaces and cached previews
+
+From 3.5.8, GNOME session metadata includes all workspaces. Visual capture uses
+only currently visible, unobscured screen regions; it never switches workspaces
+or forces a hidden window to repaint. After a workspace/focus change settles,
+SessionSifu retains eligible previews in a bounded memory cache. A later Recall
+moment can reuse those previews for inactive, minimized or obscured windows.
+
+To populate the cache, visit each workspace and bring each desired window to the
+front once. A window that has not been visible since the extension was loaded
+remains metadata-only. Cached previews are explicitly labeled with their
+original capture time in the large viewer and gallery, and the capture summary
+reports how many images came from the cache. Their OCR describes the retained
+image, which can be older than the current session metadata.
+Cached pixels are reused only while the window title still matches their source
+context; a changed title/page requires a fresh visible capture.
+
+The cache holds at most 64 previews / 64 MiB (16 MiB per source image) and is
+cleared on extension reload/logout, Recall disable, screenshot disable, exclusion
+changes or deletion of all history. Short-lived native screenshot staging files use
+the owner-private runtime directory and are removed after loading into memory.
+Saved Recall previews still pass through normal compression, privacy filtering,
+OCR and authenticated encryption.
+
 GNOME image processing, OCR, encryption and indexing run outside GNOME Shell.
 The encrypted vault stores the accepted preview and OCR coordinates; the
 private OCR working image is deleted immediately after recognition.

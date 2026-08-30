@@ -206,6 +206,29 @@ class RecallEngineTests(unittest.TestCase):
             self.assertEqual(result, {"saved": False, "reason": "screen unchanged"})
             self.assertEqual(len(calls), 1)
 
+    def test_workspace_cache_provenance_survives_encryption_and_search(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            capture = self.capture(root)
+            payload = json.loads(capture.read_text())
+            window = payload["x_session_config_objects"][0]
+            window.update({
+                "desktop_number": 2,
+                "recall_preview_source": "workspace-cache",
+                "recall_preview_captured_at": "2026-08-22T11:55:00Z",
+            })
+            capture.write_text(json.dumps(payload))
+            (root / f"{capture.stem}-window-0.jpg").write_bytes(b"cached-workspace-preview")
+            vault = RecallVault(root, test_key=b"w" * 32)
+            result = vault.finalize(capture, RecallPolicy())
+            self.assertTrue(result["saved"])
+            found = vault.search("Project notes")[0]
+            saved_window = found["matched_window"]
+            self.assertEqual(saved_window["workspace"], 2)
+            self.assertEqual(saved_window["preview_source"], "workspace-cache")
+            self.assertEqual(saved_window["preview_captured_at"], "2026-08-22T11:55:00Z")
+            self.assertEqual(found["capture_diagnostics"]["cached_workspace_previews"], 1)
+
     def test_structured_ocr_filters_noise_and_normalizes_word_boxes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

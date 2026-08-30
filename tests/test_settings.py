@@ -45,6 +45,14 @@ assert module.recall_capture_summary({
         "excluded_windows": 1,
     }
 }) == "3/4 eligible window images · 1 privacy-filtered · incomplete"
+assert module.recall_window_preview_state({
+    "preview_source": "workspace-cache", "preview_captured_at": "2026-08-30T12:00:00Z"
+}) == "Cached workspace preview · captured 2026-08-30T12:00:00Z"
+assert "2 cached workspace previews" in module.recall_capture_summary({
+    "capture_diagnostics": {
+        "eligible_windows": 3, "captured_window_images": 3, "cached_workspace_previews": 2,
+    }
+})
 
 settings = module.settings()
 assert settings.get_boolean("show-indicator") is True

@@ -28,6 +28,10 @@ export const sessions_path = GLib.build_filenamev([config_path_base, 'sessions']
 export const history_path = GLib.build_filenamev([config_path_base, 'history']);
 export const history_limit = 5;
 export const recall_path = GLib.build_filenamev([config_path_base, 'recall']);
+// Private native screenshot staging only; retained workspace previews live in
+// bounded process memory and are never written as a durable plaintext cache.
+export const recall_window_cache_path = GLib.build_filenamev([
+    GLib.get_user_runtime_dir(), 'sessionsifu-recall-window-cache']);
 export const sessions_backup_folder_name = 'backups';
 const sessions_backup_path = GLib.build_filenamev([sessions_path, sessions_backup_folder_name]);
 

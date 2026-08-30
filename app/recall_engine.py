@@ -1078,6 +1078,11 @@ class RecallVault:
                 "width": int(position.get("width", (window.get("geometry") or [0, 0, 0, 0])[2]) or 0),
                 "height": int(position.get("height", (window.get("geometry") or [0, 0, 0, 0])[3]) or 0),
                 "image_index": image_index_by_window.get(window_index, -1),
+                "preview_source": (
+                    "workspace-cache" if window.get("recall_preview_source") == "workspace-cache"
+                    else "live"
+                ),
+                "preview_captured_at": str(window.get("recall_preview_captured_at") or "")[:64],
                 "ocr_text": ocr_text,
                 "ocr_boxes": ocr_boxes,
             })
@@ -1131,6 +1136,11 @@ class RecallVault:
                 "expected_windows": expected_windows,
                 "eligible_windows": eligible_windows,
                 "captured_window_images": captured_window_images,
+                "cached_workspace_previews": sum(
+                    1 for window in normalized_windows
+                    if window.get("preview_source") == "workspace-cache"
+                    and int(window.get("image_index", -1)) >= 0
+                ),
                 "missing_window_images": max(0, eligible_windows - captured_window_images),
                 "excluded_windows": excluded_windows,
                 "protected_windows": len(protected_indexes),

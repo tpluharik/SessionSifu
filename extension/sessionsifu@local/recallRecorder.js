@@ -10,8 +10,10 @@ import * as FileUtils from './utils/fileUtils.js';
 import * as Log from './utils/log.js';
 import * as MetaWindowUtils from './utils/metaWindowUtils.js';
 import * as SaveSession from './saveSession.js';
+import * as WorkspaceCache from './recallWorkspaceCache.js';
+import * as UiHelper from './ui/uiHelper.js';
 import {recallActivity} from './recallActivity.js';
-import {isWindowCaptureSafe} from './windowSafety.js';
+import {isWindowCaptureSafe, isWindowRegionUnobscured} from './windowSafety.js';
 import {
     recallExclusions,
     screenshotBlockingExclusions,
@@ -123,6 +125,32 @@ function _invalidateSummary(name) {
     _summaryCache.delete(GLib.build_filenamev([FileUtils.recall_path, name]));
 }
 
+function _replaceRecallPayload(path, payload) {
+    const file = Gio.File.new_for_path(path);
+    if (GLib.file_test(path, GLib.FileTest.IS_SYMLINK))
+        return Promise.reject(new Error('Refusing symbolic-link Recall metadata'));
+    const bytes = new TextEncoder().encode(JSON.stringify(payload));
+    return new Promise((resolve, reject) => {
+        file.replace_contents_bytes_async(
+            bytes,
+            null,
+            false,
+            Gio.FileCreateFlags.REPLACE_DESTINATION,
+            null,
+            (source, result) => {
+                try {
+                    const success = source.replace_contents_finish(result);
+                    if (!success)
+                        throw new Error('Could not update Recall preview metadata');
+                    GLib.chmod(path, 0o600);
+                    resolve(true);
+                } catch (error) {
+                    reject(error);
+                }
+            });
+    });
+}
+
 function _metaWindowForActor(actor) {
     if (!actor)
         return null;
@@ -146,6 +174,24 @@ function _windowMatchesExclusions(window, exclusions, tracker) {
         window.get_wm_class_instance?.(),
     ].map(value => String(value ?? '').toLowerCase()).join('\n');
     return exclusions.some(value => identity.includes(value));
+}
+
+function _isWindowPreviewSafe(metaWindow, actor) {
+    if (!isWindowCaptureSafe(metaWindow, actor))
+        return false;
+    try {
+        const workspace = global.workspace_manager.get_active_workspace();
+        if (!metaWindow.located_on_workspace(workspace))
+            return false;
+        const visibleWindows = global.get_window_actors()
+            .map(_metaWindowForActor)
+            .filter(window => window?.located_on_workspace(workspace));
+        const stack = global.display.sort_windows_by_stacking(visibleWindows);
+        return isWindowRegionUnobscured(metaWindow, stack);
+    } catch (error) {
+        Log.Log.getDefault().error(error, 'Could not validate Recall window visibility');
+        return false;
+    }
 }
 
 function _excludedApplicationVisible(excludedApps = []) {
@@ -213,11 +259,11 @@ function _yieldToShell() {
     });
 }
 
-function _captureWindowArea(path, metaWindow, actor) {
+function _captureWindowArea(path, metaWindow, actor, expectedTitle = metaWindow.get_title()) {
     return new Promise((resolve, reject) => {
         let stream;
         try {
-            if (!isWindowCaptureSafe(metaWindow, actor))
+            if (!_isWindowPreviewSafe(metaWindow, actor) || metaWindow.get_title() !== expectedTitle)
                 throw new Error('Recall window is not safely visible for capture');
             const rect = metaWindow.get_frame_rect();
             stream = Gio.File.new_for_path(path).replace(
@@ -232,6 +278,9 @@ function _captureWindowArea(path, metaWindow, actor) {
                         stream.close(null);
                         if (!success)
                             throw new Error('GNOME Shell could not capture the Recall window area');
+                        if (!_isWindowPreviewSafe(metaWindow, actor) ||
+                            metaWindow.get_title() !== expectedTitle)
+                            throw new Error('Recall window visibility changed during capture');
                         const size = Gio.File.new_for_path(path).query_info(
                             'standard::size', Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null)
                             .get_size();
@@ -269,20 +318,21 @@ function _stableWindowKey(value) {
     return String(value ?? '');
 }
 
-async function _captureWindowActors(name, excludedApps = []) {
+async function _captureWindowActors(name, excludedApps = [], shouldContinue = () => true) {
     const path = GLib.build_filenamev([FileUtils.recall_path, name]);
     const file = Gio.File.new_for_path(path);
     const [ok, contents] = file.load_contents(null);
     if (!ok)
-        return 0;
+        return {expected: 0, matched: 0, captured: 0, cached: 0, available: 0};
     const payload = JSON.parse(new TextDecoder().decode(contents));
+    const windowRecords = (payload.x_session_config_objects ?? [])
+        .slice(0, MAX_WINDOW_PREVIEWS);
     const windowIndexes = new Map(
-        (payload.x_session_config_objects ?? [])
-            .slice(0, MAX_WINDOW_PREVIEWS)
+        windowRecords
             .map((window, index) => [_stableWindowKey(window.window_id), index])
             .filter(([windowId]) => windowId));
     if (!windowIndexes.size)
-        return {expected: 0, matched: 0, captured: 0};
+        return {expected: 0, matched: 0, captured: 0, cached: 0, available: 0};
     const jobs = [];
     const scheduledIndexes = new Set();
     const exclusions = screenshotBlockingExclusions(excludedApps);
@@ -291,7 +341,7 @@ async function _captureWindowActors(name, excludedApps = []) {
         if (jobs.length >= MAX_WINDOW_CAPTURES_PER_PASS)
             break;
         const metaWindow = _metaWindowForActor(actor);
-        if (!isWindowCaptureSafe(metaWindow, actor) ||
+        if (!_isWindowPreviewSafe(metaWindow, actor) ||
             _windowMatchesExclusions(metaWindow, exclusions, tracker))
             continue;
         const windowId = _stableWindowKey(
@@ -300,28 +350,77 @@ async function _captureWindowActors(name, excludedApps = []) {
         if (index === undefined || scheduledIndexes.has(index))
             continue;
         scheduledIndexes.add(index);
-        jobs.push([index, metaWindow, actor]);
+        jobs.push([index, windowId, metaWindow, actor]);
     }
     let captured = 0;
+    let cached = 0;
     const startedUs = GLib.get_monotonic_time();
     // Never repaint Meta.WindowActor objects directly. That code runs inside
     // Mutter and concurrent/off-workspace paints can take down the Wayland
     // compositor. Capture only visible screen regions, one at a time, and
     // yield between requests so Shell input and frame processing stay live.
-    for (const [index, metaWindow, actor] of jobs) {
-        if (GLib.get_monotonic_time() - startedUs >= WINDOW_CAPTURE_BUDGET_US ||
+    for (const [index, windowId, metaWindow, actor] of jobs) {
+        if (!shouldContinue() ||
+            GLib.get_monotonic_time() - startedUs >= WINDOW_CAPTURE_BUDGET_US ||
             Main.sessionMode.isLocked || Main.overview.visible || Main.modalCount > 0)
             break;
         try {
-            await _captureWindowArea(
-                _windowScreenshotPath(name, index, true), metaWindow, actor);
+            const previewPath = _windowScreenshotPath(name, index, true);
+            const previewContext = String(windowRecords[index].window_title ?? '');
+            await _captureWindowArea(previewPath, metaWindow, actor, previewContext);
+            windowRecords[index].recall_preview_source = 'live';
+            windowRecords[index].recall_preview_captured_at =
+                new Date().toISOString();
             captured++;
+            if (shouldContinue()) {
+                try {
+                    WorkspaceCache.storePreview(windowId, previewPath, previewContext);
+                } catch (error) {
+                    Log.Log.getDefault().error(error, 'Could not retain a Recall workspace preview');
+                }
+            }
         } catch (error) {
             Log.Log.getDefault().error(error, 'Could not capture a Recall window area');
         }
         await _yieldToShell();
     }
-    return {expected: windowIndexes.size, matched: jobs.length, captured};
+    for (const [windowId, index] of windowIndexes) {
+        if (!shouldContinue())
+            break;
+        if (scheduledIndexes.has(index) &&
+            GLib.file_test(_windowScreenshotPath(name, index, true), GLib.FileTest.IS_REGULAR))
+            continue;
+        try {
+            const modified = WorkspaceCache.restorePreview(
+                windowId, _windowScreenshotPath(name, index, true),
+                WorkspaceCache.CACHE_MAX_AGE_SECONDS,
+                String(windowRecords[index].window_title ?? ''));
+            if (!modified)
+                continue;
+            windowRecords[index].recall_preview_source = 'workspace-cache';
+            windowRecords[index].recall_preview_captured_at =
+                new Date(modified * 1000).toISOString();
+            cached++;
+        } catch (error) {
+            Log.Log.getDefault().error(error, 'Could not reuse a Recall workspace preview');
+        }
+        await _yieldToShell();
+    }
+    payload.recall_capture_diagnostics = {
+        ...(payload.recall_capture_diagnostics ?? {}),
+        live_previews: captured,
+        cached_workspace_previews: cached,
+        available_previews: captured + cached,
+    };
+    await _replaceRecallPayload(path, payload);
+    WorkspaceCache.prunePreviewCache();
+    return {
+        expected: windowIndexes.size,
+        matched: jobs.length,
+        captured,
+        cached,
+        available: captured + cached,
+    };
 }
 
 function _compressScreenshot(
@@ -531,6 +630,7 @@ export function listRecall(query = '', excludedApps = []) {
 }
 
 export function deleteRecall() {
+    WorkspaceCache.clearPreviewCache();
     let removed = 0;
     for (const entry of _entryFiles()) {
         try {
@@ -546,6 +646,7 @@ export function deleteRecall() {
 }
 
 export function deleteRecallScreenshots() {
+    WorkspaceCache.clearPreviewCache();
     let removed = 0;
     for (const entry of _entryFiles()) {
         const candidates = [_screenshotPath(entry.name), _rawScreenshotPath(entry.name)];
@@ -575,32 +676,141 @@ export const RecallRecorder = class {
         this._saving = false;
         this._screenshotSaving = false;
         this._screenshotGeneration = 0;
+        this._workspaceCacheTimeoutId = 0;
+        this._workspaceCacheCapturing = false;
+        this._workspaceCachePromise = Promise.resolve();
         this._lastPruneUs = 0;
         this._destroyed = false;
         this._settingsIds = [
-            this._settings.connect('changed::recall-enabled', () => this._reschedule()),
+            this._settings.connect('changed::recall-enabled', () => {
+                this._screenshotGeneration++;
+                if (!this._settings.get_boolean('recall-enabled'))
+                    WorkspaceCache.clearPreviewCache();
+                this._reschedule();
+            }),
             this._settings.connect('changed::recall-interval', () => this._reschedule()),
-            this._settings.connect('changed::recall-pause-until', () => this._reschedule()),
+            this._settings.connect('changed::recall-pause-until', () => {
+                this._screenshotGeneration++;
+                this._reschedule();
+            }),
             this._settings.connect('changed::recall-retention-hours', () => this._prune(true)),
             this._settings.connect('changed::recall-excluded-apps', () => {
                 this._screenshotGeneration++;
                 const removed = deleteRecallScreenshots();
                 this._log.info(
                     `Recall exclusions changed; removed ${removed} existing screenshot previews`);
+                this._scheduleWorkspaceCache();
             }),
+            ...['recall-excluded-websites', 'recall-sensitive-filter'].map(key =>
+                this._settings.connect(`changed::${key}`, () => {
+                    this._screenshotGeneration++;
+                    WorkspaceCache.clearPreviewCache();
+                    this._scheduleWorkspaceCache();
+                })),
             this._settings.connect('changed::recall-capture-screenshots', () => {
-                if (this._settings.get_boolean('recall-capture-screenshots'))
+                if (this._settings.get_boolean('recall-capture-screenshots')) {
+                    this._scheduleWorkspaceCache();
                     return;
+                }
                 this._screenshotGeneration++;
                 const removed = deleteRecallScreenshots();
                 this._log.info(`Recall screenshots disabled; removed ${removed} previews`);
             }),
         ];
+        // Stable window IDs are only trusted within this extension lifetime.
+        // Never reuse a previous login's cache after Mutter IDs can change.
+        WorkspaceCache.clearPreviewCache();
+        this._workspaceChangedId = global.workspace_manager.connect(
+            'active-workspace-changed', () => this._scheduleWorkspaceCache());
+        this._windowCreatedId = global.display.connect(
+            'window-created', () => this._scheduleWorkspaceCache(2500));
+        this._focusChangedId = global.display.connect(
+            'notify::focus-window', () => this._scheduleWorkspaceCache(1800));
+        this._overviewHiddenId = Main.overview.connect(
+            'hidden', () => this._scheduleWorkspaceCache());
         this._reschedule();
     }
 
+    _mayCaptureWorkspace() {
+        if (this._destroyed || !this._settings ||
+            !this._settings.get_boolean('recall-enabled') ||
+            !this._settings.get_boolean('recall-capture-screenshots') ||
+            Main.sessionMode.isLocked || Main.overview.visible || Main.modalCount > 0)
+            return false;
+        const pausedUntil = this._settings.get_int64('recall-pause-until');
+        return pausedUntil === 0 ||
+            (pausedUntil > 0 && pausedUntil <= Math.floor(Date.now() / 1000));
+    }
+
+    _scheduleWorkspaceCache(delayMs = 1200) {
+        if (this._workspaceCacheTimeoutId) {
+            GLib.Source.remove(this._workspaceCacheTimeoutId);
+            this._workspaceCacheTimeoutId = 0;
+        }
+        if (!this._mayCaptureWorkspace())
+            return;
+        this._workspaceCacheTimeoutId = GLib.timeout_add(
+            GLib.PRIORITY_LOW, delayMs, () => {
+                this._workspaceCacheTimeoutId = 0;
+                if (this._screenshotSaving || this._workspaceCacheCapturing) {
+                    this._scheduleWorkspaceCache(2000);
+                    return GLib.SOURCE_REMOVE;
+                }
+                this._workspaceCachePromise = this._captureVisibleWorkspaceCache().catch(
+                    error => this._log.error(error, 'Could not refresh Recall workspace previews'));
+                return GLib.SOURCE_REMOVE;
+            });
+    }
+
+    async _captureVisibleWorkspaceCache() {
+        if (!this._mayCaptureWorkspace())
+            return;
+        this._workspaceCacheCapturing = true;
+        const generation = this._screenshotGeneration;
+        const exclusions = recallExclusions(this._settings.get_strv('recall-excluded-apps'));
+        const tracker = Shell.WindowTracker.get_default();
+        const startedUs = GLib.get_monotonic_time();
+        let captured = 0;
+        recallActivity.begin();
+        try {
+            for (const actor of global.get_window_actors()) {
+                if (captured >= MAX_WINDOW_CAPTURES_PER_PASS ||
+                    GLib.get_monotonic_time() - startedUs >= WINDOW_CAPTURE_BUDGET_US ||
+                    generation !== this._screenshotGeneration || !this._mayCaptureWorkspace())
+                    break;
+                const metaWindow = _metaWindowForActor(actor);
+                if (!_isWindowPreviewSafe(metaWindow, actor) || UiHelper.ignoreWindows(metaWindow) ||
+                    _windowMatchesExclusions(metaWindow, exclusions, tracker))
+                    continue;
+                const windowId = _stableWindowKey(MetaWindowUtils.getStableWindowId(metaWindow));
+                let temporaryPath;
+                try {
+                    temporaryPath = WorkspaceCache.capturePath(windowId);
+                    if (!temporaryPath)
+                        continue;
+                    const previewContext = String(metaWindow.get_title() ?? '');
+                    await _captureWindowArea(temporaryPath, metaWindow, actor, previewContext);
+                    if (generation === this._screenshotGeneration && this._mayCaptureWorkspace()) {
+                        WorkspaceCache.storePreview(windowId, temporaryPath, previewContext);
+                        captured++;
+                    }
+                } catch (error) {
+                    this._log.error(error, 'Could not cache a visible workspace window');
+                } finally {
+                    if (temporaryPath)
+                        _removeFile(temporaryPath);
+                }
+                await _yieldToShell();
+            }
+            WorkspaceCache.prunePreviewCache();
+        } finally {
+            this._workspaceCacheCapturing = false;
+            recallActivity.end();
+        }
+    }
+
     _removeTimers() {
-        for (const property of ['_initialTimeoutId', '_periodicTimeoutId']) {
+        for (const property of ['_initialTimeoutId', '_periodicTimeoutId', '_workspaceCacheTimeoutId']) {
             if (this[property]) {
                 GLib.Source.remove(this[property]);
                 this[property] = 0;
@@ -616,6 +826,7 @@ export const RecallRecorder = class {
         if (pausedUntil < 0 || pausedUntil > Math.floor(Date.now() / 1000))
             return;
         const interval = Math.max(60, this._settings.get_int('recall-interval'));
+        this._scheduleWorkspaceCache();
         this._initialTimeoutId = GLib.timeout_add_seconds(
             GLib.PRIORITY_LOW,
             Math.min(60, interval),
@@ -702,14 +913,22 @@ export const RecallRecorder = class {
         this._screenshotSaving = true;
         recallActivity.begin();
         try {
+            // A workspace-change cache pass and a scheduled snapshot must never
+            // ask Mutter for screenshots concurrently.
+            await this._workspaceCachePromise;
+            const shouldContinue = () =>
+                screenshotGeneration === this._screenshotGeneration && this._mayCaptureWorkspace();
+            if (!shouldContinue())
+                return;
             if (!displays.length)
                 throw new Error('No active displays are available for Recall preview capture');
             const rawPath = _rawScreenshotPath(name);
-            const windowCapture = await _captureWindowActors(name, exclusions);
+            const windowCapture = await _captureWindowActors(name, exclusions, shouldContinue);
             const captureSummary =
-                `Captured ${windowCapture.captured} of ${windowCapture.expected} ` +
-                `saved Recall window previews (${windowCapture.matched} live actors matched)`;
-            if (windowCapture.captured < windowCapture.expected)
+                `Prepared ${windowCapture.available} of ${windowCapture.expected} ` +
+                `saved Recall window previews (${windowCapture.captured} live, ` +
+                `${windowCapture.cached} from workspace cache)`;
+            if (windowCapture.available < windowCapture.expected)
                 this._log.warn(captureSummary);
             else
                 this._log.info(captureSummary);
@@ -778,6 +997,19 @@ export const RecallRecorder = class {
         this._destroyed = true;
         this._screenshotGeneration++;
         this._removeTimers();
+        if (this._workspaceChangedId)
+            global.workspace_manager.disconnect(this._workspaceChangedId);
+        if (this._windowCreatedId)
+            global.display.disconnect(this._windowCreatedId);
+        if (this._focusChangedId)
+            global.display.disconnect(this._focusChangedId);
+        if (this._overviewHiddenId)
+            Main.overview.disconnect(this._overviewHiddenId);
+        this._workspaceChangedId = 0;
+        this._windowCreatedId = 0;
+        this._focusChangedId = 0;
+        this._overviewHiddenId = 0;
+        WorkspaceCache.clearPreviewCache();
         for (const id of this._settingsIds)
             this._settings.disconnect(id);
         this._settingsIds = [];
