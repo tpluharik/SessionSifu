@@ -497,10 +497,14 @@ Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
 
-The modernized [SessionSifu roadmap](ROADMAP.md) separates the shipped 3.4.0
-foundation from the next reliability priorities and planned/research tracks.
-Each entry states its privacy boundary and a testable completion condition; the
-roadmap also records explicit non-goals.
+The modernized [SessionSifu roadmap](ROADMAP.md) separates the shipped 3.5.5
+foundation from the next reliability priorities, workspace-capsule phases and
+longer-term research. The companion
+[sandboxed-workspace study](docs/SANDBOXED_WORKSPACES.md) evaluates Flatpak and
+portals, Windows Sandbox/AppContainer, macOS virtualization, separate
+application profiles and container-based developer workspaces. It distinguishes
+convenient profile separation from an OS-enforced security boundary and records
+testable fail-closed requirements.
 
 ## Community and development
 

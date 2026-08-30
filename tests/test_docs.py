@@ -41,7 +41,7 @@ extension_readme = (ROOT / "extension/sessionsifu@local/README.md").read_text(en
 assert "Version 3.5.5" in readme
 assert "docs/media/recall-demo.webp" in readme
 assert "docs/RECALL_GUIDE.md" in readme
-assert "## Shipped foundation — 3.4.0" in roadmap
+assert "## Shipped foundation — 3.5.5" in roadmap
 assert "## Next: quality and trust" in roadmap
 assert "docs/COMPETITIVE_ANALYSIS.md" in readme
 assert "## Explicit non-goals" in roadmap

@@ -382,7 +382,7 @@ for required in (
     assert required.is_file(), required
 
 roadmap = (root / "ROADMAP.md").read_text()
-assert "## Shipped foundation — 3.4.0" in roadmap
+assert "## Shipped foundation — 3.5.5" in roadmap
 for shipped_feature in ("semantic embedding", "restore journals", "scene grouping", "collections", "JetBrains", "monitor identity", "Ask history", "MCP", "export/import"):
     assert shipped_feature in roadmap
 assert "## Explicit non-goals" in roadmap

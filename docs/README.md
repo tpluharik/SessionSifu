@@ -22,6 +22,8 @@ This index describes the current 3.5.5 behavior. Start with the main
   baseline, feedback themes and deliberate differences from other products.
 - [Competitive feature analysis](COMPETITIVE_ANALYSIS.md) — ten adjacent
   products/approaches, feature gaps and the priorities shipped in 3.4.0.
+- [Sandboxed workspaces and development options](SANDBOXED_WORKSPACES.md) —
+  platform feasibility, threat boundaries and the proposed capsule phases.
 - [Security audit](SECURITY_AUDIT.md) — findings, remediation and remaining
   hardening work.
 - [Release signing and recovery](RELEASE_SECURITY.md) — maintainer procedure,
@@ -30,8 +32,8 @@ This index describes the current 3.5.5 behavior. Start with the main
   trusted build requirements, roles and privacy statement.
 - [Publishing and distribution](PUBLISHING.md) — GitHub Releases, Ubuntu PPA,
   Snap Store and community package-manager submission status.
-- [Roadmap](../ROADMAP.md) — shipped foundation, next priorities, planned work
-  and non-goals.
+- [Roadmap](../ROADMAP.md) — shipped foundation, quality priorities, workspace
+  capsules, longer-term research and explicit non-goals.
 
 ## Project references
 
