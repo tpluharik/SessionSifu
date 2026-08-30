@@ -15,6 +15,8 @@ All notable SessionSifu changes are documented here.
   GNOME Shell 50 from a hard dependency to a recommendation. Full Shell
   integration still activates only on GNOME 50; manager and portable-safe
   functions remain available on older desktops.
+- Declared the GNOME settings-daemon schemas used by the global shortcut as an
+  explicit package dependency, including for minimal Ubuntu 24.04 installations.
 - Included the capsule module in system packages and atomic user-local updates,
   with compatibility repair detection for older partial updater payloads.
 

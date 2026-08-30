@@ -85,6 +85,7 @@ assert '"$updates_dir/latest.json"' in build_script
 assert 'version="3.5.6"' in build_script
 package_control = (root / "packaging" / "control").read_text()
 assert "python3-pyatspi" in package_control
+assert "gnome-settings-daemon-common" in package_control
 assert "gnome-shell-extension-manager | gnome-shell-extension-prefs" in package_control
 package_depends = next(
     line for line in package_control.splitlines() if line.startswith("Depends:")
@@ -95,6 +96,7 @@ debian_control = (root / "debian" / "control").read_text()
 build_control, binary_control = debian_control.split("Package: sessionsifu", 1)
 assert "gnome-shell-extension-manager" not in build_control
 assert "gnome-shell (>= 50)" not in build_control
+assert "gnome-settings-daemon-common" in build_control
 assert "gnome-shell-extension-manager | gnome-shell-extension-prefs" in binary_control
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
