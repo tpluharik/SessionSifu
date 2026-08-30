@@ -1,15 +1,17 @@
 Package: sessionsifu
-Version: 3.5.5
+Version: 3.5.6
 Section: gnome
 Priority: optional
 Architecture: all
 Maintainer: Tomas Pluharik <tpluharik@gmail.com>
-Depends: gnome-shell (>= 50), gnome-shell-extension-manager | gnome-shell-extension-prefs, gjs, python3, python3-gi, python3-pyatspi, python3-cryptography, python3-keyring, python3-pil, tesseract-ocr, gir1.2-gtk-4.0, gir1.2-adw-1, gir1.2-gdkpixbuf-2.0, gir1.2-gtop-2.0, procps, libglib2.0-bin, openssl
+Depends: gjs, python3, python3-gi, python3-pyatspi, python3-cryptography, python3-keyring, python3-pil, tesseract-ocr, gir1.2-gtk-4.0, gir1.2-adw-1, gir1.2-gdkpixbuf-2.0, gir1.2-gtop-2.0, procps, libglib2.0-bin, openssl
+Recommends: gnome-shell, gnome-shell-extension-manager | gnome-shell-extension-prefs
 Suggests: ydotool
 Description: save and restore GNOME desktop layouts
  SessionSifu records running applications and window state, then relaunches
  applications and reconstructs their workspaces, monitors, geometry and state.
  It includes rolling automatic snapshots, recent-document restoration, a
   GNOME Shell 50 full-integration backend, GTK 4 manager, top-bar indicator and
-  verified user-local updates. Companion portable builds support KDE Plasma,
-  general GNOME, Windows and macOS.
+  verified user-local updates. The manager and portable-safe functions install
+  on Ubuntu 24.04/GNOME 46; full shell integration activates on GNOME 50.
+  Companion portable builds support KDE Plasma, general GNOME, Windows and macOS.

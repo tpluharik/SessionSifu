@@ -8,6 +8,7 @@ from typing import Callable
 from . import VERSION
 from .adapters import PlatformAdapter, select_adapter
 from .archive import ArchiveManager
+from .capsule import CapsuleManager, CapsuleStore
 from .model import SessionSnapshot
 from .recall import RecallStore
 from .restore_journal import RestoreJournal
@@ -28,6 +29,7 @@ class SessionController:
         self.recall_store = RecallStore(self.store.root)
         self.restore_journal = RestoreJournal(self.store.root)
         self.archive = ArchiveManager(self.store, self.recall_store)
+        self.capsules = CapsuleManager(CapsuleStore(self.store.root))
 
     def save_named(self, name: str) -> Path:
         session = self.adapter.capture()
@@ -215,6 +217,41 @@ class SessionController:
     def clear_recall(self) -> int:
         return self.recall_store.clear()
 
+    def create_capsule(
+        self,
+        name: str,
+        backend: str,
+        applications: list[str],
+        *,
+        offline: bool = False,
+        mapped_folders: list[str] | None = None,
+    ) -> Path:
+        return self.capsules.create(
+            name,
+            backend,
+            applications,
+            offline=offline,
+            mapped_folders=mapped_folders,
+        )
+
+    def list_capsules(self) -> list[dict[str, object]]:
+        return [capsule.to_dict() for capsule in self.capsules.store.list()]
+
+    def preflight_capsule(self, name: str) -> dict[str, object]:
+        return self.capsules.preflight(name)
+
+    def launch_capsule(self, name: str) -> dict[str, object]:
+        return self.capsules.launch(name)
+
+    def export_windows_capsule(self, name: str, destination: Path) -> Path:
+        return self.capsules.export_windows_sandbox(name, destination)
+
+    def delete_capsule(self, name: str) -> None:
+        self.capsules.store.delete(name)
+
+    def delete_capsule_data(self, name: str) -> bool:
+        return self.capsules.store.delete_data(name)
+
     def delete_recall(
         self, *, record: str = "", app: str = "", website: str = ""
     ) -> int:
@@ -229,4 +266,5 @@ class SessionController:
             "privacy_recall_entries": self.recall_store.entry_count(),
             "privacy_recall": self.recall_store.diagnostics(),
             "restore_journals": len(self.restore_journal.list()),
+            "workspace_capsules": len(self.capsules.store.list()),
         }

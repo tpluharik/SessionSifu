@@ -22,6 +22,22 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--history", action="store_true", help="list rolling snapshots")
     result.add_argument("--restore-file", type=Path, help="restore a SessionSifu JSON file")
     result.add_argument("--diagnostics", action="store_true", help="print adapter capabilities")
+    result.add_argument("--capsule-create", metavar="NAME", help="create an encrypted workspace capsule")
+    result.add_argument(
+        "--capsule-backend",
+        choices=["profile", "flatpak", "windows-sandbox"],
+        default="profile",
+    )
+    result.add_argument("--capsule-app", action="append", default=[], help="application or Flatpak ID")
+    result.add_argument("--capsule-folder", action="append", default=[], help="read-only Windows Sandbox folder")
+    result.add_argument("--capsule-offline", action="store_true", help="request an enforceable offline backend")
+    result.add_argument("--capsule-list", action="store_true", help="list workspace capsules")
+    result.add_argument("--capsule-plan", metavar="NAME", help="print the effective capsule permission plan")
+    result.add_argument("--capsule-launch", metavar="NAME", help="launch a capsule after fail-closed preflight")
+    result.add_argument("--capsule-delete", metavar="NAME", help="delete a capsule manifest")
+    result.add_argument("--capsule-delete-data", metavar="NAME", help="delete a capsule's separate profile data")
+    result.add_argument("--capsule-export-wsb", metavar="NAME", help="export a Windows Sandbox capsule")
+    result.add_argument("--capsule-output", type=Path, help="destination for --capsule-export-wsb")
     result.add_argument(
         "--recall-search", action="store_true", help="open the dedicated Privacy Recall search popup"
     )
@@ -74,6 +90,35 @@ def main() -> int:
         handled = True
     if args.diagnostics:
         print(json.dumps(controller.diagnostics(), indent=2))
+        handled = True
+    if args.capsule_create:
+        print(controller.create_capsule(
+            args.capsule_create,
+            args.capsule_backend,
+            args.capsule_app,
+            offline=args.capsule_offline,
+            mapped_folders=args.capsule_folder,
+        ))
+        handled = True
+    if args.capsule_list:
+        print(json.dumps(controller.list_capsules(), indent=2))
+        handled = True
+    if args.capsule_plan:
+        print(json.dumps(controller.preflight_capsule(args.capsule_plan), indent=2))
+        handled = True
+    if args.capsule_launch:
+        print(json.dumps(controller.launch_capsule(args.capsule_launch), indent=2))
+        handled = True
+    if args.capsule_delete:
+        controller.delete_capsule(args.capsule_delete)
+        handled = True
+    if args.capsule_delete_data:
+        print(json.dumps({"deleted": controller.delete_capsule_data(args.capsule_delete_data)}))
+        handled = True
+    if args.capsule_export_wsb:
+        if not args.capsule_output:
+            raise SystemExit("--capsule-output is required with --capsule-export-wsb")
+        print(controller.export_windows_capsule(args.capsule_export_wsb, args.capsule_output))
         handled = True
     if args.recall_reindex:
         print(json.dumps(controller.reindex_recall(args.recall_reindex), indent=2))

@@ -1,6 +1,6 @@
 # SessionSifu documentation
 
-This index describes the current 3.5.5 behavior. Start with the main
+This index describes the current 3.5.6 behavior. Start with the main
 [README](../README.md) for installation and compatibility.
 
 ## Using SessionSifu
@@ -23,7 +23,8 @@ This index describes the current 3.5.5 behavior. Start with the main
 - [Competitive feature analysis](COMPETITIVE_ANALYSIS.md) — ten adjacent
   products/approaches, feature gaps and the priorities shipped in 3.4.0.
 - [Sandboxed workspaces and development options](SANDBOXED_WORKSPACES.md) —
-  platform feasibility, threat boundaries and the proposed capsule phases.
+  shipped 3.5.6 capsule foundation, platform feasibility, threat boundaries and
+  remaining capsule phases.
 - [Security audit](SECURITY_AUDIT.md) — findings, remediation and remaining
   hardening work.
 - [Release signing and recovery](RELEASE_SECURITY.md) — maintainer procedure,

@@ -1,3 +1,11 @@
+sessionsifu (3.5.6-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Add encrypted, preflighted workspace capsules and platform pilots.
+  * Allow manager installation on Ubuntu 24.04 without GNOME Shell 50.
+  * Keep full GNOME Shell integration explicitly limited to GNOME 50.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Sun, 30 Aug 2026 11:30:00 +0200
+
 sessionsifu (3.5.5-1~ppa1~resolute1) resolute; urgency=medium
 
   * Install Extension Manager or GNOME Extensions preferences when missing.

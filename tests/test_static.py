@@ -48,8 +48,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.5.5"
-assert metadata["version"] == 40
+assert metadata["version-name"] == "3.5.6"
+assert metadata["version"] == 41
 
 schema = ET.parse(extension / "schemas" / "org.gnome.shell.extensions.sessionsifu.gschema.xml")
 schema_node = schema.find("schema")
@@ -82,13 +82,19 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.5.5"' in build_script
+assert 'version="3.5.6"' in build_script
 package_control = (root / "packaging" / "control").read_text()
 assert "python3-pyatspi" in package_control
 assert "gnome-shell-extension-manager | gnome-shell-extension-prefs" in package_control
+package_depends = next(
+    line for line in package_control.splitlines() if line.startswith("Depends:")
+)
+assert "gnome-shell" not in package_depends
+assert "Recommends: gnome-shell," in package_control
 debian_control = (root / "debian" / "control").read_text()
 build_control, binary_control = debian_control.split("Package: sessionsifu", 1)
 assert "gnome-shell-extension-manager" not in build_control
+assert "gnome-shell (>= 50)" not in build_control
 assert "gnome-shell-extension-manager | gnome-shell-extension-prefs" in binary_control
 assert "test_user_update_package.py" in build_script
 assert "docs/TROUBLESHOOTING.md" in build_script
@@ -171,7 +177,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.5.5"' in app_source
+assert 'CURRENT_VERSION = "3.5.6"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -311,7 +317,9 @@ assert "install_user_payload" in app_source
 assert "missing_user_payload_modules" in app_source
 assert "Download & Repair" in app_source
 assert 'for name in (' in app_source
-for support_module in ("recall_engine.py", "semantic.py", "restore_journal.py", "mcp.py"):
+for support_module in (
+    "recall_engine.py", "semantic.py", "restore_journal.py", "mcp.py", "capsule.py"
+):
     assert f'"{support_module}"' in app_source
 assert 'installed_app_dir / name' in app_source
 assert '["dpkg-deb", "--extract"' in app_source
@@ -373,6 +381,7 @@ for required in (
     portable / "content.py",
     portable / "hotkey.py",
     portable / "ui.py",
+    portable / "capsule.py",
     portable / "adapters" / "windows.py",
     portable / "adapters" / "macos.py",
     portable / "adapters" / "linux.py",
@@ -382,10 +391,12 @@ for required in (
     assert required.is_file(), required
 
 roadmap = (root / "ROADMAP.md").read_text()
-assert "## Shipped foundation — 3.5.5" in roadmap
+assert "## Shipped foundation — 3.5.6" in roadmap
 for shipped_feature in ("semantic embedding", "restore journals", "scene grouping", "collections", "JetBrains", "monitor identity", "Ask history", "MCP", "export/import"):
     assert shipped_feature in roadmap
 assert "## Explicit non-goals" in roadmap
+assert "Workspace capsules shipped — 3.5.6" in roadmap
+assert "Windows Sandbox" in roadmap
 assert (root / "docs" / "COMPETITIVE_ANALYSIS.md").is_file()
 
 control_xml = (
@@ -395,7 +406,9 @@ for method in ("PlanSession", "RestoreSessionSelection", "PlanHistory", "Restore
     assert f'name="{method}"' in control_xml
 
 workflow = (root / ".github" / "workflows" / "release.yml").read_text()
-for runner in ("ubuntu-26.04", "windows-2025", "macos-15", "macos-15-intel"):
+for runner in (
+    "ubuntu-24.04", "ubuntu-26.04", "windows-2025", "macos-15", "macos-15-intel"
+):
     assert runner in workflow
 assert "contents: write" in workflow
 assert "gh release create" in workflow

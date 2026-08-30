@@ -485,12 +485,62 @@ class MainWindow(QMainWindow):
         clear_recall.clicked.connect(self.clear_recall)
         recall_layout.addWidget(clear_recall)
 
+        capsule_box = QWidget()
+        capsule_layout = QVBoxLayout(capsule_box)
+        capsule_notice = QLabel(
+            "Workspace capsules keep an encrypted launch manifest. Profile capsules separate "
+            "supported application data but are not a security sandbox; Flatpak and Windows "
+            "Sandbox plans show their effective boundary before launch or export."
+        )
+        capsule_notice.setWordWrap(True)
+        capsule_layout.addWidget(capsule_notice)
+        capsule_form = QFormLayout()
+        self.capsule_name = QLineEdit()
+        self.capsule_name.setPlaceholderText("Research")
+        capsule_form.addRow("Capsule name", self.capsule_name)
+        self.capsule_backend = QComboBox()
+        self.capsule_backend.addItem("Separate supported application profiles", "profile")
+        self.capsule_backend.addItem("Flatpak application sandbox", "flatpak")
+        self.capsule_backend.addItem("Windows Sandbox export", "windows-sandbox")
+        capsule_form.addRow("Backend", self.capsule_backend)
+        self.capsule_apps = QLineEdit()
+        self.capsule_apps.setPlaceholderText("firefox, code · or org.mozilla.firefox for Flatpak")
+        capsule_form.addRow("Applications", self.capsule_apps)
+        self.capsule_folders = QLineEdit()
+        self.capsule_folders.setPlaceholderText("Windows Sandbox read-only folders, separated by ;")
+        capsule_form.addRow("Mapped folders", self.capsule_folders)
+        self.capsule_offline = QCheckBox("Request offline networking")
+        capsule_form.addRow("Network", self.capsule_offline)
+        capsule_layout.addLayout(capsule_form)
+        capsule_create = QPushButton("Save encrypted capsule")
+        capsule_create.clicked.connect(self.create_capsule)
+        capsule_layout.addWidget(capsule_create)
+        self.capsule_items = QListWidget()
+        capsule_layout.addWidget(self.capsule_items, 1)
+        capsule_actions = QHBoxLayout()
+        capsule_plan = QPushButton("Review preflight")
+        capsule_plan.clicked.connect(self.preflight_capsule)
+        capsule_launch = QPushButton("Launch")
+        capsule_launch.clicked.connect(self.launch_capsule)
+        capsule_export = QPushButton("Export .wsb")
+        capsule_export.clicked.connect(self.export_windows_capsule)
+        capsule_delete = QPushButton("Delete manifest")
+        capsule_delete.clicked.connect(self.delete_capsule)
+        capsule_delete_data = QPushButton("Delete profile data")
+        capsule_delete_data.clicked.connect(self.delete_capsule_data)
+        for button in (
+            capsule_plan, capsule_launch, capsule_export, capsule_delete, capsule_delete_data
+        ):
+            capsule_actions.addWidget(button)
+        capsule_layout.addLayout(capsule_actions)
+
         tabs = QTabWidget()
         self.named = QListWidget()
         self.history = QListWidget()
         tabs.addTab(self._list_page(self.named, self.restore_named, self.delete_named), "Named sessions")
         tabs.addTab(self._list_page(self.history, self.restore_history), "History (latest five)")
         tabs.addTab(recall_box, "Privacy Recall")
+        tabs.addTab(capsule_box, "Workspace capsules")
         layout.addWidget(tabs, 1)
 
         diagnostics = QPushButton("Show platform diagnostics")
@@ -543,6 +593,95 @@ class MainWindow(QMainWindow):
 
     def save_history(self, silent: bool = False) -> None:
         self._perform(self.controller.save_history, "Saved an automatic snapshot.", silent=silent)
+
+    def create_capsule(self) -> None:
+        name = self.capsule_name.text().strip()
+        applications = [
+            item.strip() for item in self.capsule_apps.text().split(",") if item.strip()
+        ]
+        folders = [
+            item.strip() for item in self.capsule_folders.text().split(";") if item.strip()
+        ]
+        backend = str(self.capsule_backend.currentData())
+        if not name:
+            self.status.setText("Enter a capsule name first.")
+            return
+        self._perform(
+            lambda: self.controller.create_capsule(
+                name,
+                backend,
+                applications,
+                offline=self.capsule_offline.isChecked(),
+                mapped_folders=folders,
+            ),
+            f"Saved encrypted workspace capsule “{name}”. Review preflight before launch.",
+        )
+
+    def _selected_capsule(self) -> str:
+        item = self.capsule_items.currentItem()
+        return str(item.data(Qt.UserRole)) if item else ""
+
+    def preflight_capsule(self) -> None:
+        name = self._selected_capsule()
+        if not name:
+            self.status.setText("Select a workspace capsule first.")
+            return
+        try:
+            plan = self.controller.preflight_capsule(name)
+        except Exception as error:
+            QMessageBox.warning(self, "Workspace capsule", str(error))
+            return
+        QMessageBox.information(
+            self,
+            f"Workspace capsule · {name}",
+            json.dumps(plan, indent=2),
+        )
+
+    def launch_capsule(self) -> None:
+        name = self._selected_capsule()
+        if name:
+            self._perform(
+                lambda: self.controller.launch_capsule(name),
+                f"Launched workspace capsule “{name}” after preflight.",
+            )
+
+    def export_windows_capsule(self) -> None:
+        name = self._selected_capsule()
+        if not name:
+            self.status.setText("Select a Windows Sandbox capsule first.")
+            return
+        destination, _filter = QFileDialog.getSaveFileName(
+            self, "Export Windows Sandbox capsule", f"{name}.wsb", "Windows Sandbox (*.wsb)"
+        )
+        if destination:
+            self._perform(
+                lambda: self.controller.export_windows_capsule(name, Path(destination)),
+                "Created a reviewable Windows Sandbox configuration.",
+            )
+
+    def delete_capsule(self) -> None:
+        name = self._selected_capsule()
+        if name:
+            self._perform(
+                lambda: self.controller.delete_capsule(name),
+                "Deleted the encrypted capsule manifest.",
+            )
+
+    def delete_capsule_data(self) -> None:
+        name = self._selected_capsule()
+        if not name:
+            self.status.setText("Select a workspace capsule first.")
+            return
+        answer = QMessageBox.question(
+            self,
+            "Delete workspace profile data?",
+            "The capsule's separate browser/editor profile data will be permanently deleted.",
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self._perform(
+                lambda: self.controller.delete_capsule_data(name),
+                "Deleted the capsule's separate profile data.",
+            )
 
     def restore_named(self) -> None:
         item = self.named.currentItem()
@@ -1047,6 +1186,13 @@ class MainWindow(QMainWindow):
         for path in self.controller.history():
             self.history.addItem(path.stem)
             self.history.item(self.history.count() - 1).setData(Qt.UserRole, str(path))
+        self.capsule_items.clear()
+        for capsule in self.controller.list_capsules():
+            name = str(capsule.get("name") or "")
+            backend = str(capsule.get("backend") or "")
+            item = QListWidgetItem(f"{name} — {backend}")
+            item.setData(Qt.UserRole, name)
+            self.capsule_items.addItem(item)
         self.refresh_recall()
         capabilities = self.controller.adapter.capabilities
         self.status.setText(

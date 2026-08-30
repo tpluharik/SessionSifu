@@ -10,7 +10,6 @@ Build-Depends:
  gir1.2-gtk-4.0,
  gir1.2-gtop-2.0,
  gjs,
- gnome-shell (>= 50),
  libglib2.0-bin,
  nodejs,
  openssl,
@@ -37,8 +36,6 @@ Depends:
  gir1.2-gtk-4.0,
  gir1.2-gtop-2.0,
  gjs,
- gnome-shell (>= 50),
- gnome-shell-extension-manager | gnome-shell-extension-prefs,
  libglib2.0-bin,
  openssl,
  procps,
@@ -49,9 +46,14 @@ Depends:
  python3-pil,
  python3-pyatspi,
  tesseract-ocr
+Recommends:
+ gnome-shell,
+ gnome-shell-extension-manager | gnome-shell-extension-prefs
 Suggests: ydotool
 Description: restore GNOME applications, workspaces and window layouts
  SessionSifu records running applications and window state, then relaunches
  applications and reconstructs workspaces, monitors, geometry and state. It
  includes rolling snapshots, document restoration, a GNOME Shell 50 extension,
- a GTK 4 manager and an optional private local visual timeline.
+ a GTK 4 manager and an optional private local visual timeline. The manager and
+ portable-safe functions install on Ubuntu 24.04; shell integration requires
+ GNOME 50.

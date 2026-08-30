@@ -33,6 +33,7 @@ New optional surfaces in 3.4.0 follow the same local-only boundary:
 | Portable sessions | Applications, executable/arguments, titles, documents and supported layout | User action/history timer | Named: until deleted; history: five |
 | Privacy Recall vault | Encrypted app identity, title, time, layout, bounded accessibility text and optional document paths/OCR | Off | User retention plus 500-entry/30-day and storage-quota bounds |
 | Recall previews | AES-GCM encrypted compressed display and eligible window images | Off, separate opt-in | Deleted with entry; changed exclusions delete affected entries |
+| Workspace capsules | AES-GCM encrypted application IDs, selected backend/network policy and explicit folder mappings | User action | Until manifest deletion; separate profile data requires its own explicit deletion |
 | Update cache | Downloaded Debian package | Created after update download | Until replaced or manually cleared |
 | Logs | Structural operational messages; failures may identify an application | System journal | Operating-system journal policy |
 
@@ -55,6 +56,7 @@ Full GNOME integration:
 ~/.config/sessionsifu/history/
 ~/.config/sessionsifu/sessions/
 ~/.config/sessionsifu/recall/
+~/.config/sessionsifu/capsules/
 ~/.cache/sessionsifu/updates/
 ```
 
@@ -63,6 +65,12 @@ Portable editions:
 - Windows: `%APPDATA%\SessionSifu`;
 - macOS: `~/Library/Application Support/SessionSifu`;
 - Linux: `${XDG_CONFIG_HOME:-~/.config}/sessionsifu-portable`.
+
+Capsule filenames are hashes rather than plaintext capsule names. Capsule
+manifests never include browser/editor credential databases, cookies or opaque
+profile contents. A separate profile directory is created only when a reviewed
+profile adapter launches; it remains local and is removed only by the explicit
+**Delete profile data** action.
 
 ## Recall protections and limits
 

@@ -1,11 +1,11 @@
 {
-  "version": "3.5.5",
+  "version": "3.5.6",
   "channel": "stable",
-  "issued_at": "2026-08-28T12:54:10Z",
-  "expires_at": "2026-10-12T12:54:10Z",
+  "issued_at": "2026-08-30T09:26:52Z",
+  "expires_at": "2026-10-14T09:26:52Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.5_all.deb",
-  "sha256": "dd510f4ab244d13c8901d755dbe95a92e4e4f40a9a41aee0562446a5b01153a4",
-  "size": 3737806,
-  "notes": "SessionSifu 3.5.5 adds a GNOME extension-management tool to DEB/PPA installations when one is not already present, while retaining the lighter Recall capture and search pipeline introduced in 3.5.4."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.6_all.deb",
+  "sha256": "9b1af490910bd53815eaf2f42b41d8eadbf57877bb47f944c76fba7ad9dabf18",
+  "size": 3755670,
+  "notes": "SessionSifu 3.5.6 adds encrypted, preflighted Workspace Capsules with profile, Flatpak and Windows Sandbox pilots. It also fixes Ubuntu 24.04 installation by keeping GNOME Shell 50 as an optional full-integration recommendation instead of a hard dependency."
 }

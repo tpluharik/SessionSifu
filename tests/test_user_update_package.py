@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix="sessionsifu-package-test-") as director
     installed_module = test_root / "data/sessionsifu/app/recall_engine.py"
     installed_support_modules = [
         test_root / f"data/sessionsifu/app/{name}"
-        for name in ("semantic.py", "restore_journal.py", "mcp.py")
+        for name in ("semantic.py", "restore_journal.py", "mcp.py", "capsule.py")
     ]
     installed_tessdata = test_root / "data/sessionsifu/tessdata"
     assert installed_app.is_file()
@@ -122,6 +122,6 @@ with tempfile.TemporaryDirectory(prefix="sessionsifu-package-test-") as director
         env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
     )
     assert health_check.returncode == 0, health_check.stderr
-    assert health_check.stdout.strip() == "semantic.py,restore_journal.py,mcp.py"
+    assert health_check.stdout.strip() == "semantic.py,restore_journal.py,mcp.py,capsule.py"
 
 print("user-local package launch test passed")

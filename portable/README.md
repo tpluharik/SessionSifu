@@ -4,7 +4,7 @@ This package contains the shared SessionSifu 3 desktop application used by the
 Windows, macOS, KDE Plasma and generic GNOME builds. See the repository README
 for platform capabilities and installation artifacts.
 
-The current 3.5.5 manager includes encrypted visual Privacy Recall. It is off by default;
+The current 3.5.6 manager includes encrypted visual Privacy Recall. It is off by default;
 screenshots, open paths, OCR and related ranking require separate choices. Its
 tray menu shows when capture is active and offers timed pauses. Application and
 observable website exclusions redact matching activity from new captures
@@ -38,3 +38,20 @@ Vault keys prefer Windows Credential Locker, macOS Keychain and the available
 Linux Secret Service/KWallet backend. A private application-data key is used
 when no usable credential backend exists and remains authoritative for that
 vault if the backend later becomes available.
+
+## Workspace capsules
+
+Version 3.5.6 adds a **Workspace capsules** tab and matching command-line
+operations. Capsule manifests are encrypted and store only explicit application
+identities, backend policy and selected mappings:
+
+- profile capsules use reviewed Firefox, Chromium-family and VS Code/VSCodium
+  profile switches, and are labelled as separation rather than containment;
+- Linux Flatpak capsules accept installed application IDs, keep file access in
+  portal/package policy and optionally add `--unshare=network` for that launch;
+- Windows Sandbox capsules export `.wsb` configuration with read-only mappings
+  and privacy-oriented device/clipboard defaults.
+
+Use **Review preflight** before launch. Any requested boundary that cannot be
+enforced is blocked. Deleting the encrypted manifest and deleting a capsule's
+separate profile directory are deliberately separate actions.

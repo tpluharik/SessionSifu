@@ -1,10 +1,10 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.5.5. It separates shipped
+This roadmap describes the product after version 3.5.6. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
 
-## Shipped foundation — 3.5.5
+## Shipped foundation — 3.5.6
 
 SessionSifu now combines session restoration with an encrypted, opt-in visual
 history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
@@ -33,7 +33,7 @@ history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
   quotas, granular deletion, restore preview and signed GNOME updates.
 
 The session, Recall and retrieval foundations were delivered incrementally
-through 3.5.5. The user-visible workflow and underlying data model remain
+through 3.5.6. The user-visible workflow and underlying data model remain
 consistent across supported editions, while platform adapters report their
 real capabilities instead of implying parity.
 
@@ -64,14 +64,14 @@ database or embedding file is written.
 5. Add signed/notarized native portable updates, SBOMs and provenance for
    Windows, macOS and Linux artifacts.
 
-## Strategic direction: restorable workspace capsules
+## Workspace capsules shipped — 3.5.6
 
-The next major product direction is a **workspace capsule**: a saved session
+The first **workspace capsule** foundation is now shipped: a saved launch plan
 that can optionally carry a dedicated application profile, explicit resource
 permissions and a reproducible launch manifest. “Capsule” is an umbrella UX,
 not a claim that every mode is a security sandbox.
 
-Three visibly different modes are planned:
+Three visibly different modes are presented:
 
 | Mode | User promise | Isolation level |
 | --- | --- | --- |
@@ -85,41 +85,46 @@ show the selected backend, effective permissions, persistent paths and known
 escape hatches before launch. Unsupported controls fail closed; SessionSifu
 must never silently relabel an ordinary process as sandboxed.
 
-### P0 — capsule model and safe preview
+### Delivered capsule foundation
 
-1. Define a versioned capsule manifest containing application identity,
-   adapter, profile root, selected documents, persistence policy, network
-   policy and backend capability requirements. Commands remain structured
-   argument arrays and never pass through a shell.
-2. Add a preflight screen that resolves every application and permission,
-   labels **profile**, **sandbox** or **virtual machine**, and blocks launch when
-   the requested boundary cannot be enforced.
-3. Add per-capsule encrypted metadata, atomic writes, ownership checks,
-   symlink rejection, quotas, export redaction and an explicit delete-data
-   action. Existing Recall exclusions apply before capsule capture.
-4. Introduce a small adapter contract for cooperative applications to export
+- versioned AES-GCM-encrypted manifests with hashed filenames, atomic writes,
+  private directories, ownership checks, symlink rejection and bounded input;
+- a visible fail-closed preflight that reports the real backend, boundary,
+  commands, warnings and effective network/file/clipboard permissions;
+- structured argument arrays only—capsule launches never use a shell;
+- reviewed browser/editor profile adapters labelled as convenience separation;
+- a Linux pilot for already-installed Flatpak application IDs, including an
+  optional per-launch network-off request and portal-only file policy;
+- a reviewable Windows Sandbox `.wsb` exporter with clipboard, audio/video,
+  printers and writable host mappings disabled; and
+- explicit deletion of capsule manifests separately from profile data.
+
+The GTK and Qt applications expose creation, review and launch. The command
+line additionally supports listing, deleting and `.wsb` export for automation.
+
+### Next P0 — validation and adapter hardening
+
+1. Introduce a small adapter contract for cooperative applications to export
    and import public state. An adapter declares its supported versions and
    receives only user-approved files or URLs.
-5. Ship a dry-run diagnostic and automated negative tests proving that denied
+2. Add automated end-to-end negative tests proving that denied
    files, network access and host services remain unavailable for every
    security-labelled backend.
+3. Add explicit encrypted-storage quotas, manifest export redaction and
+   migration/recovery diagnostics without ever copying profile credentials.
+4. Apply existing Recall app/site exclusions before a future capsule capture
+   can associate session or visual-history records with a capsule.
+5. Add a human-readable preflight diff between the saved policy and effective
+   platform capabilities before updating an existing capsule.
 
-### P1 — useful platform pilots
+### Next P1 — useful platform expansion
 
-1. **Linux/Flatpak pilot:** create capsules for already-installed Flatpak
-   applications, using their application identity, isolated data location and
-   XDG portals. Start with file access selected through the document portal,
-   read-only sharing by default and an optional network-off profile. Do not
-   modify global Flatpak overrides behind the user's back.
-2. **Portable profile pilot:** support explicit browser/editor profile
-   directories only for adapters with documented command-line or application
-   APIs. This works on all platforms but is labelled profile separation, not
-   hostile-code containment.
-3. **Windows Sandbox exporter:** generate reviewable `.wsb` workspaces with
-   networking, clipboard, device sharing and mapped folders off by default;
-   selected host folders are read-only unless the user changes the plan.
-   Sandbox contents are disposable, so persistence is an explicit export to a
-   dedicated mapped folder rather than ordinary SessionSifu restoration.
+1. Add Flatpak portal document grants selected from the capsule interface and
+   display package-level permissions separately from per-launch restrictions.
+2. Expand profile adapters only where the application publishes a stable,
+   documented profile interface; add adapter/version compatibility diagnostics.
+3. Add Windows Sandbox provisioning and explicit export folders without ever
+   making a host mapping writable by default.
 4. **macOS virtual-workspace prototype:** evaluate Apple's Virtualization
    framework for an optional Linux or macOS guest capsule. SessionSifu does not
    claim that macOS App Sandbox can be imposed on arbitrary third-party apps.

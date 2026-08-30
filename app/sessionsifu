@@ -59,7 +59,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.5.5"
+CURRENT_VERSION = "3.5.6"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -122,6 +122,15 @@ def restore_journal_store() -> RestoreJournal:
     return RestoreJournal(Path(GLib.get_user_config_dir()) / "sessionsifu")
 
 
+def workspace_capsules():
+    """Load the portable capsule core lazily for legacy-updater compatibility."""
+    from capsule import CapsuleManager, CapsuleStore
+
+    return CapsuleManager(
+        CapsuleStore(Path(GLib.get_user_config_dir()) / "sessionsifu")
+    )
+
+
 def missing_user_payload_modules() -> tuple[str, ...]:
     """Return modules omitted by a legacy user-local updater.
 
@@ -133,7 +142,7 @@ def missing_user_payload_modules() -> tuple[str, ...]:
     app_directory = Path(__file__).resolve().parent
     if not (app_directory / "recall_engine.py").is_file():
         return ()
-    support_names = ("semantic.py", "restore_journal.py", "mcp.py")
+    support_names = ("semantic.py", "restore_journal.py", "mcp.py", "capsule.py")
     if all((_portable_module_dir / name).is_file() for name in support_names):
         return ()
     return tuple(
@@ -975,6 +984,7 @@ def install_user_payload(
             "semantic.py",
             "restore_journal.py",
             "mcp.py",
+            "capsule.py",
         )
     }
     source_desktop = payload_root / "usr/share/applications/org.gnome.SessionSifu.desktop"
@@ -2874,6 +2884,80 @@ class ManagerWindow(Adw.ApplicationWindow):
         self._session_rows_widgets: list[Adw.ActionRow] = []
         content.append(self.sessions_group)
 
+        capsule_group = Adw.PreferencesGroup(
+            title="Workspace capsules",
+            description=(
+                "Encrypted launch plans for separate profiles, Flatpak sandboxes "
+                "and reviewable Windows Sandbox workspaces."
+            ),
+        )
+        capsule_name_row = Adw.ActionRow(title="Capsule name")
+        self.capsule_name_entry = Gtk.Entry(
+            placeholder_text="Research workspace", hexpand=True, valign=Gtk.Align.CENTER
+        )
+        capsule_name_row.add_suffix(self.capsule_name_entry)
+        capsule_group.add(capsule_name_row)
+
+        self.capsule_backend_row = Adw.ComboRow(
+            title="Isolation backend",
+            subtitle="Profile separation is convenient but is not a security sandbox",
+        )
+        self.capsule_backend_row.set_model(
+            Gtk.StringList.new([
+                "Separate supported profile",
+                "Flatpak sandbox",
+                "Windows Sandbox export",
+            ])
+        )
+        capsule_group.add(self.capsule_backend_row)
+
+        capsule_apps_row = Adw.ActionRow(
+            title="Applications",
+            subtitle="Comma-separated executable names or Flatpak application IDs",
+        )
+        self.capsule_apps_entry = Gtk.Entry(
+            placeholder_text="firefox, code", hexpand=True, valign=Gtk.Align.CENTER
+        )
+        capsule_apps_row.add_suffix(self.capsule_apps_entry)
+        capsule_group.add(capsule_apps_row)
+
+        capsule_folders_row = Adw.ActionRow(
+            title="Windows mapped folders",
+            subtitle="Comma-separated host folders; exports are always read-only",
+        )
+        self.capsule_folders_entry = Gtk.Entry(
+            placeholder_text="C:\\Users\\me\\Documents", hexpand=True,
+            valign=Gtk.Align.CENTER,
+        )
+        capsule_folders_row.add_suffix(self.capsule_folders_entry)
+        capsule_group.add(capsule_folders_row)
+
+        self.capsule_offline_switch = Adw.SwitchRow(
+            title="Require offline launch",
+            subtitle="Fails closed if the selected backend cannot enforce this boundary",
+        )
+        capsule_group.add(self.capsule_offline_switch)
+
+        capsule_actions = Adw.ActionRow(
+            title="Review before launch",
+            subtitle="Effective permissions are resolved before any process starts",
+        )
+        for label, callback in (
+            ("Save", self._save_capsule),
+            ("Review", self._review_capsule),
+            ("Launch", self._launch_capsule),
+            ("Delete data", self._delete_capsule_data),
+        ):
+            button = Gtk.Button(label=label, valign=Gtk.Align.CENTER)
+            if label == "Launch":
+                button.add_css_class("suggested-action")
+            if label == "Delete data":
+                button.add_css_class("destructive-action")
+            button.connect("clicked", callback)
+            capsule_actions.add_suffix(button)
+        capsule_group.add(capsule_actions)
+        content.append(capsule_group)
+
         limits_group = Adw.PreferencesGroup(title="Restoration boundary")
         limits_row = Adw.ActionRow(
             title="Application content is restored by the application",
@@ -2916,6 +3000,77 @@ class ManagerWindow(Adw.ApplicationWindow):
     def _message(self, text: str) -> None:
         self.banner.set_title(text)
         self.banner.set_revealed(True)
+
+    def _capsule_values(self) -> tuple[str, str, list[str], list[str], bool]:
+        name = self.capsule_name_entry.get_text().strip()
+        backend = ("profile", "flatpak", "windows-sandbox")[
+            min(self.capsule_backend_row.get_selected(), 2)
+        ]
+        applications = [
+            value.strip()
+            for value in self.capsule_apps_entry.get_text().split(",")
+            if value.strip()
+        ]
+        folders = [
+            value.strip()
+            for value in self.capsule_folders_entry.get_text().split(",")
+            if value.strip()
+        ]
+        return (
+            name,
+            backend,
+            applications,
+            folders,
+            self.capsule_offline_switch.get_active(),
+        )
+
+    def _save_capsule(self, _button) -> None:
+        name, backend, applications, folders, offline = self._capsule_values()
+        try:
+            workspace_capsules().create(
+                name, backend, applications, offline=offline, mapped_folders=folders
+            )
+            self._message(f"Encrypted workspace capsule ‘{name}’ was saved.")
+        except (OSError, RuntimeError, ValueError) as error:
+            self._message(f"Could not save capsule: {error}")
+
+    def _review_capsule(self, _button) -> None:
+        name = self.capsule_name_entry.get_text().strip()
+        try:
+            plan = workspace_capsules().preflight(name)
+            permissions = plan.get("effective_permissions", {})
+            details = "; ".join(
+                f"{key}: {value}" for key, value in permissions.items()
+            )
+            errors = "; ".join(plan.get("errors", []))
+            self._message(
+                f"{plan['boundary']} · {details}"
+                + (f" · blocked: {errors}" if errors else " · ready to launch")
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            self._message(f"Could not review capsule: {error}")
+
+    def _launch_capsule(self, _button) -> None:
+        name = self.capsule_name_entry.get_text().strip()
+        try:
+            result = workspace_capsules().launch(name)
+            self._message(
+                f"Launched {result['launched']} application(s) through "
+                f"{result['boundary']}."
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            self._message(f"Capsule launch was blocked: {error}")
+
+    def _delete_capsule_data(self, _button) -> None:
+        name = self.capsule_name_entry.get_text().strip()
+        try:
+            deleted = workspace_capsules().store.delete_data(name)
+            self._message(
+                "Separate profile data was deleted."
+                if deleted else "This capsule has no separate profile data."
+            )
+        except (OSError, ValueError) as error:
+            self._message(f"Could not delete capsule data: {error}")
 
     def _call(self, method: str, parameters: GLib.Variant | None = None) -> str | None:
         try:
@@ -3876,6 +4031,21 @@ def main() -> int:
     parser.add_argument("--import-archive", type=Path, help="import an encrypted SessionSifu archive")
     parser.add_argument("--recall-reindex", metavar="RECORD", help="re-run OCR for one Recall record")
     parser.add_argument("--recall-ask", metavar="QUESTION", help="ask local Recall history with citations")
+    parser.add_argument("--capsule-create", metavar="NAME", help="create an encrypted workspace capsule")
+    parser.add_argument(
+        "--capsule-backend", choices=["profile", "flatpak", "windows-sandbox"],
+        default="profile",
+    )
+    parser.add_argument("--capsule-app", action="append", default=[])
+    parser.add_argument("--capsule-folder", action="append", default=[])
+    parser.add_argument("--capsule-offline", action="store_true")
+    parser.add_argument("--capsule-list", action="store_true")
+    parser.add_argument("--capsule-plan", metavar="NAME")
+    parser.add_argument("--capsule-launch", metavar="NAME")
+    parser.add_argument("--capsule-delete", metavar="NAME")
+    parser.add_argument("--capsule-delete-data", metavar="NAME")
+    parser.add_argument("--capsule-export-wsb", metavar="NAME")
+    parser.add_argument("--capsule-output", type=Path)
     parser.add_argument(
         "--local-api-stdio", action="store_true",
         help="serve the read-only local JSON API on stdin/stdout",
@@ -3922,6 +4092,41 @@ def main() -> int:
         return 0
     if args.recall_ask:
         print(json.dumps(recall_vault().ask(args.recall_ask), indent=2))
+        return 0
+    if args.capsule_create:
+        print(workspace_capsules().create(
+            args.capsule_create,
+            args.capsule_backend,
+            args.capsule_app,
+            offline=args.capsule_offline,
+            mapped_folders=args.capsule_folder,
+        ))
+        return 0
+    if args.capsule_list:
+        print(json.dumps([
+            item.to_dict() for item in workspace_capsules().store.list()
+        ], indent=2))
+        return 0
+    if args.capsule_plan:
+        print(json.dumps(workspace_capsules().preflight(args.capsule_plan), indent=2))
+        return 0
+    if args.capsule_launch:
+        print(json.dumps(workspace_capsules().launch(args.capsule_launch), indent=2))
+        return 0
+    if args.capsule_delete:
+        workspace_capsules().store.delete(args.capsule_delete)
+        return 0
+    if args.capsule_delete_data:
+        print(json.dumps({
+            "deleted": workspace_capsules().store.delete_data(args.capsule_delete_data)
+        }))
+        return 0
+    if args.capsule_export_wsb:
+        if not args.capsule_output:
+            parser.error("--capsule-output is required with --capsule-export-wsb")
+        print(workspace_capsules().export_windows_sandbox(
+            args.capsule_export_wsb, args.capsule_output
+        ))
         return 0
     if args.export_archive:
         print(json.dumps(export_gnome_archive(args.export_archive, getpass.getpass("Archive passphrase: "))))

@@ -4,6 +4,20 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.6
+
+- Added encrypted Workspace Capsules with explicit profile, Flatpak and
+  Windows Sandbox backends, fail-closed permission preflight, structured
+  no-shell launches, read-only Windows mappings and separate profile deletion.
+- Added capsule controls to both the GNOME GTK manager and cross-platform Qt
+  app, plus command-line create/list/review/launch/delete/export workflows.
+- Made the Debian package installable on Ubuntu 24.04/GNOME 46 by changing
+  GNOME Shell 50 from a hard dependency to a recommendation. Full Shell
+  integration still activates only on GNOME 50; manager and portable-safe
+  functions remain available on older desktops.
+- Included the capsule module in system packages and atomic user-local updates,
+  with compatibility repair detection for older partial updater payloads.
+
 ## 3.5.5
 
 - Added an alternative Debian dependency on Extension Manager or GNOME's

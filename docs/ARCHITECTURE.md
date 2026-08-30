@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.5.5 runtime and release layout. User-facing
+This document describes the 3.5.6 runtime and release layout. User-facing
 Recall steps live in [RECALL_GUIDE.md](RECALL_GUIDE.md).
 
 SessionSifu 3 has a full GNOME runtime, a portable runtime shared by Windows,
@@ -122,6 +122,16 @@ used by both the command line and the Qt manager.
 through 30-minute intervals and exits through **Turn Off SessionSifu**. Slow or
 privileged platform operations are delegated to adapters rather than embedded
 in widget code.
+
+`capsule.py` provides the shared Workspace Capsule boundary. Versioned manifests
+are AES-GCM authenticated, written atomically below owner-private directories
+with hashed filenames and never contain generated shell text. `preflight()`
+resolves structured command arrays and effective permissions before launch.
+Profile adapters are explicitly non-security boundaries. The Flatpak pilot
+requires an already installed application ID and does not mutate global
+overrides; the Windows backend emits a reviewable `.wsb` file with read-only
+host mappings. Profile data deletion is an explicit operation independent of
+manifest deletion.
 
 Before restore, both managers request a grouped plan and present every
 application as an enabled checkbox. Cancellation or an empty selection launches

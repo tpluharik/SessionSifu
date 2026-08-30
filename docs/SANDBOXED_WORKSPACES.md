@@ -2,12 +2,15 @@
 
 This research note supports the [SessionSifu roadmap](../ROADMAP.md). It was
 reviewed on 30 August 2026 against upstream platform documentation. It is a
-product and architecture assessment, not a claim that capsule functionality is
-already shipped.
+product and architecture assessment. Version 3.5.6 ships the encrypted capsule
+model, fail-closed permission preflight, cooperative profile pilot, installed-
+Flatpak pilot and reviewable Windows Sandbox exporter described below. Virtual
+machines and arbitrary host-application containment remain research only.
 
 ## Product idea
 
-A SessionSifu workspace capsule would combine:
+A SessionSifu workspace capsule combines the shipped launch-plan foundation
+with future session-association work:
 
 - a restorable selection of applications, documents and windows;
 - an optional separate profile for supported browsers, editors and tools;

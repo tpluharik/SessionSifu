@@ -19,6 +19,7 @@ from sessionsifu_portable.adapters.base import (  # noqa: E402
     AdapterCapabilities, PlatformAdapter, cached_process_snapshot,
 )
 from sessionsifu_portable.controller import SessionController  # noqa: E402
+from sessionsifu_portable.capsule import CapsuleManager, CapsuleStore  # noqa: E402
 from sessionsifu_portable.model import MonitorSnapshot, SessionSnapshot, WindowSnapshot  # noqa: E402
 from sessionsifu_portable.mcp import ReadOnlyMcp  # noqa: E402
 from sessionsifu_portable.recall import RecallStore  # noqa: E402
@@ -64,6 +65,70 @@ class FakeAdapter(PlatformAdapter):
 
 
 class PortableTests(unittest.TestCase):
+    def test_workspace_capsules_are_encrypted_bounded_and_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "firefox"
+            executable.write_text("test executable", encoding="utf-8")
+            executable.chmod(0o700)
+            store = CapsuleStore(root / "data", test_key=b"c" * 32)
+            manager = CapsuleManager(store)
+            path = manager.create("Research", "profile", [str(executable)])
+            raw = path.read_bytes()
+            self.assertNotIn(b"Research", raw)
+            self.assertNotIn(str(executable).encode(), raw)
+            self.assertEqual(store.load("Research").applications[0].identity, str(executable))
+            plan = manager.preflight("Research")
+            self.assertTrue(plan["supported"])
+            self.assertFalse(plan["security_boundary"])
+            self.assertIn("not a security sandbox", plan["warnings"][0])
+            with mock.patch("sessionsifu_portable.capsule.subprocess.Popen") as launch:
+                result = manager.launch("Research")
+            self.assertEqual(result["launched"], 1)
+            launch.assert_called_once()
+            with self.assertRaises(ValueError):
+                manager.create("../escape", "profile", [str(executable)])
+            manager.create("Offline profile", "profile", [str(executable)], offline=True)
+            self.assertFalse(manager.preflight("Offline profile")["supported"])
+
+    def test_flatpak_capsule_preflight_uses_structured_offline_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manager = CapsuleManager(CapsuleStore(Path(directory), test_key=b"f" * 32))
+            manager.create("Web", "flatpak", ["org.mozilla.firefox"], offline=True)
+            completed = mock.Mock(returncode=0)
+            with (
+                mock.patch("sessionsifu_portable.capsule.platform.system", return_value="Linux"),
+                mock.patch("sessionsifu_portable.capsule.shutil.which", return_value="/usr/bin/flatpak"),
+                mock.patch("sessionsifu_portable.capsule.subprocess.run", return_value=completed) as probe,
+            ):
+                plan = manager.preflight("Web")
+            self.assertTrue(plan["supported"])
+            self.assertTrue(plan["security_boundary"])
+            self.assertEqual(
+                plan["commands"],
+                [["/usr/bin/flatpak", "run", "--unshare=network", "org.mozilla.firefox"]],
+            )
+            probe.assert_called_once()
+
+    def test_windows_sandbox_export_has_safe_defaults_and_read_only_folders(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manager = CapsuleManager(CapsuleStore(root / "data", test_key=b"w" * 32))
+            manager.create(
+                "Disposable",
+                "windows-sandbox",
+                [],
+                offline=True,
+                mapped_folders=[r"C:\Users\Example\Workspace"],
+            )
+            target = manager.export_windows_sandbox("Disposable", root / "Disposable.wsb")
+            contents = target.read_text(encoding="utf-8")
+            self.assertIn("<Networking>Disable</Networking>", contents)
+            self.assertIn("<ClipboardRedirection>Disable</ClipboardRedirection>", contents)
+            self.assertIn("<ProtectedClient>Enable</ProtectedClient>", contents)
+            self.assertIn("<ReadOnly>true</ReadOnly>", contents)
+            self.assertNotIn("LogonCommand", contents)
+
     def test_recall_shortcuts_are_normalized_for_all_platform_backends(self) -> None:
         shortcut = parse_shortcut("alt+control+r")
         self.assertEqual(shortcut.label, "Ctrl+Alt+R")
@@ -90,7 +155,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.5.5")
+        self.assertEqual(VERSION, "3.5.6")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -522,7 +587,7 @@ class PortableTests(unittest.TestCase):
             controller.save_named("Work")
             api = LocalApi(controller)
             status = api.dispatch({"method": "status"})
-            self.assertEqual(status["version"], "3.5.5")
+            self.assertEqual(status["version"], "3.5.6")
             preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
             self.assertEqual(preview["applications"][0]["application"], "Editor")
             with self.assertRaises(ValueError):
@@ -583,7 +648,7 @@ class PortableTests(unittest.TestCase):
             controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
             controller.save_named("Work")
             mcp = ReadOnlyMcp(controller)
-            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.5")
+            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.6")
             self.assertTrue(mcp.call("restore_preview", {"name": "Work"}))
             with self.assertRaises(ValueError):
                 mcp.call("restore_execute", {"name": "Work"})

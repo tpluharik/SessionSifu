@@ -158,7 +158,7 @@ with tempfile.TemporaryDirectory() as install_root:
     source_recall_module = payload_root / "usr/lib/sessionsifu/recall_engine.py"
     source_support_modules = [
         payload_root / f"usr/lib/sessionsifu/{name}"
-        for name in ("semantic.py", "restore_journal.py", "mcp.py")
+        for name in ("semantic.py", "restore_journal.py", "mcp.py", "capsule.py")
     ]
     source_desktop = payload_root / "usr/share/applications/org.gnome.SessionSifu.desktop"
     source_autostart = payload_root / "etc/xdg/autostart/org.gnome.SessionSifu.desktop"
