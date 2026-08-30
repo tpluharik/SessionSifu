@@ -176,7 +176,7 @@ jobs:
       - name: Install package build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y desktop-file-utils dpkg-dev gjs gnome-settings-daemon-common gir1.2-adw-1 gir1.2-gdkpixbuf-2.0 gir1.2-gtk-4.0 gir1.2-gtop-2.0 libglib2.0-bin nodejs python3-cryptography python3-gi python3-keyring python3-pil python3-pyatspi tesseract-ocr zip
+          sudo apt-get install -y desktop-file-utils dpkg-dev gjs gnome-settings-daemon-common gnome-shell gir1.2-adw-1 gir1.2-gdkpixbuf-2.0 gir1.2-gtk-4.0 gir1.2-gtop-2.0 libglib2.0-bin nodejs python3-cryptography python3-gi python3-keyring python3-pil python3-pyatspi tesseract-ocr zip
       - name: Build and verify Ubuntu 24.04-compatible dependency metadata
         run: |
           ./packaging/build-deb.sh
