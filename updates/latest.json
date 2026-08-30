@@ -1,11 +1,11 @@
 {
-  "version": "3.5.6",
+  "version": "3.5.7",
   "channel": "stable",
-  "issued_at": "2026-08-30T09:31:37Z",
-  "expires_at": "2026-10-14T09:31:37Z",
+  "issued_at": "2026-08-30T12:04:14Z",
+  "expires_at": "2026-10-14T12:04:14Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.6_all.deb",
-  "sha256": "d098eeb8d12074c6c614352b0a934773d46a47741aeb26ce08881159a370946b",
-  "size": 3778026,
-  "notes": "SessionSifu 3.5.6 adds encrypted, preflighted Workspace Capsules with profile, Flatpak and Windows Sandbox pilots. It also fixes Ubuntu 24.04 installation by keeping GNOME Shell 50 as an optional full-integration recommendation instead of a hard dependency."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.7_all.deb",
+  "sha256": "7f3188393bb866896d2f6ddd1e8d6ee4f02a93f0ec61f65ab3eb91c81f51adbd",
+  "size": 3779484,
+  "notes": "SessionSifu 3.5.7 fixes false stale-integration warnings by deriving the live GNOME integration version from extension metadata. It retains the Ubuntu 24.04 installation fix and encrypted Workspace Capsules from 3.5.6."
 }

@@ -1,3 +1,11 @@
+sessionsifu (3.5.7-1~ppa1~resolute1) resolute; urgency=high
+
+  * Derive the live GNOME integration version from extension metadata.
+  * Fix the persistent false stale-integration warning after restart.
+  * Add a regression test for manager/extension version synchronization.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Sun, 30 Aug 2026 14:15:00 +0200
+
 sessionsifu (3.5.6-1~ppa1~resolute1) resolute; urgency=medium
 
   * Add encrypted, preflighted workspace capsules and platform pilots.

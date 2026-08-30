@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "SessionSifu 3.5.6 adds encrypted, preflighted Workspace Capsules with profile, Flatpak and Windows Sandbox pilots. It also fixes Ubuntu 24.04 installation by keeping GNOME Shell 50 as an optional full-integration recommendation instead of a hard dependency."
+  "notes": "SessionSifu 3.5.7 fixes false stale-integration warnings by deriving the live GNOME integration version from extension metadata. It retains the Ubuntu 24.04 installation fix and encrypted Workspace Capsules from 3.5.6."
 }

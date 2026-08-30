@@ -8,6 +8,7 @@ import * as Log from './log.js';
 
 export let current_extension_path = null;
 export let current_extension_dir = null;
+export let current_extension_version = 'unknown';
 
 export const default_sessionName = 'defaultSession';
 export const data_dir = GLib.get_user_data_dir();
@@ -55,6 +56,7 @@ export const system_udev_rules_path_ydotool_uinput_rules = '/etc/udev/rules.d/60
 export function init(extensionObject) {
     current_extension_dir = extensionObject.dir;
     current_extension_path = extensionObject.path;
+    current_extension_version = String(extensionObject.metadata['version-name'] ?? 'unknown');
     desktop_template_path = GLib.build_filenamev([extensionObject.path, '/template/template.desktop']);
     desktop_template_path_ydotool_uinput_rules = GLib.build_filenamev([extensionObject.path, '/template/60-sessionsifu-ydotool-uinput.rules']);
 

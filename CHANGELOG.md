@@ -4,6 +4,15 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.7
+
+- Fixed the GNOME integration health check reporting version 3.5.5 while the
+  installed extension metadata and manager were version 3.5.6.
+- Made the live D-Bus version derive from the extension metadata instead of a
+  separately maintained hard-coded string.
+- Added a release regression check that rejects a disconnected integration
+  version source before packaging.
+
 ## 3.5.6
 
 - Added encrypted Workspace Capsules with explicit profile, Flatpak and
