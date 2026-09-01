@@ -1,3 +1,12 @@
+sessionsifu (3.5.9-1~ppa1~resolute1) resolute; urgency=high
+
+  * Serialize and pace Wayland application/window restoration.
+  * Bound stale previous-session records and prevent restore crash loops.
+  * Use current-monitor work areas and clamp all restored geometry.
+  * Avoid focus/workspace storms and unsafe session-control commands.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Tue, 01 Sep 2026 10:15:00 +0200
+
 sessionsifu (3.5.8-1~ppa1~resolute1) resolute; urgency=medium
 
   * Add bounded in-memory multi-workspace Recall preview reuse.

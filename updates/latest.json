@@ -1,11 +1,11 @@
 {
-  "version": "3.5.8",
+  "version": "3.5.9",
   "channel": "stable",
-  "issued_at": "2026-08-30T19:12:36Z",
-  "expires_at": "2026-10-14T19:12:36Z",
+  "issued_at": "2026-09-01T08:07:04Z",
+  "expires_at": "2026-10-16T08:07:04Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.8_all.deb",
-  "sha256": "06f5c50abba5634738041b703569ea7d0d1bf44773fcd562e7f9acc6f5f04905",
-  "size": 3757660,
-  "notes": "SessionSifu 3.5.8 adds compositor-safe multi-workspace Recall previews using a bounded memory cache of previously visible windows, with honest capture timestamps and no forced workspace switching. It also saves the total workspace count and prevents overlapping apps from being captured as another window."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.9_all.deb",
+  "sha256": "8eba050ad9bee57c2f94b2c24c562abac53843ee5a2f3df20a1a65fc319ad06a",
+  "size": 3759944,
+  "notes": "SessionSifu 3.5.9 makes Wayland restoration compositor-safe: application launches and window mutations are serialized and paced, stale crash-recovery records are bounded by the newest saved window count, geometry is clamped to the current monitor work area, focus is never forced across workspaces, and a crash-loop guard pauses repeated automatic restores."
 }

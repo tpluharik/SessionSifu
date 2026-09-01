@@ -1,5 +1,32 @@
 # Troubleshooting
 
+## Wayland returns to a black screen while restoring a session
+
+Upgrade to SessionSifu 3.5.9 or newer. Earlier releases could allow several
+newly launched windows to change monitor, geometry, workspace and focus at the
+same time. A crash-recovery directory could also retain older records with
+changing window titles, making one login restore far more windows than were
+actually open. On GNOME/Mutter this could terminate the compositor without an
+application core dump.
+
+Version 3.5.9 serializes and paces window changes, caps automatic recovery to
+the newest saved window count, never forces focus across workspaces, clamps
+geometry to the live monitor work area, and pauses automatic recovery for ten
+minutes after an attempt. Manual restore stays available during this pause.
+The pause prevents the same restore from immediately repeating if GNOME Shell
+is restarted.
+
+If the affected desktop cannot remain open long enough to update, disable the
+extension from a text console, log back in, update SessionSifu, then enable the
+integration again:
+
+```sh
+gnome-extensions disable sessionsifu@local
+```
+
+The fix does not delete named sessions or Recall history. After updating, use
+the restore preview to deselect applications that you do not want to relaunch.
+
 ## The control panel does not open after an in-app update
 
 Version 3.4.0 introduced several support modules, while an updater embedded in

@@ -4,6 +4,24 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.9
+
+- Serialized and paced every restored GNOME window so newly mapping clients no
+  longer issue concurrent monitor, geometry and workspace mutations to Mutter.
+- Bounded automatic recovery using the newest saved window count (at most four
+  windows per application and eight applications) instead of treating stale
+  title variants from interrupted sessions as separate open windows.
+- Added a ten-minute automatic-restore crash-loop guard. Manual restores remain
+  available while repeated login recovery is paused.
+- Removed focus activation and duplicate state changes during workspace moves,
+  skipped geometry changes for fullscreen/maximized or immovable windows, and
+  replaced cached monitor-index work-area lookups with the window's current
+  monitor work area.
+- Clamped restored geometry into the live work area and made it a unit-tested
+  pure safety boundary.
+- Rejected logout, reboot, power-off and user-session termination commands from
+  automatic recovery.
+
 ## 3.5.8
 
 - Added GNOME multi-workspace Recall coverage using a bounded, process-memory

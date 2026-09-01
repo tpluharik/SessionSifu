@@ -5,21 +5,20 @@ import GLib from 'gi://GLib';
 import Shell from 'gi://Shell';
 import Meta from 'gi://Meta';
 
-import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-
 import * as UiHelper from './ui/uiHelper.js';
 
 import * as FileUtils from './utils/fileUtils.js';
 import * as Log from './utils/log.js';
-import * as DateUtils from './utils/dateUtils.js';
 import { shellVersion } from './constants.js';
 
 import {WindowTilingSupport} from './windowTilingSupport.js';
 import {
+    clampWindowGeometry,
     isValidWorkspaceIndex,
     isWindowUsable,
 } from './windowSafety.js';
 import {mayRestoreApplications} from './runtimeSafety.js';
+import {WINDOW_RESTORE_INTERVAL_MS} from './restoreSafety.js';
 
 
 export const MoveSession = class {
@@ -34,6 +33,7 @@ export const MoveSession = class {
         this._cancelledWindows = new WeakSet();
         this._pendingMonitorWaits = new Map();
         this._pendingGeometryRestores = new Map();
+        this._pendingPacingWaits = new Map();
 
     }
 
@@ -130,15 +130,14 @@ export const MoveSession = class {
                             continue;
                     }
 
-                    // restore window state if necessary due to moving windows could lost window state
-                    this._restoreWindowState(metaWindow, saved_window_session);
-
                 } catch (e) {
                     // I just don't want one failure breaks the loop
 
                     this._log.error(e, `Failed to move window ${title} for ${shellApp.get_name()} automatically`);
                 }
                 saved_window_session.moved = true;
+                if (!await this._waitForCompositor())
+                    return;
             }
         } catch (error) {
             this._log.error(error, shellApp ? shellApp.get_name() : 'This app may be closed.');
@@ -354,9 +353,6 @@ export const MoveSession = class {
                     if (!this._changeWorkspace(metaWindow, desktop_number))
                         return false;
                 }
-                // The window state get lost during moving the window, and we need to restore window state again.
-                this._restoreWindowState(metaWindow, saved_window_session);
-
                 saved_window_session.moved = true;
                 return true;
             }
@@ -370,13 +366,11 @@ export const MoveSession = class {
         if (!this._isWindowUsable(metaWindow) || !isValidWorkspaceIndex(desktop_number) ||
             desktop_number >= global.workspace_manager.n_workspaces)
             return false;
-        const currentFocusedWindow = global.display.get_focus_window();
         metaWindow.change_workspace_by_index(desktop_number, false);
-        if (currentFocusedWindow === metaWindow && !Main.layoutManager._inOverview) {
-            this._log.debug(`Following the previous focused window ${metaWindow.get_title()}`);
-            Main.activateWindow(metaWindow, DateUtils.get_current_time());
-        }
-        return true;
+        // Restoration must never follow focus across workspaces. Activating each
+        // newly launched window while several clients are mapping creates a
+        // compositor-level focus/workspace storm on Wayland.
+        return this._isWindowUsable(metaWindow);
     }
 
     _getOneMatchedSavedWindow(metaWindow, saved_window_sessions) {
@@ -481,6 +475,8 @@ export const MoveSession = class {
     async _restoreWindowGeometry(metaWindow, saved_window_session) {
         if (!this._isWindowUsable(metaWindow) || !saved_window_session?.window_state)
             return false;
+        if (metaWindow.is_fullscreen?.() || saved_window_session.fullscreen)
+            return this._isWindowUsable(metaWindow);
         let delay = false;
         const window_state = saved_window_session.window_state;
         const savedMetaMaximized = window_state.meta_maximized;
@@ -538,44 +534,21 @@ export const MoveSession = class {
             return false;
         const window_position = saved_window_session.window_position;
         if (window_position?.provider === 'Meta') {
-            const to_x = window_position.x_offset;
-            const to_y = window_position.y_offset;
-            const to_width = window_position.width;
-            const to_height = window_position.height;
-
-            if (![to_x, to_y, to_width, to_height].every(Number.isFinite) ||
-                to_width <= 0 || to_height <= 0)
-                return false;
-
-            const currentMonitor = metaWindow.get_monitor();
-            if (currentMonitor < 0 || currentMonitor >= global.display.get_n_monitors())
-                return false;
-            const rectWorkArea = metaWindow.get_work_area_for_monitor(currentMonitor);
+            if (metaWindow.allows_move?.() === false || metaWindow.allows_resize?.() === false)
+                return true;
+            // Asking by a cached monitor index races monitor topology changes
+            // and produced Mutter's logical_monitor assertion in crash logs.
+            const rectWorkArea = metaWindow.get_work_area_current_monitor();
             if (!rectWorkArea || !this._isWindowUsable(metaWindow))
                 return false;
 
             // For more info about the below issue see also: https://github.com/Leleat/Tiling-Assistant/blob/1e4176a9a7037ee5dd0612e4c9f9dbe45d4e67cf/tiling-assistant%40leleat-on-github/src/extension/tilingWindowManager.js#L186-L199
 
-            // Move first. Just in case that some apps can only be resized but not moved after `metaWindow.move_resize_frame()`
-            metaWindow.move_frame(true, to_x, to_y);
+            const geometry = clampWindowGeometry(rectWorkArea, window_position);
+            if (!geometry)
+                return false;
             metaWindow.move_resize_frame(
-                // Set `user_op` to true to fix an issue that a window does not move to negative x (like -176),
-                // in which case if `user_op` is false it will move to (0,Y,W,H).
-                true, // user_op
-                to_x,
-
-                // Fix the below issue:
-                // No rect to clip to found!
-                // No rect whose size to clamp to found!
-
-                // Window might flies outside of the screen when resizing due to
-                // the y axis of the saved window is less than the one of work area, see:
-                // https://gitlab.gnome.org/GNOME/mutter/-/issues/1461
-                // https://gitlab.gnome.org/GNOME/mutter/-/issues/1499
-
-                Math.max(to_y, rectWorkArea.y),
-                to_width,
-                to_height);
+                false, geometry.x, geometry.y, geometry.width, geometry.height);
             return this._isWindowUsable(metaWindow);
         }
         return true;
@@ -647,6 +620,20 @@ export const MoveSession = class {
         return workspaceManager.n_workspaces >= workspaceNumber + 1;
     }
 
+    _waitForCompositor() {
+        if (!mayRestoreApplications() || !this._windowTracker)
+            return Promise.resolve(false);
+        return new Promise(resolve => {
+            const sourceId = GLib.timeout_add(
+                GLib.PRIORITY_LOW, WINDOW_RESTORE_INTERVAL_MS, () => {
+                    this._pendingPacingWaits.delete(sourceId);
+                    resolve(Boolean(this._windowTracker) && mayRestoreApplications());
+                    return GLib.SOURCE_REMOVE;
+                });
+            this._pendingPacingWaits.set(sourceId, resolve);
+        });
+    }
+
     destroy() {
         if (this._defaultAppSystem) {
             this._defaultAppSystem = null;
@@ -670,6 +657,11 @@ export const MoveSession = class {
             this._cancelledWindows.add(metaWindow);
         }
         this._pendingGeometryRestores.clear();
+        for (const [sourceId, resolve] of this._pendingPacingWaits) {
+            GLib.Source.remove(sourceId);
+            resolve(false);
+        }
+        this._pendingPacingWaits.clear();
 
     }
 

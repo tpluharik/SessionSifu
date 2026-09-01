@@ -1,11 +1,13 @@
 'use strict';
 
 
-export const MIN_RESTORE_INTERVAL_MS = 750;
+export const MIN_RESTORE_INTERVAL_MS = 1000;
 export const MAX_PREVIOUS_SESSION_WINDOWS = 64;
-export const AUTOMATIC_RESTORE_INTERVAL_MS = 3000;
-export const MAX_AUTOMATIC_RESTORE_APPLICATIONS = 12;
-export const MAX_AUTOMATIC_WINDOWS_PER_APPLICATION = 8;
+export const AUTOMATIC_RESTORE_INTERVAL_MS = 5000;
+export const WINDOW_RESTORE_INTERVAL_MS = 350;
+export const AUTOMATIC_RESTORE_COOLDOWN_SECONDS = 10 * 60;
+export const MAX_AUTOMATIC_RESTORE_APPLICATIONS = 8;
+export const MAX_AUTOMATIC_WINDOWS_PER_APPLICATION = 4;
 
 const BLOCKED_AUTOMATIC_DESKTOP_IDS = new Set([
     'org.gnome.sessionsifu.desktop',
@@ -35,16 +37,33 @@ export function restoreCommandAllowed(command) {
     if (!Array.isArray(command) || !command.length)
         return false;
     const executable = String(command[0] ?? '').split('/').pop().toLowerCase();
-    if (['gnome-shell', 'gnome-session', 'gnome-session-binary', 'mutter']
+    if (['gnome-shell', 'gnome-session', 'gnome-session-binary',
+        'gnome-session-quit', 'mutter', 'loginctl', 'shutdown', 'reboot', 'poweroff']
         .includes(executable))
         return false;
     const argumentsText = command.slice(1)
         .map(value => String(value).toLowerCase()).join('\n');
+    if (executable === 'systemctl' &&
+        /(^|\n)(exit|reboot|poweroff|halt)(\n|$)/.test(argumentsText))
+        return false;
     if (argumentsText.includes('/gnome-shell/extensions/') ||
         argumentsText.includes('desktop-icons') ||
         argumentsText.includes('/ding.js'))
         return false;
     return true;
+}
+
+export function automaticRestoreAttemptAllowed(
+    previousAttempt, now, cooldownSeconds = AUTOMATIC_RESTORE_COOLDOWN_SECONDS
+) {
+    if (!Number.isInteger(now) || now <= 0)
+        return false;
+    if (!Number.isInteger(previousAttempt) || previousAttempt <= 0)
+        return true;
+    // A clock correction must not permanently disable automatic restoration.
+    if (previousAttempt > now + 60)
+        return true;
+    return now - previousAttempt >= cooldownSeconds;
 }
 
 export function automaticRestoreGroups(entries) {
@@ -66,10 +85,16 @@ export function automaticRestoreGroups(entries) {
     const groups = [...byApplication.entries()].map(([key, applicationEntries]) => {
         applicationEntries.sort((left, right) =>
             (right.modified ?? 0) - (left.modified ?? 0));
-        if (applicationEntries.length > MAX_AUTOMATIC_WINDOWS_PER_APPLICATION) {
-            discarded.push(...applicationEntries.slice(
-                MAX_AUTOMATIC_WINDOWS_PER_APPLICATION));
-            applicationEntries.length = MAX_AUTOMATIC_WINDOWS_PER_APPLICATION;
+        // Crash-recovery folders can contain old records whose titles changed
+        // between saves. The newest record's windows_count is a safer bound
+        // than treating every historical title as a currently open window.
+        const savedWindowCount = applicationEntries[0]?.sessionConfig?.windows_count;
+        const applicationLimit = Number.isInteger(savedWindowCount) && savedWindowCount > 0
+            ? Math.min(savedWindowCount, MAX_AUTOMATIC_WINDOWS_PER_APPLICATION)
+            : 1;
+        if (applicationEntries.length > applicationLimit) {
+            discarded.push(...applicationEntries.slice(applicationLimit));
+            applicationEntries.length = applicationLimit;
         }
         return {
             key,

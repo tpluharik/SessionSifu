@@ -1,6 +1,6 @@
 # SessionSifu documentation
 
-This index describes the current 3.5.8 behavior. Start with the main
+This index describes the current 3.5.9 behavior. Start with the main
 [README](../README.md) for installation and compatibility.
 
 ## Using SessionSifu

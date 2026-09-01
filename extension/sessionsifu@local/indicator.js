@@ -26,6 +26,7 @@ import * as Log from './utils/log.js';
 import * as Signal from './utils/signal.js';
 import {mayRestoreApplications} from './runtimeSafety.js';
 import {recallActivity} from './recallActivity.js';
+import {WINDOW_RESTORE_INTERVAL_MS} from './restoreSafety.js';
 
 
 export const NEW_WINDOW_SETTLE_DELAY_MS = 750;
@@ -99,6 +100,9 @@ class AwsIndicator extends PanelMenu.Button {
         this._restoringWindows = new WeakMap();
         this._restoredWindows = new WeakSet();
         this._windowSettleWaits = new Map();
+        this._windowRestoreDelayWaits = new Map();
+        this._windowRestoreQueue = Promise.resolve();
+        this._lastWindowRestoreAt = 0;
 
     }
 
@@ -156,8 +160,8 @@ class AwsIndicator extends PanelMenu.Button {
                 const moveSession = this._moveSession;
                 if (this._isDestroyed || !moveSession)
                     return false;
-                const restored = await moveSession.moveWindowByMetaWindow(
-                    metaWindow, savedWindowSessions);
+                const restored = await this._enqueueWindowRestore(
+                    metaWindow, savedWindowSessions, moveSession);
                 if (restored && !this._isDestroyed)
                     this._restoredWindows.add(metaWindow);
                 return restored;
@@ -169,6 +173,43 @@ class AwsIndicator extends PanelMenu.Button {
             }
         })();
         this._restoringWindows.set(metaWindow, operation);
+        return operation;
+    }
+
+    _waitForWindowRestoreTurn(delayMs) {
+        if (delayMs <= 0)
+            return Promise.resolve(!this._isDestroyed);
+        return new Promise(resolve => {
+            const sourceId = GLib.timeout_add(GLib.PRIORITY_LOW, delayMs, () => {
+                this._windowRestoreDelayWaits?.delete(sourceId);
+                resolve(!this._isDestroyed);
+                return GLib.SOURCE_REMOVE;
+            });
+            this._windowRestoreDelayWaits.set(sourceId, resolve);
+        });
+    }
+
+    _enqueueWindowRestore(metaWindow, savedWindowSessions, moveSession) {
+        const operation = this._windowRestoreQueue.then(async () => {
+            if (this._isDestroyed || this._closingWindows.has(metaWindow) ||
+                !mayRestoreApplications())
+                return false;
+            const delay = Math.max(0,
+                WINDOW_RESTORE_INTERVAL_MS - (Date.now() - this._lastWindowRestoreAt));
+            if (!await this._waitForWindowRestoreTurn(delay) ||
+                this._closingWindows.has(metaWindow))
+                return false;
+            try {
+                return await moveSession.moveWindowByMetaWindow(
+                    metaWindow, savedWindowSessions);
+            } finally {
+                this._lastWindowRestoreAt = Date.now();
+            }
+        });
+        // Keep the queue usable after a single window or application disappears.
+        this._windowRestoreQueue = operation.then(() => undefined, error => {
+            this._log?.error(error, 'Queued window restoration failed');
+        });
         return operation;
     }
 
@@ -738,6 +779,15 @@ class AwsIndicator extends PanelMenu.Button {
             }
             this._windowSettleWaits = null;
         }
+        if (this._windowRestoreDelayWaits) {
+            for (const [sourceId, resolve] of this._windowRestoreDelayWaits) {
+                GLib.Source.remove(sourceId);
+                resolve(false);
+            }
+            this._windowRestoreDelayWaits.clear();
+            this._windowRestoreDelayWaits = null;
+        }
+        this._windowRestoreQueue = null;
 
         if (this.monitors) {
             this.monitors.forEach ((monitor) => {

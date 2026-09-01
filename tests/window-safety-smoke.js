@@ -1,5 +1,6 @@
 import {
     MAX_WORKSPACE_INDEX,
+    clampWindowGeometry,
     isValidWorkspaceIndex,
     isWindowCaptureSafe,
     isWindowRegionUnobscured,
@@ -60,6 +61,16 @@ if (!isValidWorkspaceIndex(0) || !isValidWorkspaceIndex(MAX_WORKSPACE_INDEX))
     throw new Error('A safe workspace index was rejected');
 if (isValidWorkspaceIndex(-1) || isValidWorkspaceIndex(MAX_WORKSPACE_INDEX + 1))
     throw new Error('An unsafe workspace index was accepted');
+
+const clamped = clampWindowGeometry(
+    {x: 100, y: 50, width: 1200, height: 800},
+    {x_offset: -500, y_offset: 900, width: 1600, height: 400});
+if (JSON.stringify(clamped) !== JSON.stringify({x: 100, y: 450, width: 1200, height: 400}))
+    throw new Error(`Unsafe window geometry was not clamped: ${JSON.stringify(clamped)}`);
+if (clampWindowGeometry(
+    {x: 0, y: 0, width: 1920, height: 1080},
+    {x_offset: 0, y_offset: 0, width: Number.NaN, height: 500}) !== null)
+    throw new Error('Invalid saved window geometry was accepted');
 
 const back = fakeWindow({actor: visibleActor});
 const front = fakeWindow({actor: visibleActor, rect: {x: 20, y: 20, width: 400, height: 300}});

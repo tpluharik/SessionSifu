@@ -49,7 +49,7 @@ without cancelling independent captures of other eligible applications.
 
 ### GNOME workspaces and cached previews
 
-From 3.5.8, GNOME session metadata includes all workspaces. Visual capture uses
+From 3.5.9, GNOME session metadata includes all workspaces. Visual capture uses
 only currently visible, unobscured screen regions; it never switches workspaces
 or forces a hidden window to repaint. After a workspace/focus change settles,
 SessionSifu retains eligible previews in a bounded memory cache. A later Recall

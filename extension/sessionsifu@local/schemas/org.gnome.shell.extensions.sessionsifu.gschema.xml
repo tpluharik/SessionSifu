@@ -83,6 +83,14 @@
       Restore applications at intervals of some milliseconds, up to 5 minutes
       </description>
     </key>
+    <key name='last-automatic-restore-attempt' type="x">
+      <default>0</default>
+      <summary>Internal automatic restore crash-loop guard</summary>
+      <description>
+      Stores the last automatic restore attempt time so a compositor restart
+      cannot immediately repeat the same restore storm.
+      </description>
+    </key>
     <key name='restore-at-startup-without-asking' type="b">
       <default>false</default>
       <summary>Restore at startup without asking</summary>

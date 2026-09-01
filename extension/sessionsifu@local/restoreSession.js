@@ -18,6 +18,7 @@ import {
     MAX_PREVIOUS_SESSION_WINDOWS,
     MIN_RESTORE_INTERVAL_MS,
     automaticRestoreDesktopIdAllowed,
+    automaticRestoreAttemptAllowed,
     automaticRestoreGroups,
     deduplicatePreviousSessionEntries,
     restoreCommandAllowed,
@@ -128,6 +129,9 @@ export const RestoreSession = class {
             return;
         }
 
+        if (automatic && !this._beginAutomaticRestore())
+            return;
+
         if (selectedApplicationKeys !== null) {
             const selected = selectedApplicationKeys instanceof Set
                 ? selectedApplicationKeys
@@ -195,6 +199,8 @@ export const RestoreSession = class {
     async restorePreviousSession(removeAfterRestore) {
         try {
             if (!mayRestoreApplications() || this._destroyed)
+                return;
+            if (!this._beginAutomaticRestore())
                 return;
 
             this._log.info(`Restoring the previous session from ${FileUtils.current_session_path}`);
@@ -284,14 +290,19 @@ export const RestoreSession = class {
                 if (!mayRestoreApplications() || this._destroyed)
                     break;
 
-                for (const {file, sessionConfig} of planned.groups[groupIndex].entries) {
+                const groupEntries = planned.groups[groupIndex].entries;
+                for (let entryIndex = 0; entryIndex < groupEntries.length; entryIndex++) {
                     if (!mayRestoreApplications() || this._destroyed)
                         break;
+                    const {file, sessionConfig} = groupEntries[entryIndex];
                     const [launched, running] = await this._restoreOneSession(sessionConfig);
                     if (removeAfterRestore && launched && !running) {
                         this._log.debug(`Restored one window for ${sessionConfig.app_name}`);
                         FileUtils.removeFile(file.get_path());
                     }
+                    if (groupEntries[entryIndex + 1] &&
+                        !await this._waitBeforeNextRestore(MIN_RESTORE_INTERVAL_MS))
+                        break;
                 }
 
                 if (planned.groups[groupIndex + 1] &&
@@ -314,6 +325,21 @@ export const RestoreSession = class {
                 }
             });
         });
+    }
+
+    _beginAutomaticRestore() {
+        const now = Math.floor(Date.now() / 1000);
+        const previousAttempt = this._settings.get_int64('last-automatic-restore-attempt');
+        if (!automaticRestoreAttemptAllowed(previousAttempt, now)) {
+            this._log.warn(
+                'Skipping repeated automatic restore to protect the desktop from a crash loop');
+            global.notify_error(
+                'Automatic restore paused',
+                'SessionSifu detected a recent restore attempt. Manual restore remains available.');
+            return false;
+        }
+        this._settings.set_int64('last-automatic-restore-attempt', now);
+        return true;
     }
 
     _sessionApplicationKey(sessionConfig) {

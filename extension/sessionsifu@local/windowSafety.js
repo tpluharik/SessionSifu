@@ -7,6 +7,27 @@ export function isValidWorkspaceIndex(index) {
     return Number.isInteger(index) && index >= 0 && index <= MAX_WORKSPACE_INDEX;
 }
 
+export function clampWindowGeometry(workArea, position) {
+    const values = [
+        workArea?.x, workArea?.y, workArea?.width, workArea?.height,
+        position?.x_offset, position?.y_offset, position?.width, position?.height,
+    ];
+    if (!values.every(Number.isFinite) || workArea.width <= 0 || workArea.height <= 0 ||
+        position.width <= 0 || position.height <= 0)
+        return null;
+
+    const width = Math.min(position.width, workArea.width);
+    const height = Math.min(position.height, workArea.height);
+    return {
+        x: Math.max(workArea.x,
+            Math.min(position.x_offset, workArea.x + workArea.width - width)),
+        y: Math.max(workArea.y,
+            Math.min(position.y_offset, workArea.y + workArea.height - height)),
+        width,
+        height,
+    };
+}
+
 export function isWindowUsable(metaWindow, monitorCount = null) {
     try {
         if (!metaWindow || metaWindow._aboutToClose)

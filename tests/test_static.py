@@ -48,8 +48,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.5.8"
-assert metadata["version"] == 43
+assert metadata["version-name"] == "3.5.9"
+assert metadata["version"] == 44
 autostart_source = (extension / "ui" / "autostart.js").read_text()
 file_utils_source = (extension / "utils" / "fileUtils.js").read_text()
 assert "extensionObject.metadata['version-name']" in file_utils_source
@@ -87,7 +87,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.5.8"' in build_script
+assert 'version="3.5.9"' in build_script
 package_control = (root / "packaging" / "control").read_text()
 assert "python3-pyatspi" in package_control
 assert "gnome-settings-daemon-common" in package_control
@@ -184,7 +184,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.5.8"' in app_source
+assert 'CURRENT_VERSION = "3.5.9"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -358,18 +358,29 @@ assert "_pendingMonitorWaits" in source_text
 assert "_pendingGeometryRestores" in source_text
 assert "this._moveSession?.cancelWindow(metaWindow)" in source_text
 assert "w === metaWindow && num === toMonitorIndex" in source_text
-assert "currentMonitor < 0" in source_text
+move_session_source = (extension / "moveSession.js").read_text()
+assert "get_work_area_for_monitor(" not in move_session_source
 assert "this._moveSession.destroy()" in source_text
 assert "this._restoringWindows" in source_text
 assert "NEW_WINDOW_SETTLE_DELAY_MS = 750" in source_text
+assert "this._windowRestoreQueue" in source_text
+assert "WINDOW_RESTORE_INTERVAL_MS" in source_text
 assert "MIN_RESTORE_INTERVAL_MS" in source_text
 assert "MAX_PREVIOUS_SESSION_WINDOWS" in source_text
 assert "deduplicatePreviousSessionEntries(sessionEntries)" in source_text
 assert "AUTOMATIC_RESTORE_INTERVAL_MS" in source_text
 assert "automaticRestoreGroups(entries)" in source_text
+assert "last-automatic-restore-attempt" in source_text
+assert "automaticRestoreAttemptAllowed" in source_text
 assert "restoreCommandAllowed(cmd)" in source_text
 assert "appInfo.should_show?.() === false" in source_text
 assert "!await this._waitBeforeNextRestore(AUTOMATIC_RESTORE_INTERVAL_MS)" in source_text
+assert "!await this._waitBeforeNextRestore(MIN_RESTORE_INTERVAL_MS)" in source_text
+assert "get_work_area_current_monitor()" in source_text
+assert "clampWindowGeometry" in source_text
+assert "_waitForCompositor()" in source_text
+assert "move_frame(true" not in source_text
+assert "Main.activateWindow(metaWindow" not in source_text
 assert "mayRestoreApplications" in source_text
 assert "restorePreviousDelay = this._settings.get_int('restore-previous-delay') * 1000" in source_text
 assert "_sessionApplicationKey" in source_text
@@ -407,7 +418,7 @@ for required in (
     assert required.is_file(), required
 
 roadmap = (root / "ROADMAP.md").read_text()
-assert "## Shipped foundation — 3.5.8" in roadmap
+assert "## Shipped foundation — 3.5.9" in roadmap
 for shipped_feature in ("semantic embedding", "restore journals", "scene grouping", "collections", "JetBrains", "monitor identity", "Ask history", "MCP", "export/import"):
     assert shipped_feature in roadmap
 assert "## Explicit non-goals" in roadmap

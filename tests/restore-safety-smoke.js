@@ -4,6 +4,9 @@ import {
     MAX_AUTOMATIC_WINDOWS_PER_APPLICATION,
     MAX_PREVIOUS_SESSION_WINDOWS,
     MIN_RESTORE_INTERVAL_MS,
+    WINDOW_RESTORE_INTERVAL_MS,
+    AUTOMATIC_RESTORE_COOLDOWN_SECONDS,
+    automaticRestoreAttemptAllowed,
     automaticRestoreDesktopIdAllowed,
     automaticRestoreGroups,
     deduplicatePreviousSessionEntries,
@@ -37,8 +40,14 @@ if (deduplicated.entries.length !== 2 || deduplicated.duplicates.length !== 1)
 if (!deduplicated.entries.includes(newEntry) || !deduplicated.duplicates.includes(oldEntry))
     throw new Error('The newest duplicate previous-session window was not retained');
 
-if (MIN_RESTORE_INTERVAL_MS < 500 || MAX_PREVIOUS_SESSION_WINDOWS > 100)
+if (MIN_RESTORE_INTERVAL_MS < 750 || WINDOW_RESTORE_INTERVAL_MS < 250 ||
+    MAX_PREVIOUS_SESSION_WINDOWS > 100)
     throw new Error('Previous-session restore safety limits are too permissive');
+if (AUTOMATIC_RESTORE_COOLDOWN_SECONDS < 5 * 60 ||
+    !automaticRestoreAttemptAllowed(0, 1000) ||
+    automaticRestoreAttemptAllowed(950, 1000) ||
+    !automaticRestoreAttemptAllowed(1, 1000, 100))
+    throw new Error('Automatic restore crash-loop guard is incorrect');
 
 for (const unsafe of [
     '', 'gjs', 'org.gnome.SessionSifu.desktop', 'org.gnome.Shell.desktop',
@@ -60,6 +69,7 @@ for (let application = 0; application < MAX_AUTOMATIC_RESTORE_APPLICATIONS + 2;
             sessionConfig: {
                 desktop_file_id: `example-${application}.desktop`,
                 window_title: `Window ${window}`,
+                windows_count: 2,
             },
         });
     }
@@ -72,6 +82,7 @@ const automaticPlan = automaticRestoreGroups(automaticEntries);
 if (automaticPlan.groups.length !== MAX_AUTOMATIC_RESTORE_APPLICATIONS)
     throw new Error('Automatic restore application cap was not applied');
 if (automaticPlan.groups.some(group =>
+    group.entries.length > 2 ||
     group.entries.length > MAX_AUTOMATIC_WINDOWS_PER_APPLICATION))
     throw new Error('Automatic restore per-application window cap was not applied');
 if (automaticPlan.rejected.length !== 1)
@@ -82,6 +93,9 @@ if (AUTOMATIC_RESTORE_INTERVAL_MS < 2000)
 for (const command of [
     ['gnome-shell', '--replace'],
     ['mutter', '--wayland'],
+    ['gnome-session-quit', '--logout'],
+    ['systemctl', '--user', 'exit'],
+    ['loginctl', 'terminate-user', '1000'],
     ['gjs', '/usr/share/gnome-shell/extensions/ding@rastersoft.com/app/ding.js'],
 ]) {
     if (restoreCommandAllowed(command))
