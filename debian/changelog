@@ -1,3 +1,10 @@
+sessionsifu (3.5.10-1~ppa1~resolute1) resolute; urgency=high
+
+  * Publish the compositor-safe Wayland restoration hotfix.
+  * Derive Ubuntu 24.04 CI artifact validation from release metadata.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Tue, 01 Sep 2026 10:25:00 +0200
+
 sessionsifu (3.5.9-1~ppa1~resolute1) resolute; urgency=high
 
   * Serialize and pace Wayland application/window restoration.

@@ -4,6 +4,12 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.10
+
+- Made Ubuntu 24.04 package validation derive the release version from project
+  metadata, removing the stale artifact filename that blocked the 3.5.9 tagged
+  GitHub Release after all package tests had passed.
+
 ## 3.5.9
 
 - Serialized and paced every restored GNOME window so newly mapping clients no

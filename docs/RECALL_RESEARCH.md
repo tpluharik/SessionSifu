@@ -79,7 +79,7 @@ The broader ten-product matrix and prioritized gaps are maintained in the
 
 On GNOME, `Shell.Screenshot` supplies visible display/area images. Direct
 `Meta.WindowActor` repainting was removed after compositor instability; the
-implementation must not claim fresh hidden-window capture. Version 3.5.9 checks
+implementation must not claim fresh hidden-window capture. Version 3.5.10 checks
 the current workspace and [Mutter stacking order](https://mutter.gnome.org/meta/method.Display.sort_windows_by_stacking.html)
 before taking an unobscured screen-region preview, then retains it in a bounded
 memory-only cache. Workspace and focus changes refresh that cache without

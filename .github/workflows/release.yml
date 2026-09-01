@@ -180,9 +180,12 @@ jobs:
       - name: Build and verify Ubuntu 24.04-compatible dependency metadata
         run: |
           ./packaging/build-deb.sh
-          test "$(dpkg-deb -f dist/sessionsifu_3.5.8_all.deb Version)" = "3.5.8"
-          ! dpkg-deb -f dist/sessionsifu_3.5.8_all.deb Depends | grep -q gnome-shell
-          dpkg-deb -f dist/sessionsifu_3.5.8_all.deb Recommends | grep -q gnome-shell
+          version="$(python3 -c 'from portable.sessionsifu_portable import VERSION; print(VERSION)')"
+          package="dist/sessionsifu_${version}_all.deb"
+          test -f "$package"
+          test "$(dpkg-deb -f "$package" Version)" = "$version"
+          ! dpkg-deb -f "$package" Depends | grep -q gnome-shell
+          dpkg-deb -f "$package" Recommends | grep -q gnome-shell
           test "$(python3 -c 'import json; print(json.load(open("extension/sessionsifu@local/metadata.json"))["shell-version"][0])')" = "50"
 
   release:
