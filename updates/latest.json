@@ -1,11 +1,11 @@
 {
-  "version": "3.5.10",
+  "version": "3.5.11",
   "channel": "stable",
-  "issued_at": "2026-09-01T08:16:16Z",
-  "expires_at": "2026-10-16T08:16:16Z",
+  "issued_at": "2026-09-01T11:05:56Z",
+  "expires_at": "2026-10-16T11:05:57Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.10_all.deb",
-  "sha256": "d948a05b47c499037126bf621e472164a08bd29b1347e36726a267d61e5325b9",
-  "size": 3759980,
-  "notes": "SessionSifu 3.5.10 makes Wayland restoration compositor-safe: application launches and window mutations are serialized and paced, stale crash-recovery records are bounded by the newest saved window count, geometry is clamped to the current monitor work area, focus is never forced across workspaces, and a crash-loop guard pauses repeated automatic restores."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.11_all.deb",
+  "sha256": "26d2f1eb6054b158e7aa78e84c3708f11d84e556b3eee393cb9d14b94ef336c2",
+  "size": 3762044,
+  "notes": "SessionSifu 3.5.11 adds a Workspace Capsules action to the GNOME and portable tray menus. The capsule setup window lists saved environments and applications launched from it that are still running, while preserving the distinction between profile separation and OS-enforced sandboxes."
 }

@@ -4,6 +4,20 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.11
+
+- Added **Set Up Workspace Capsules…** to both the GNOME top-bar menu and the
+  Windows/macOS/Linux portable tray menu.
+- Made the tray action open the capsule setup view directly, including saved
+  environment selection, preflight review and launch controls.
+- Added a live, periodically refreshed list of applications launched from the
+  capsule window, including capsule name, backend, security boundary and PID.
+- Kept child-process monitoring scoped to applications launched by the current
+  SessionSifu manager. It does not enumerate unrelated host applications.
+- Documented the Wayland boundary: capsule applications use their normal native
+  windows because compositors do not permit embedding arbitrary foreign client
+  surfaces inside the SessionSifu window.
+
 ## 3.5.10
 
 - Made Ubuntu 24.04 package validation derive the release version from project

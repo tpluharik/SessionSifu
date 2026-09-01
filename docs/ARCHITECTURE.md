@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.5.10 runtime and release layout. User-facing
+This document describes the 3.5.11 runtime and release layout. User-facing
 Recall steps live in [RECALL_GUIDE.md](RECALL_GUIDE.md).
 
 SessionSifu 3 has a full GNOME runtime, a portable runtime shared by Windows,
@@ -133,6 +133,14 @@ overrides; the Windows backend emits a reviewable `.wsb` file with read-only
 host mappings. Profile data deletion is an explicit operation independent of
 manifest deletion.
 
+The GNOME top-bar and portable tray open capsule setup directly. A process
+registry owned by the active manager records only successfully spawned capsule
+children and drops them after their process exits. The UI refreshes this bounded
+view periodically; it never performs global process enumeration. External
+applications remain native compositor-managed windows rather than being
+reparented into SessionSifu, which is not supported for independent Wayland
+clients.
+
 Before restore, both managers request a grouped plan and present every
 application as an enabled checkbox. Cancellation or an empty selection launches
 nothing. The identity set is applied before duplicate-app and document
@@ -263,7 +271,7 @@ private metadata/image capture and invokes the unprivileged manager finalizer;
 the finalizer applies domain/sensitive policy, optional per-window OCR, deduplication,
 authenticated encryption, retention and quota pruning, then removes plaintext
 temporary files. GNOME stores one encrypted image per display plus up to 64
-window previews. Version 3.5.10 uses serialized screenshot-area requests only for
+window previews. Version 3.5.11 uses serialized screenshot-area requests only for
 unobscured windows on the active workspace. A 64-entry / 64-MiB memory cache
 retains previously visible windows across workspace changes; source images over
 16 MiB are not cached. Native screenshot staging is private and short-lived in

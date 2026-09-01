@@ -17,6 +17,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import threading
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -292,6 +293,8 @@ class CapsuleManager:
 
     def __init__(self, store: CapsuleStore) -> None:
         self.store = store
+        self._running_lock = threading.Lock()
+        self._running: list[dict[str, Any]] = []
 
     def create(
         self,
@@ -415,13 +418,14 @@ class CapsuleManager:
         if plan["backend"] == "windows-sandbox":
             raise RuntimeError("Export this capsule as a .wsb file and review it before launch")
         launched = 0
-        for command in plan["commands"]:
+        launched_applications: list[dict[str, Any]] = []
+        for identity, command in zip(plan["applications"], plan["commands"], strict=True):
             if plan["backend"] == "profile":
                 profile = Path(command[-1])
                 profile.mkdir(parents=True, exist_ok=True)
                 if os.name != "nt":
                     os.chmod(profile, 0o700)
-            subprocess.Popen(
+            process = subprocess.Popen(
                 command,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
@@ -429,7 +433,44 @@ class CapsuleManager:
                 start_new_session=os.name != "nt",
             )
             launched += 1
-        return {**plan, "launched": launched}
+            entry = {
+                "capsule": plan["name"],
+                "backend": plan["backend"],
+                "boundary": plan["boundary"],
+                "application": identity,
+                "pid": process.pid if isinstance(process.pid, int) else 0,
+                "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "process": process,
+            }
+            with self._running_lock:
+                self._running.append(entry)
+            launched_applications.append({
+                key: value for key, value in entry.items() if key != "process"
+            })
+        return {
+            **plan,
+            "launched": launched,
+            "launched_applications": launched_applications,
+        }
+
+    def list_running(self) -> list[dict[str, Any]]:
+        """Return applications launched by this manager that are still alive.
+
+        This intentionally tracks only child processes started by SessionSifu.
+        It does not inspect unrelated host processes or compositor windows.
+        """
+        live: list[dict[str, Any]] = []
+        with self._running_lock:
+            for entry in self._running:
+                process = entry["process"]
+                if process.poll() is not None:
+                    continue
+                live.append(entry)
+            self._running = live
+            return [
+                {key: value for key, value in entry.items() if key != "process"}
+                for entry in live
+            ]
 
     def export_windows_sandbox(self, name: str, destination: Path) -> Path:
         capsule = self.store.load(name)

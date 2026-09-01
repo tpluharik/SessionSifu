@@ -437,6 +437,15 @@ class AwsIndicator extends PanelMenu.Button {
                 this._log.error(error, 'Could not open Privacy Recall search');
             }
         });
+        this.menu.addAction('Set Up Workspace Capsules…', () => {
+            try {
+                Gio.Subprocess.new(
+                    [FileUtils.getManagerExecutable(), '--capsules'],
+                    Gio.SubprocessFlags.NONE);
+            } catch (error) {
+                this._log.error(error, 'Could not open Workspace Capsule setup');
+            }
+        });
         this._recallChangedId = this._settings.connect(
             'changed::recall-enabled', () => this._updateRecallItem());
         this._recallPauseChangedId = this._settings.connect(

@@ -83,8 +83,16 @@ class PortableTests(unittest.TestCase):
             self.assertFalse(plan["security_boundary"])
             self.assertIn("not a security sandbox", plan["warnings"][0])
             with mock.patch("sessionsifu_portable.capsule.subprocess.Popen") as launch:
+                launch.return_value.pid = 4242
+                launch.return_value.poll.return_value = None
                 result = manager.launch("Research")
+                running = manager.list_running()
             self.assertEqual(result["launched"], 1)
+            self.assertEqual(result["launched_applications"][0]["pid"], 4242)
+            self.assertEqual(running[0]["capsule"], "Research")
+            self.assertEqual(running[0]["application"], str(executable))
+            launch.return_value.poll.return_value = 0
+            self.assertEqual(manager.list_running(), [])
             launch.assert_called_once()
             with self.assertRaises(ValueError):
                 manager.create("../escape", "profile", [str(executable)])
@@ -155,7 +163,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.5.10")
+        self.assertEqual(VERSION, "3.5.11")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -587,7 +595,7 @@ class PortableTests(unittest.TestCase):
             controller.save_named("Work")
             api = LocalApi(controller)
             status = api.dispatch({"method": "status"})
-            self.assertEqual(status["version"], "3.5.10")
+            self.assertEqual(status["version"], "3.5.11")
             preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
             self.assertEqual(preview["applications"][0]["application"], "Editor")
             with self.assertRaises(ValueError):
@@ -648,7 +656,7 @@ class PortableTests(unittest.TestCase):
             controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
             controller.save_named("Work")
             mcp = ReadOnlyMcp(controller)
-            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.10")
+            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.11")
             self.assertTrue(mcp.call("restore_preview", {"name": "Work"}))
             with self.assertRaises(ValueError):
                 mcp.call("restore_execute", {"name": "Work"})

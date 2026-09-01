@@ -59,7 +59,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.5.10"
+CURRENT_VERSION = "3.5.11"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -122,6 +122,7 @@ def restore_journal_store() -> RestoreJournal:
     return RestoreJournal(Path(GLib.get_user_config_dir()) / "sessionsifu")
 
 
+@functools.lru_cache(maxsize=1)
 def workspace_capsules():
     """Load the portable capsule core lazily for legacy-updater compatibility."""
     from capsule import CapsuleManager, CapsuleStore
@@ -2487,6 +2488,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         super().__init__(application=app, title="SessionSifu")
         self.set_default_size(760, 680)
         self._settings = settings()
+        self._capsules = workspace_capsules()
         sync_gnome_recall_shortcut(self._settings)
 
         toolbar = Adw.ToolbarView()
@@ -2902,6 +2904,15 @@ class ManagerWindow(Adw.ApplicationWindow):
                 "and reviewable Windows Sandbox workspaces."
             ),
         )
+        self._capsule_names: list[str] = []
+        self.capsule_saved_row = Adw.ComboRow(
+            title="Saved environments",
+            subtitle="Choose an existing capsule or enter a name to create one",
+        )
+        self.capsule_saved_row.set_model(Gtk.StringList.new(["No saved capsules"]))
+        self.capsule_saved_row.set_sensitive(False)
+        self.capsule_saved_row.connect("notify::selected", self._select_capsule)
+        capsule_group.add(self.capsule_saved_row)
         capsule_name_row = Adw.ActionRow(title="Capsule name")
         self.capsule_name_entry = Gtk.Entry(
             placeholder_text="Research workspace", hexpand=True, valign=Gtk.Align.CENTER
@@ -2969,6 +2980,16 @@ class ManagerWindow(Adw.ApplicationWindow):
         capsule_group.add(capsule_actions)
         content.append(capsule_group)
 
+        self.capsule_running_group = Adw.PreferencesGroup(
+            title="Running capsule applications",
+            description=(
+                "Applications open in their own native desktop windows. Wayland does not allow "
+                "SessionSifu to embed unrelated application windows inside this manager."
+            ),
+        )
+        self._capsule_running_rows: list[Adw.ActionRow] = []
+        content.append(self.capsule_running_group)
+
         limits_group = Adw.PreferencesGroup(title="Restoration boundary")
         limits_row = Adw.ActionRow(
             title="Application content is restored by the application",
@@ -3007,6 +3028,10 @@ class ManagerWindow(Adw.ApplicationWindow):
         self._installed_update: Path | None = None
 
         self.refresh()
+        self._capsule_refresh_source = GLib.timeout_add_seconds(
+            2, self._refresh_capsule_running
+        )
+        self.connect("close-request", self._manager_closed)
 
     def _message(self, text: str) -> None:
         self.banner.set_title(text)
@@ -3038,17 +3063,18 @@ class ManagerWindow(Adw.ApplicationWindow):
     def _save_capsule(self, _button) -> None:
         name, backend, applications, folders, offline = self._capsule_values()
         try:
-            workspace_capsules().create(
+            self._capsules.create(
                 name, backend, applications, offline=offline, mapped_folders=folders
             )
             self._message(f"Encrypted workspace capsule ‘{name}’ was saved.")
+            self._refresh_capsules()
         except (OSError, RuntimeError, ValueError) as error:
             self._message(f"Could not save capsule: {error}")
 
     def _review_capsule(self, _button) -> None:
         name = self.capsule_name_entry.get_text().strip()
         try:
-            plan = workspace_capsules().preflight(name)
+            plan = self._capsules.preflight(name)
             permissions = plan.get("effective_permissions", {})
             details = "; ".join(
                 f"{key}: {value}" for key, value in permissions.items()
@@ -3064,24 +3090,100 @@ class ManagerWindow(Adw.ApplicationWindow):
     def _launch_capsule(self, _button) -> None:
         name = self.capsule_name_entry.get_text().strip()
         try:
-            result = workspace_capsules().launch(name)
+            result = self._capsules.launch(name)
             self._message(
                 f"Launched {result['launched']} application(s) through "
                 f"{result['boundary']}."
             )
+            self._refresh_capsule_running()
         except (OSError, RuntimeError, ValueError) as error:
             self._message(f"Capsule launch was blocked: {error}")
 
     def _delete_capsule_data(self, _button) -> None:
         name = self.capsule_name_entry.get_text().strip()
         try:
-            deleted = workspace_capsules().store.delete_data(name)
+            deleted = self._capsules.store.delete_data(name)
             self._message(
                 "Separate profile data was deleted."
                 if deleted else "This capsule has no separate profile data."
             )
         except (OSError, ValueError) as error:
             self._message(f"Could not delete capsule data: {error}")
+
+    def _select_capsule(self, _row, _parameter) -> None:
+        selected = self.capsule_saved_row.get_selected()
+        if selected >= len(self._capsule_names):
+            return
+        try:
+            capsule = self._capsules.store.load(self._capsule_names[selected])
+        except (OSError, ValueError):
+            return
+        self.capsule_name_entry.set_text(capsule.name)
+        self.capsule_backend_row.set_selected(
+            ("profile", "flatpak", "windows-sandbox").index(capsule.backend)
+        )
+        self.capsule_apps_entry.set_text(
+            ", ".join(application.identity for application in capsule.applications)
+        )
+        self.capsule_folders_entry.set_text(", ".join(capsule.mapped_folders))
+        self.capsule_offline_switch.set_active(capsule.offline)
+
+    def _refresh_capsules(self) -> None:
+        try:
+            capsules = self._capsules.store.list()
+        except (OSError, ValueError) as error:
+            self._message(f"Could not list capsules: {error}")
+            capsules = []
+        names = [capsule.name for capsule in capsules]
+        if names != self._capsule_names:
+            self._capsule_names = names
+            self.capsule_saved_row.set_model(
+                Gtk.StringList.new(names or ["No saved capsules"])
+            )
+            self.capsule_saved_row.set_sensitive(bool(names))
+            if names:
+                self.capsule_saved_row.set_selected(0)
+                self._select_capsule(self.capsule_saved_row, None)
+        self._refresh_capsule_running()
+
+    def _refresh_capsule_running(self) -> bool:
+        for row in self._capsule_running_rows:
+            self.capsule_running_group.remove(row)
+        self._capsule_running_rows.clear()
+        running = self._capsules.list_running()
+        if not running:
+            row = Adw.ActionRow(
+                title="No capsule applications are running",
+                subtitle="Select a saved environment above, review it, then launch it.",
+            )
+            self.capsule_running_group.add(row)
+            self._capsule_running_rows.append(row)
+            return GLib.SOURCE_CONTINUE
+        for application in running:
+            row = Adw.ActionRow(
+                title=str(application["application"]),
+                subtitle=(
+                    f"{application['capsule']} · {application['boundary']} · "
+                    f"PID {application['pid'] or 'managed'}"
+                ),
+            )
+            row.add_prefix(Gtk.Image.new_from_icon_name("application-x-executable-symbolic"))
+            self.capsule_running_group.add(row)
+            self._capsule_running_rows.append(row)
+        return GLib.SOURCE_CONTINUE
+
+    def present_capsules(self) -> None:
+        """Present capsule setup and let GTK scroll the focused field into view."""
+        self.present()
+        GLib.idle_add(
+            lambda: (self.capsule_name_entry.grab_focus(), GLib.SOURCE_REMOVE)[1]
+        )
+
+    def _manager_closed(self, _window) -> bool:
+        if self._capsule_refresh_source:
+            GLib.source_remove(self._capsule_refresh_source)
+            self._capsule_refresh_source = 0
+        return False
 
     def _call(self, method: str, parameters: GLib.Variant | None = None) -> str | None:
         try:
@@ -3676,6 +3778,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         return GLib.SOURCE_REMOVE
 
     def refresh(self) -> None:
+        self._refresh_capsules()
         for child in self._session_rows_widgets:
             self.sessions_group.remove(child)
         self._session_rows_widgets.clear()
@@ -3791,9 +3894,13 @@ class ManagerWindow(Adw.ApplicationWindow):
 
 
 class SessionSifuApplication(Adw.Application):
-    def __init__(self, recall_search: bool = False):
+    def __init__(self, recall_search: bool = False, capsules: bool = False):
         self.recall_search = recall_search
-        application_id = f"{APP_ID}.RecallSearch" if recall_search else APP_ID
+        self.capsules = capsules
+        application_id = (
+            f"{APP_ID}.RecallSearch" if recall_search else
+            f"{APP_ID}.Capsules" if capsules else APP_ID
+        )
         super().__init__(application_id=application_id, flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
 
     def do_activate(self):
@@ -3802,6 +3909,8 @@ class SessionSifuApplication(Adw.Application):
             window = RecallSearchWindow(self) if self.recall_search else ManagerWindow(self)
         if self.recall_search:
             window.present_search()
+        elif self.capsules:
+            window.present_capsules()
         else:
             window.present()
 
@@ -4038,6 +4147,7 @@ def main() -> int:
     parser.add_argument("--restore", metavar="NAME")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--recall-search", action="store_true")
+    parser.add_argument("--capsules", action="store_true", help="open Workspace Capsule setup")
     parser.add_argument("--export-archive", type=Path, help="export encrypted sessions and Recall history")
     parser.add_argument("--import-archive", type=Path, help="import an encrypted SessionSifu archive")
     parser.add_argument("--recall-reindex", metavar="RECORD", help="re-run OCR for one Recall record")
@@ -4158,7 +4268,9 @@ def main() -> int:
             print(item["name"])
         return 0
 
-    app = SessionSifuApplication(recall_search=args.recall_search)
+    app = SessionSifuApplication(
+        recall_search=args.recall_search, capsules=args.capsules
+    )
     return app.run([sys.argv[0]])
 
 

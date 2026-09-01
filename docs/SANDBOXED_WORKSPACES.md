@@ -7,6 +7,13 @@ model, fail-closed permission preflight, cooperative profile pilot, installed-
 Flatpak pilot and reviewable Windows Sandbox exporter described below. Virtual
 machines and arbitrary host-application containment remain research only.
 
+Version 3.5.11 adds a direct tray/top-bar entry into capsule setup and a live
+application monitor. The monitor is deliberately limited to child processes
+started from that SessionSifu window. Capsule applications keep their native
+desktop windows; embedding or reparenting arbitrary third-party windows is not
+available on Wayland and would weaken compositor isolation if emulated through
+privileged screen-control techniques.
+
 ## Product idea
 
 A SessionSifu workspace capsule combines the shipped launch-plan foundation

@@ -517,6 +517,10 @@ class MainWindow(QMainWindow):
         capsule_layout.addWidget(capsule_create)
         self.capsule_items = QListWidget()
         capsule_layout.addWidget(self.capsule_items, 1)
+        capsule_layout.addWidget(QLabel("Applications running from this SessionSifu capsule window"))
+        self.capsule_running_items = QListWidget()
+        self.capsule_running_items.setMinimumHeight(90)
+        capsule_layout.addWidget(self.capsule_running_items)
         capsule_actions = QHBoxLayout()
         capsule_plan = QPushButton("Review preflight")
         capsule_plan.clicked.connect(self.preflight_capsule)
@@ -534,14 +538,14 @@ class MainWindow(QMainWindow):
             capsule_actions.addWidget(button)
         capsule_layout.addLayout(capsule_actions)
 
-        tabs = QTabWidget()
+        self.tabs = QTabWidget()
         self.named = QListWidget()
         self.history = QListWidget()
-        tabs.addTab(self._list_page(self.named, self.restore_named, self.delete_named), "Named sessions")
-        tabs.addTab(self._list_page(self.history, self.restore_history), "History (latest five)")
-        tabs.addTab(recall_box, "Privacy Recall")
-        tabs.addTab(capsule_box, "Workspace capsules")
-        layout.addWidget(tabs, 1)
+        self.tabs.addTab(self._list_page(self.named, self.restore_named, self.delete_named), "Named sessions")
+        self.tabs.addTab(self._list_page(self.history, self.restore_history), "History (latest five)")
+        self.tabs.addTab(recall_box, "Privacy Recall")
+        self._capsule_tab_index = self.tabs.addTab(capsule_box, "Workspace capsules")
+        layout.addWidget(self.tabs, 1)
 
         diagnostics = QPushButton("Show platform diagnostics")
         diagnostics.clicked.connect(self.show_diagnostics)
@@ -554,6 +558,10 @@ class MainWindow(QMainWindow):
         self.recall_timer = QTimer(self)
         self.recall_timer.timeout.connect(lambda: self.save_recall(silent=True))
         self.update_recall_timer()
+        self.capsule_running_timer = QTimer(self)
+        self.capsule_running_timer.setInterval(2000)
+        self.capsule_running_timer.timeout.connect(self.refresh_running_capsules)
+        self.capsule_running_timer.start()
         self.refresh()
 
     def _list_page(self, widget: QListWidget, restore_callback, delete_callback=None) -> QWidget:
@@ -643,6 +651,30 @@ class MainWindow(QMainWindow):
             self._perform(
                 lambda: self.controller.launch_capsule(name),
                 f"Launched workspace capsule “{name}” after preflight.",
+            )
+            self.refresh_running_capsules()
+
+    def show_capsules(self) -> None:
+        """Present the capsule setup page and its live application monitor."""
+        self.tabs.setCurrentIndex(self._capsule_tab_index)
+        self.refresh()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.capsule_name.setFocus()
+
+    def refresh_running_capsules(self) -> None:
+        self.capsule_running_items.clear()
+        running = self.controller.capsules.list_running()
+        if not running:
+            self.capsule_running_items.addItem(
+                "No capsule applications launched from this window are running."
+            )
+            return
+        for application in running:
+            self.capsule_running_items.addItem(
+                f"{application['application']} — {application['capsule']} "
+                f"({application['backend']}, PID {application['pid'] or 'managed'})"
             )
 
     def export_windows_capsule(self) -> None:
@@ -1193,6 +1225,7 @@ class MainWindow(QMainWindow):
             item = QListWidgetItem(f"{name} — {backend}")
             item.setData(Qt.UserRole, name)
             self.capsule_items.addItem(item)
+        self.refresh_running_capsules()
         self.refresh_recall()
         capabilities = self.controller.adapter.capabilities
         self.status.setText(
@@ -1936,6 +1969,8 @@ def run_gui(
         f"Browse Recall snapshots… ({window.shortcut_value()})", menu
     )
     search_recall.triggered.connect(show_recall_search)
+    capsules = QAction("Set up Workspace Capsules…", menu)
+    capsules.triggered.connect(window.show_capsules)
     pause_menu = QMenu("Pause Recall", menu)
     for label, seconds in (("Resume", 0), ("15 minutes", 900), ("1 hour", 3600), ("Indefinitely", -1)):
         action = QAction(label, pause_menu)
@@ -1971,7 +2006,7 @@ def run_gui(
     window.set_recall_state_callback(recall_state_changed)
     quit_action = QAction("Turn Off SessionSifu", menu)
     quit_action.triggered.connect(app.quit)
-    menu.addActions([show, save, restore, recall, search_recall])
+    menu.addActions([show, save, restore, recall, search_recall, capsules])
     menu.addMenu(pause_menu)
     menu.addSeparator()
     menu.addAction(quit_action)

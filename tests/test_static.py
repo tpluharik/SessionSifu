@@ -48,8 +48,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.5.10"
-assert metadata["version"] == 45
+assert metadata["version-name"] == "3.5.11"
+assert metadata["version"] == 46
 autostart_source = (extension / "ui" / "autostart.js").read_text()
 file_utils_source = (extension / "utils" / "fileUtils.js").read_text()
 assert "extensionObject.metadata['version-name']" in file_utils_source
@@ -87,7 +87,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.5.10"' in build_script
+assert 'version="3.5.11"' in build_script
 package_control = (root / "packaging" / "control").read_text()
 assert "python3-pyatspi" in package_control
 assert "gnome-settings-daemon-common" in package_control
@@ -184,7 +184,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.5.10"' in app_source
+assert 'CURRENT_VERSION = "3.5.11"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -311,6 +311,9 @@ assert "self._all_entries[:self._visible_count]" in portable_ui
 assert "RecallHotkey" in portable_ui
 assert "def recall_saving_icon" in portable_ui
 assert "Saving Privacy Recall…" in portable_ui
+assert 'QAction("Set up Workspace Capsules…"' in portable_ui
+assert "def show_capsules" in portable_ui
+assert "def refresh_running_capsules" in portable_ui
 assert (root / "portable" / "sessionsifu_portable" / "hotkey.py").is_file()
 assert (root / "portable" / "sessionsifu_portable" / "shortcut.py").is_file()
 hotkey_source = (root / "portable" / "sessionsifu_portable" / "hotkey.py").read_text()
@@ -390,6 +393,8 @@ assert "[Meta.WindowType.NORMAL, Meta.WindowType.UTILITY]" in source_text
 assert "GObject.signal_handler_is_connected" in source_text
 assert "Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS" in source_text
 assert "Turn Off SessionSifu" in source_text
+assert "Set Up Workspace Capsules…" in source_text
+assert "[FileUtils.getManagerExecutable(), '--capsules']" in source_text
 assert "bash -c" not in source_text
 assert "launch-app.sh" not in source_text
 assert "new RegExp(keyword)" not in source_text
@@ -418,7 +423,7 @@ for required in (
     assert required.is_file(), required
 
 roadmap = (root / "ROADMAP.md").read_text()
-assert "## Shipped foundation — 3.5.10" in roadmap
+assert "## Shipped foundation — 3.5.11" in roadmap
 for shipped_feature in ("semantic embedding", "restore journals", "scene grouping", "collections", "JetBrains", "monitor identity", "Ask history", "MCP", "export/import"):
     assert shipped_feature in roadmap
 assert "## Explicit non-goals" in roadmap
