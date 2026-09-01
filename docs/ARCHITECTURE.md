@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.5.11 runtime and release layout. User-facing
+This document describes the 3.5.12 runtime and release layout. User-facing
 Recall steps live in [RECALL_GUIDE.md](RECALL_GUIDE.md).
 
 SessionSifu 3 has a full GNOME runtime, a portable runtime shared by Windows,
@@ -271,7 +271,7 @@ private metadata/image capture and invokes the unprivileged manager finalizer;
 the finalizer applies domain/sensitive policy, optional per-window OCR, deduplication,
 authenticated encryption, retention and quota pruning, then removes plaintext
 temporary files. GNOME stores one encrypted image per display plus up to 64
-window previews. Version 3.5.11 uses serialized screenshot-area requests only for
+window previews. Version 3.5.12 uses serialized screenshot-area requests only for
 unobscured windows on the active workspace. A 64-entry / 64-MiB memory cache
 retains previously visible windows across workspace changes; source images over
 16 MiB are not cached. Native screenshot staging is private and short-lived in

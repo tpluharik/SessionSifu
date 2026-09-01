@@ -1,3 +1,11 @@
+sessionsifu (3.5.12-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Save and validate the visible capsule before review or launch.
+  * Resolve Signal's friendly name to signal-desktop with separate profile data.
+  * Show launch errors beside capsule controls in the current viewport.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Tue, 01 Sep 2026 21:00:00 +0200
+
 sessionsifu (3.5.11-1~ppa1~resolute1) resolute; urgency=medium
 
   * Add tray access and a live application monitor for Workspace Capsules.

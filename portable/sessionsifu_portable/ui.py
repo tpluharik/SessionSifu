@@ -504,7 +504,9 @@ class MainWindow(QMainWindow):
         self.capsule_backend.addItem("Windows Sandbox export", "windows-sandbox")
         capsule_form.addRow("Backend", self.capsule_backend)
         self.capsule_apps = QLineEdit()
-        self.capsule_apps.setPlaceholderText("firefox, code · or org.mozilla.firefox for Flatpak")
+        self.capsule_apps.setPlaceholderText(
+            "firefox, code, signal · or org.mozilla.firefox for Flatpak"
+        )
         capsule_form.addRow("Applications", self.capsule_apps)
         self.capsule_folders = QLineEdit()
         self.capsule_folders.setPlaceholderText("Windows Sandbox read-only folders, separated by ;")
@@ -603,6 +605,22 @@ class MainWindow(QMainWindow):
         self._perform(self.controller.save_history, "Saved an automatic snapshot.", silent=silent)
 
     def create_capsule(self) -> None:
+        values = self._capsule_values()
+        if values is None:
+            return
+        name, backend, applications, folders, offline = values
+        self._perform(
+            lambda: self.controller.create_capsule(
+                name,
+                backend,
+                applications,
+                offline=offline,
+                mapped_folders=folders,
+            ),
+            f"Saved encrypted workspace capsule “{name}”. Review preflight before launch.",
+        )
+
+    def _capsule_values(self) -> tuple[str, str, list[str], list[str], bool] | None:
         name = self.capsule_name.text().strip()
         applications = [
             item.strip() for item in self.capsule_apps.text().split(",") if item.strip()
@@ -613,32 +631,38 @@ class MainWindow(QMainWindow):
         backend = str(self.capsule_backend.currentData())
         if not name:
             self.status.setText("Enter a capsule name first.")
-            return
-        self._perform(
-            lambda: self.controller.create_capsule(
-                name,
-                backend,
-                applications,
-                offline=self.capsule_offline.isChecked(),
-                mapped_folders=folders,
-            ),
-            f"Saved encrypted workspace capsule “{name}”. Review preflight before launch.",
+            return None
+        return (
+            name,
+            backend,
+            applications,
+            folders,
+            self.capsule_offline.isChecked(),
         )
+
+    def _save_visible_capsule(self) -> str:
+        values = self._capsule_values()
+        if values is None:
+            raise ValueError("Enter a capsule name first.")
+        name, backend, applications, folders, offline = values
+        self.controller.create_capsule(
+            name, backend, applications, offline=offline, mapped_folders=folders
+        )
+        return name
 
     def _selected_capsule(self) -> str:
         item = self.capsule_items.currentItem()
         return str(item.data(Qt.UserRole)) if item else ""
 
     def preflight_capsule(self) -> None:
-        name = self._selected_capsule()
-        if not name:
-            self.status.setText("Select a workspace capsule first.")
-            return
         try:
+            name = self._save_visible_capsule()
             plan = self.controller.preflight_capsule(name)
         except Exception as error:
+            self.status.setText(str(error))
             QMessageBox.warning(self, "Workspace capsule", str(error))
             return
+        self.refresh()
         QMessageBox.information(
             self,
             f"Workspace capsule · {name}",
@@ -646,13 +670,17 @@ class MainWindow(QMainWindow):
         )
 
     def launch_capsule(self) -> None:
-        name = self._selected_capsule()
-        if name:
-            self._perform(
-                lambda: self.controller.launch_capsule(name),
-                f"Launched workspace capsule “{name}” after preflight.",
+        try:
+            name = self._save_visible_capsule()
+            result = self.controller.launch_capsule(name)
+            self.status.setText(
+                f"Launched {result['launched']} application(s) from “{name}”."
             )
+            self.refresh()
             self.refresh_running_capsules()
+        except Exception as error:
+            self.status.setText(str(error))
+            QMessageBox.warning(self, "Workspace capsule", str(error))
 
     def show_capsules(self) -> None:
         """Present the capsule setup page and its live application monitor."""

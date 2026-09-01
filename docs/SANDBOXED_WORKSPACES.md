@@ -14,6 +14,14 @@ desktop windows; embedding or reparenting arbitrary third-party windows is not
 available on Wayland and would weaken compositor isolation if emulated through
 privileged screen-control techniques.
 
+Version 3.5.12 removes the capsule form's separate-save trap: review and launch
+atomically persist the visible values before preflight. Results are repeated in
+the capsule row so errors remain visible while the page is scrolled. The
+profile pilot also recognizes the familiar `signal` name as the packaged
+`signal-desktop` executable and assigns it capsule-owned Electron user data.
+Aliases are fixed and reviewed; SessionSifu does not guess or shell-expand
+untrusted application commands.
+
 ## Product idea
 
 A SessionSifu workspace capsule combines the shipped launch-plan foundation

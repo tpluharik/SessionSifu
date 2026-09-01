@@ -118,6 +118,25 @@ class PortableTests(unittest.TestCase):
             )
             probe.assert_called_once()
 
+    def test_profile_capsule_resolves_signal_desktop_name(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "signal-desktop"
+            executable.write_text("test executable", encoding="utf-8")
+            executable.chmod(0o700)
+            manager = CapsuleManager(CapsuleStore(root / "data", test_key=b"s" * 32))
+            manager.create("Messaging", "profile", ["signal"])
+            with mock.patch(
+                "sessionsifu_portable.capsule.shutil.which",
+                side_effect=lambda name: str(executable) if name == "signal-desktop" else None,
+            ):
+                plan = manager.preflight("Messaging")
+            self.assertTrue(plan["supported"])
+            self.assertEqual(
+                plan["commands"][0][:2],
+                [str(executable), "--user-data-dir"],
+            )
+
     def test_windows_sandbox_export_has_safe_defaults_and_read_only_folders(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -163,7 +182,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.5.11")
+        self.assertEqual(VERSION, "3.5.12")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -595,7 +614,7 @@ class PortableTests(unittest.TestCase):
             controller.save_named("Work")
             api = LocalApi(controller)
             status = api.dispatch({"method": "status"})
-            self.assertEqual(status["version"], "3.5.11")
+            self.assertEqual(status["version"], "3.5.12")
             preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
             self.assertEqual(preview["applications"][0]["application"], "Editor")
             with self.assertRaises(ValueError):
@@ -656,7 +675,7 @@ class PortableTests(unittest.TestCase):
             controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
             controller.save_named("Work")
             mcp = ReadOnlyMcp(controller)
-            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.11")
+            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.12")
             self.assertTrue(mcp.call("restore_preview", {"name": "Work"}))
             with self.assertRaises(ValueError):
                 mcp.call("restore_execute", {"name": "Work"})

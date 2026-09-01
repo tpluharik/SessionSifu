@@ -1,7 +1,7 @@
 name: sessionsifu
 title: SessionSifu
 base: core24
-version: "3.5.11"
+version: "3.5.12"
 summary: Restore desktop applications, files and window layouts
 description: |
   SessionSifu saves desktop sessions and restores applications, documents,

@@ -4,6 +4,19 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.12
+
+- Fixed the capsule form appearing to do nothing when **Review** or **Launch**
+  was pressed before a separate **Save** action. Both actions now persist and
+  validate the visible form first.
+- Added the familiar `signal` application name as a reviewed alias for the
+  Ubuntu/Debian `signal-desktop` executable and launch it with capsule-owned
+  Electron profile data.
+- Made capsule success and error details visible directly beside the action
+  buttons, rather than only in the page-top banner that may be outside the
+  scrolled viewport.
+- Applied the same save-before-review/launch workflow to the portable manager.
+
 ## 3.5.11
 
 - Added **Set Up Workspace Capsules…** to both the GNOME top-bar menu and the

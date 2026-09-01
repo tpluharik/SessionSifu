@@ -59,7 +59,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.5.11"
+CURRENT_VERSION = "3.5.12"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -2938,7 +2938,7 @@ class ManagerWindow(Adw.ApplicationWindow):
             subtitle="Comma-separated executable names or Flatpak application IDs",
         )
         self.capsule_apps_entry = Gtk.Entry(
-            placeholder_text="firefox, code", hexpand=True, valign=Gtk.Align.CENTER
+            placeholder_text="firefox, code, signal", hexpand=True, valign=Gtk.Align.CENTER
         )
         capsule_apps_row.add_suffix(self.capsule_apps_entry)
         capsule_group.add(capsule_apps_row)
@@ -2960,7 +2960,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         )
         capsule_group.add(self.capsule_offline_switch)
 
-        capsule_actions = Adw.ActionRow(
+        self.capsule_actions_row = Adw.ActionRow(
             title="Review before launch",
             subtitle="Effective permissions are resolved before any process starts",
         )
@@ -2976,8 +2976,8 @@ class ManagerWindow(Adw.ApplicationWindow):
             if label == "Delete data":
                 button.add_css_class("destructive-action")
             button.connect("clicked", callback)
-            capsule_actions.add_suffix(button)
-        capsule_group.add(capsule_actions)
+            self.capsule_actions_row.add_suffix(button)
+        capsule_group.add(self.capsule_actions_row)
         content.append(capsule_group)
 
         self.capsule_running_group = Adw.PreferencesGroup(
@@ -3066,38 +3066,60 @@ class ManagerWindow(Adw.ApplicationWindow):
             self._capsules.create(
                 name, backend, applications, offline=offline, mapped_folders=folders
             )
-            self._message(f"Encrypted workspace capsule ‘{name}’ was saved.")
+            message = f"Encrypted workspace capsule ‘{name}’ was saved."
+            self.capsule_actions_row.set_subtitle(message)
+            self._message(message)
             self._refresh_capsules()
         except (OSError, RuntimeError, ValueError) as error:
-            self._message(f"Could not save capsule: {error}")
+            message = f"Could not save capsule: {error}"
+            self.capsule_actions_row.set_subtitle(message)
+            self._message(message)
+
+    def _save_capsule_values(self) -> str:
+        """Persist the visible form so Review and Launch do what their labels promise."""
+        name, backend, applications, folders, offline = self._capsule_values()
+        self._capsules.create(
+            name, backend, applications, offline=offline, mapped_folders=folders
+        )
+        return name
 
     def _review_capsule(self, _button) -> None:
-        name = self.capsule_name_entry.get_text().strip()
         try:
+            name = self._save_capsule_values()
             plan = self._capsules.preflight(name)
             permissions = plan.get("effective_permissions", {})
             details = "; ".join(
                 f"{key}: {value}" for key, value in permissions.items()
             )
             errors = "; ".join(plan.get("errors", []))
-            self._message(
+            message = (
                 f"{plan['boundary']} · {details}"
                 + (f" · blocked: {errors}" if errors else " · ready to launch")
             )
+            self.capsule_actions_row.set_subtitle(message)
+            self._message(message)
+            self._refresh_capsules()
         except (OSError, RuntimeError, ValueError) as error:
-            self._message(f"Could not review capsule: {error}")
+            message = f"Could not review capsule: {error}"
+            self.capsule_actions_row.set_subtitle(message)
+            self._message(message)
 
     def _launch_capsule(self, _button) -> None:
-        name = self.capsule_name_entry.get_text().strip()
         try:
+            name = self._save_capsule_values()
             result = self._capsules.launch(name)
-            self._message(
+            message = (
                 f"Launched {result['launched']} application(s) through "
                 f"{result['boundary']}."
             )
+            self.capsule_actions_row.set_subtitle(message)
+            self._message(message)
+            self._refresh_capsules()
             self._refresh_capsule_running()
         except (OSError, RuntimeError, ValueError) as error:
-            self._message(f"Capsule launch was blocked: {error}")
+            message = f"Capsule launch was blocked: {error}"
+            self.capsule_actions_row.set_subtitle(message)
+            self._message(message)
 
     def _delete_capsule_data(self, _button) -> None:
         name = self.capsule_name_entry.get_text().strip()
@@ -3136,13 +3158,15 @@ class ManagerWindow(Adw.ApplicationWindow):
             capsules = []
         names = [capsule.name for capsule in capsules]
         if names != self._capsule_names:
+            visible_name = self.capsule_name_entry.get_text().strip()
             self._capsule_names = names
             self.capsule_saved_row.set_model(
                 Gtk.StringList.new(names or ["No saved capsules"])
             )
             self.capsule_saved_row.set_sensitive(bool(names))
             if names:
-                self.capsule_saved_row.set_selected(0)
+                selected = names.index(visible_name) if visible_name in names else 0
+                self.capsule_saved_row.set_selected(selected)
                 self._select_capsule(self.capsule_saved_row, None)
         self._refresh_capsule_running()
 

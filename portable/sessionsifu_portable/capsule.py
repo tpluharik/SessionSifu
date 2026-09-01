@@ -277,6 +277,11 @@ class CapsuleStore:
 
 
 class CapsuleManager:
+    APPLICATION_ALIASES = {
+        # The desktop-facing product name is commonly entered in launchers,
+        # while the Debian/Ubuntu executable keeps its historical suffix.
+        "signal": ("signal-desktop",),
+    }
     PROFILE_FLAGS = {
         "firefox": ("-profile",),
         "firefox-esr": ("-profile",),
@@ -289,6 +294,7 @@ class CapsuleManager:
         "brave-browser": ("--user-data-dir",),
         "microsoft-edge": ("--user-data-dir",),
         "vivaldi": ("--user-data-dir",),
+        "signal-desktop": ("--user-data-dir",),
     }
 
     def __init__(self, store: CapsuleStore) -> None:
@@ -315,9 +321,19 @@ class CapsuleManager:
         return self.store.save(capsule)
 
     def _profile_command(self, capsule: WorkspaceCapsule, identity: str) -> tuple[list[str], str]:
-        executable = identity if Path(identity).is_absolute() else shutil.which(identity)
+        executable: str | None = None
+        if Path(identity).is_absolute():
+            executable = identity
+        else:
+            candidates = (identity, *self.APPLICATION_ALIASES.get(identity.casefold(), ()))
+            executable = next(
+                (path for candidate in candidates if (path := shutil.which(candidate))),
+                None,
+            )
         if not executable or not Path(executable).is_file():
-            return [], "Application executable is unavailable"
+            aliases = self.APPLICATION_ALIASES.get(identity.casefold(), ())
+            hint = f" (also checked: {', '.join(aliases)})" if aliases else ""
+            return [], f"Application executable is unavailable{hint}"
         basename = Path(executable).name.casefold().removesuffix(".exe")
         flags = self.PROFILE_FLAGS.get(basename)
         if not flags:
