@@ -59,7 +59,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.5.12"
+CURRENT_VERSION = "3.5.13"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -3109,7 +3109,7 @@ class ManagerWindow(Adw.ApplicationWindow):
             name = self._save_capsule_values()
             result = self._capsules.launch(name)
             message = (
-                f"Launched {result['launched']} application(s) through "
+                f"Launched {result['launched']} separate capsule instance(s) through "
                 f"{result['boundary']}."
             )
             self.capsule_actions_row.set_subtitle(message)

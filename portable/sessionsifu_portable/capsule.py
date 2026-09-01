@@ -283,17 +283,20 @@ class CapsuleManager:
         "signal": ("signal-desktop",),
     }
     PROFILE_FLAGS = {
-        "firefox": ("-profile",),
-        "firefox-esr": ("-profile",),
-        "code": ("--user-data-dir",),
-        "codium": ("--user-data-dir",),
-        "google-chrome": ("--user-data-dir",),
-        "google-chrome-stable": ("--user-data-dir",),
-        "chromium": ("--user-data-dir",),
-        "chromium-browser": ("--user-data-dir",),
-        "brave-browser": ("--user-data-dir",),
-        "microsoft-edge": ("--user-data-dir",),
-        "vivaldi": ("--user-data-dir",),
+        # The profile-taking option remains last: launch() can then create the
+        # final command argument as an owner-private directory without trying
+        # to parse application-specific flags.
+        "firefox": ("-no-remote", "-profile"),
+        "firefox-esr": ("-no-remote", "-profile"),
+        "code": ("--new-window", "--user-data-dir"),
+        "codium": ("--new-window", "--user-data-dir"),
+        "google-chrome": ("--new-window", "--user-data-dir"),
+        "google-chrome-stable": ("--new-window", "--user-data-dir"),
+        "chromium": ("--new-window", "--user-data-dir"),
+        "chromium-browser": ("--new-window", "--user-data-dir"),
+        "brave-browser": ("--new-window", "--user-data-dir"),
+        "microsoft-edge": ("--new-window", "--user-data-dir"),
+        "vivaldi": ("--new-window", "--user-data-dir"),
         "signal-desktop": ("--user-data-dir",),
     }
 
@@ -356,6 +359,7 @@ class CapsuleManager:
             "network": "host access",
             "files": "application profile plus normal application permissions",
             "clipboard": "host access",
+            "instance": "separate profile and process from an already-running host app",
         }
         if capsule.backend == "profile":
             if capsule.offline:
@@ -419,6 +423,7 @@ class CapsuleManager:
             "backend": capsule.backend,
             "boundary": boundary,
             "security_boundary": capsule.backend in {"flatpak", "windows-sandbox"},
+            "separate_instance": capsule.backend == "profile",
             "supported": not errors,
             "applications": [item.identity for item in capsule.applications],
             "commands": commands,

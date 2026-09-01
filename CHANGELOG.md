@@ -4,6 +4,18 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.13
+
+- Made every supported profile capsule request an independent application
+  instance even when the same application is already running normally.
+- Added Firefox `-no-remote` profile launches and explicit new-window plus
+  separate-data-directory launches for Chromium-family browsers, VS Code and
+  VSCodium. Signal continues to use its capsule-owned Electron data directory.
+- Kept capsule profile roots distinct by capsule name so multiple environments
+  cannot silently attach to or reuse each other's processes.
+- Exposed the independent-instance promise in preflight and clarified that
+  profile separation remains a convenience boundary, not a security sandbox.
+
 ## 3.5.12
 
 - Fixed the capsule form appearing to do nothing when **Review** or **Launch**

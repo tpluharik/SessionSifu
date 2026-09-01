@@ -81,6 +81,8 @@ class PortableTests(unittest.TestCase):
             plan = manager.preflight("Research")
             self.assertTrue(plan["supported"])
             self.assertFalse(plan["security_boundary"])
+            self.assertTrue(plan["separate_instance"])
+            self.assertEqual(plan["commands"][0][1:3], ["-no-remote", "-profile"])
             self.assertIn("not a security sandbox", plan["warnings"][0])
             with mock.patch("sessionsifu_portable.capsule.subprocess.Popen") as launch:
                 launch.return_value.pid = 4242
@@ -137,6 +139,23 @@ class PortableTests(unittest.TestCase):
                 [str(executable), "--user-data-dir"],
             )
 
+    def test_profile_capsules_use_distinct_instances_and_profile_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "code"
+            executable.write_text("test executable", encoding="utf-8")
+            executable.chmod(0o700)
+            manager = CapsuleManager(CapsuleStore(root / "data", test_key=b"i" * 32))
+            manager.create("Work", "profile", [str(executable)])
+            manager.create("Personal", "profile", [str(executable)])
+            work = manager.preflight("Work")
+            personal = manager.preflight("Personal")
+            self.assertEqual(
+                work["commands"][0][1:3],
+                ["--new-window", "--user-data-dir"],
+            )
+            self.assertNotEqual(work["commands"][0][-1], personal["commands"][0][-1])
+
     def test_windows_sandbox_export_has_safe_defaults_and_read_only_folders(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -182,7 +201,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.5.12")
+        self.assertEqual(VERSION, "3.5.13")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -614,7 +633,7 @@ class PortableTests(unittest.TestCase):
             controller.save_named("Work")
             api = LocalApi(controller)
             status = api.dispatch({"method": "status"})
-            self.assertEqual(status["version"], "3.5.12")
+            self.assertEqual(status["version"], "3.5.13")
             preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
             self.assertEqual(preview["applications"][0]["application"], "Editor")
             with self.assertRaises(ValueError):
@@ -675,7 +694,7 @@ class PortableTests(unittest.TestCase):
             controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
             controller.save_named("Work")
             mcp = ReadOnlyMcp(controller)
-            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.12")
+            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.13")
             self.assertTrue(mcp.call("restore_preview", {"name": "Work"}))
             with self.assertRaises(ValueError):
                 mcp.call("restore_execute", {"name": "Work"})

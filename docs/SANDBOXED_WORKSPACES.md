@@ -22,6 +22,15 @@ profile pilot also recognizes the familiar `signal` name as the packaged
 Aliases are fixed and reviewed; SessionSifu does not guess or shell-expand
 untrusted application commands.
 
+Version 3.5.13 makes independent instances an explicit profile-capsule
+contract. Firefox is launched with `-no-remote` and a capsule profile;
+Chromium-family browsers, VS Code and VSCodium receive a new-window request and
+a capsule-owned data directory; Signal receives a capsule-owned Electron data
+directory. Different capsule names resolve to different owner-private profile
+roots. These controls prevent cooperative applications from attaching to an
+already-running host process, but they do not turn profile separation into an
+OS security sandbox.
+
 ## Product idea
 
 A SessionSifu workspace capsule combines the shipped launch-plan foundation

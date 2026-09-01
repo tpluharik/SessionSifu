@@ -1,3 +1,10 @@
+sessionsifu (3.5.13-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Launch supported profile capsules as independent application instances.
+  * Use reviewed no-remote/new-window flags and distinct capsule profile roots.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Tue, 01 Sep 2026 21:40:00 +0200
+
 sessionsifu (3.5.12-1~ppa1~resolute1) resolute; urgency=medium
 
   * Save and validate the visible capsule before review or launch.

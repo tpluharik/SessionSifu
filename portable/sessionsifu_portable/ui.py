@@ -674,7 +674,7 @@ class MainWindow(QMainWindow):
             name = self._save_visible_capsule()
             result = self.controller.launch_capsule(name)
             self.status.setText(
-                f"Launched {result['launched']} application(s) from “{name}”."
+                f"Launched {result['launched']} separate capsule instance(s) from “{name}”."
             )
             self.refresh()
             self.refresh_running_capsules()
