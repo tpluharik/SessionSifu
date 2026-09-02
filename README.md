@@ -322,12 +322,26 @@ integration back on.
 Arrange the desktop, enter a session name, and select **Save**. Named sessions
 appear separately from rolling history and remain until explicitly deleted.
 
+Every restore starts with an application-group preview. Clearing an application
+removes it from the execution plan; canceling or confirming an empty selection
+launches nothing. SessionSifu processes the accepted groups through one bounded,
+paced queue. If an application is already running, matching windows are reused
+and their saved workspace, monitor, geometry and supported state are applied
+instead of silently skipping that application or opening an unnecessary copy.
+
 The **Restore previous desktop after login** switch is opt-in. When enabled,
 SessionSifu waits for the configured startup delay, relaunches missing
 applications one at a time and reconstructs the recorded layout after each new
-window has had time to initialize. Applications already running are skipped to
-avoid unnecessary duplicate instances. Confirming logout, reboot or shutdown
-cancels any restore work still in progress.
+window has had time to initialize. Successful previous-session records are
+retired so they cannot build up into duplicate restore bursts; unsuccessful
+records stay available for a later attempt. Confirming logout, reboot or
+shutdown cancels any restore work still in progress.
+
+Use **Restore previous desktop now** in the manager or **Restore Previous
+Desktop** in the GNOME top-bar menu when automatic retry protection is paused.
+The manual action bypasses only that timer and keeps all normal safety checks.
+The complete workflow and platform limits are in the
+[session restoration guide](docs/RESTORE_GUIDE.md).
 
 ## Updates
 
@@ -607,6 +621,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Security audit and remediation plan](docs/SECURITY_AUDIT.md)
 - [Privacy and local-data guide](docs/PRIVACY.md)
 - [Recall workflow guide](docs/RECALL_GUIDE.md)
+- [Session restoration guide](docs/RESTORE_GUIDE.md)
 - [Recall research and product decisions](docs/RECALL_RESEARCH.md)
 - [Competitive feature analysis](docs/COMPETITIVE_ANALYSIS.md)
 - [Publishing and distribution](docs/PUBLISHING.md)

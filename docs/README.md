@@ -5,6 +5,9 @@ This index describes the current 3.5.17 behavior. Start with the main
 
 ## Using SessionSifu
 
+- [Session restoration workflow](RESTORE_GUIDE.md) — named sessions,
+  automatic history, previous-desktop recovery, restore preview and platform
+  boundaries.
 - [Privacy Recall workflow](RECALL_GUIDE.md) — enable, capture, search, browse,
   reopen, pause and delete Recall moments.
 - [Troubleshooting](TROUBLESHOOTING.md) — integration, update, restoration,
