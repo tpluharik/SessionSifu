@@ -14,7 +14,7 @@ override_dh_auto_test:
 override_dh_auto_install:
 	rm -rf debian/sessionsifu
 	mkdir -p debian/sessionsifu
-	dpkg-deb -x dist/sessionsifu_3.5.13_all.deb debian/sessionsifu
+	dpkg-deb -x dist/sessionsifu_3.5.14_all.deb debian/sessionsifu
 	rm -f debian/sessionsifu/usr/share/doc/sessionsifu/CHANGELOG.md
 
 override_dh_installchangelogs:

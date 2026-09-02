@@ -31,6 +31,14 @@ roots. These controls prevent cooperative applications from attaching to an
 already-running host process, but they do not turn profile separation into an
 OS security sandbox.
 
+Version 3.5.14 fixes the Ubuntu Snap-Firefox boundary. A strictly confined
+Firefox Snap cannot use capsule profiles stored below SessionSifu's hidden
+`~/.config` tree, so its reviewed adapter stores them below Firefox's persistent
+`~/snap/firefox/common/sessionsifu-profiles/` area. If a profile is actively
+locked, SessionSifu selects a distinct numbered profile for the additional
+instance. Explicit capsule-data deletion covers both storage roots; ordinary
+Firefox profiles are never read, copied or deleted.
+
 ## Product idea
 
 A SessionSifu workspace capsule combines the shipped launch-plan foundation

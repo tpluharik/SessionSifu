@@ -16,7 +16,7 @@ SessionSifu saves and reconstructs desktop layouts. It records running
 applications, documents and windows, then can relaunch applications and rebuild
 the supported parts of their layout.
 
-Version 3.5.13 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
+Version 3.5.14 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
 encrypted, per-window OCR activity timeline across GNOME, Windows, macOS, KDE
 Plasma 6 and other Linux desktops. Czech and English OCR data ships with the
 installer and verified update. Recall previews support two-finger panning,
@@ -152,11 +152,11 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_3.5.13_all.deb` from the matching GitHub Release, or build it
+Download `sessionsifu_3.5.14_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_3.5.13_all.deb
+sudo apt install ./sessionsifu_3.5.14_all.deb
 ```
 
 The Ubuntu 26.04 PPA is active at `ppa:tpluharik77/sessionsifu` and its amd64
@@ -186,7 +186,7 @@ compatible GNOME release; SessionSifu never forces a desktop-shell upgrade.
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.5.13_all.deb
+sudo apt install ./dist/sessionsifu_3.5.14_all.deb
 ```
 
 After installation:
@@ -202,10 +202,10 @@ After installation:
 
 Tagged releases attach these self-contained artifacts:
 
-- `SessionSifu-3.5.13-windows-x64.zip`;
-- `SessionSifu-3.5.13-macos-arm64.zip`;
-- `SessionSifu-3.5.13-macos-x64.zip`; and
-- `SessionSifu-3.5.13-linux-x64.tar.gz`.
+- `SessionSifu-3.5.14-windows-x64.zip`;
+- `SessionSifu-3.5.14-macos-arm64.zip`;
+- `SessionSifu-3.5.14-macos-x64.zip`; and
+- `SessionSifu-3.5.14-linux-x64.tar.gz`.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -269,12 +269,19 @@ resolved conservatively: entering `signal` starts the reviewed
 `signal-desktop` profile adapter. Unsupported applications remain blocked by
 preflight instead of being launched without an understood separation method.
 Supported profile adapters explicitly request a separate process: Firefox uses
-`-no-remote` with its capsule profile, Chromium-family browsers and VS
+`--no-remote` with its capsule profile, Chromium-family browsers and VS
 Code/VSCodium combine a new-window request with a capsule-owned data directory,
 and Signal uses its own Electron data directory. This lets a capsule instance
 run beside an already-open normal instance without sharing its profile. Each
 capsule name maps to a distinct owner-private profile root; the new instance may
 therefore require its own sign-in and first-run setup.
+
+On Ubuntu, SessionSifu detects the `/usr/bin/firefox` launcher for the strictly
+confined Firefox Snap and keeps its capsule profiles below
+`~/snap/firefox/common/sessionsifu-profiles/`, where Firefox is permitted to
+write. If the same capsule profile is already active, SessionSifu chooses a
+separate numbered profile for the new instance instead of colliding with the
+existing lock. The explicit **Delete data** action removes these profiles too.
 Those applications open as normal native desktop windows: Wayland deliberately
 does not allow one client to embed arbitrary windows owned by other clients.
 The monitor therefore describes and tracks the workspace without weakening the
@@ -419,7 +426,7 @@ each match identifies the application, exact window title, time and its own
 opted-in files. On GNOME, the focused window receives a small ranking boost. Application
 exclusions remain enforced during capture and search.
 
-On GNOME, version 3.5.13 saves application metadata across every workspace and
+On GNOME, version 3.5.14 saves application metadata across every workspace and
 records the total workspace count. Recall retains a bounded in-memory preview
 when a window is visible and unobscured, then reuses that preview if the window
 is on an inactive workspace at the next snapshot. Cached images display their
@@ -527,7 +534,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.5.13_all.deb
+dist/sessionsifu_3.5.14_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -548,7 +555,7 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v3.5.13` tag publishes the artifacts and `SHA256SUMS` as a GitHub
+A pushed `v3.5.14` tag publishes the artifacts and `SHA256SUMS` as a GitHub
 Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
@@ -583,7 +590,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Publishing and distribution](docs/PUBLISHING.md)
 - [Documentation index](docs/README.md)
 
-The current 3.5.13 release includes verified Czech and English fast Tesseract
+The current 3.5.14 release includes verified Czech and English fast Tesseract
 models in the Debian package, signed in-app update and portable artifacts. Mixed
 Czech/English desktop text therefore works without installing a separate
 language package, while recognition stays completely local. Recall search is

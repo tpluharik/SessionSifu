@@ -1,10 +1,10 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.5.13. It separates shipped
+This roadmap describes the product after version 3.5.14. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
 
-## Shipped foundation — 3.5.13
+## Shipped foundation — 3.5.14
 
 SessionSifu now combines session restoration with an encrypted, opt-in visual
 history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
@@ -38,7 +38,7 @@ history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
   profile support and a scoped live monitor of launched applications.
 
 The session, Recall and retrieval foundations were delivered incrementally
-through 3.5.13. The user-visible workflow and underlying data model remain
+through 3.5.14. The user-visible workflow and underlying data model remain
 consistent across supported editions, while platform adapters report their
 real capabilities instead of implying parity.
 
@@ -99,7 +99,8 @@ must never silently relabel an ordinary process as sandboxed.
 - structured argument arrays only—capsule launches never use a shell;
 - reviewed browser/editor profile adapters labelled as convenience separation;
 - independent-instance launches for reviewed adapters, with Firefox
-  no-remote, browser/editor new-window requests and per-capsule profile roots;
+  no-remote, browser/editor new-window requests, per-capsule profile roots,
+  Ubuntu Snap-compatible Firefox storage and lock-aware numbered instances;
 - a Linux pilot for already-installed Flatpak application IDs, including an
   optional per-launch network-off request and portal-only file policy;
 - a reviewable Windows Sandbox `.wsb` exporter with clipboard, audio/video,

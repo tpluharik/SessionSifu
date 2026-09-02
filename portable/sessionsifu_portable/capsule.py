@@ -265,15 +265,38 @@ class CapsuleStore:
     def delete_data(self, name: str) -> bool:
         self._prepare_directory()
         profiles = self.capsule_dir / "profiles"
-        target = profiles / self._filename(name).removesuffix(".json")
-        if target.is_symlink():
-            raise ValueError("Refusing symbolic-link capsule profile data")
-        if not target.exists():
-            return False
-        if target.resolve().parent != profiles.resolve():
-            raise ValueError("Capsule profile data is outside SessionSifu storage")
-        shutil.rmtree(target)
-        return True
+        capsule_key = self._filename(name).removesuffix(".json")
+        targets = [
+            (profiles, profiles / capsule_key),
+            (
+                _firefox_snap_profile_base(),
+                _firefox_snap_profile_base() / capsule_key,
+            ),
+        ]
+        deleted = False
+        for base, target in targets:
+            if target.is_symlink():
+                raise ValueError("Refusing symbolic-link capsule profile data")
+            if not target.exists():
+                continue
+            if target.resolve().parent != base.resolve():
+                raise ValueError("Capsule profile data is outside SessionSifu storage")
+            shutil.rmtree(target)
+            deleted = True
+        return deleted
+
+
+def _real_home() -> Path:
+    """Return the host home even when SessionSifu itself runs from a snap."""
+    candidate = Path(os.environ.get("SNAP_REAL_HOME") or Path.home()).expanduser()
+    return candidate.resolve()
+
+
+def _firefox_snap_profile_base() -> Path:
+    # Firefox's strict snap may write inside its own SNAP_USER_COMMON but cannot
+    # use SessionSifu's hidden ~/.config tree. Keep the directory non-hidden so
+    # it also remains reachable through the snap home interface.
+    return _real_home() / "snap" / "firefox" / "common" / "sessionsifu-profiles"
 
 
 class CapsuleManager:
@@ -286,8 +309,8 @@ class CapsuleManager:
         # The profile-taking option remains last: launch() can then create the
         # final command argument as an owner-private directory without trying
         # to parse application-specific flags.
-        "firefox": ("-no-remote", "-profile"),
-        "firefox-esr": ("-no-remote", "-profile"),
+        "firefox": ("--no-remote", "--profile"),
+        "firefox-esr": ("--no-remote", "--profile"),
         "code": ("--new-window", "--user-data-dir"),
         "codium": ("--new-window", "--user-data-dir"),
         "google-chrome": ("--new-window", "--user-data-dir"),
@@ -304,6 +327,61 @@ class CapsuleManager:
         self.store = store
         self._running_lock = threading.Lock()
         self._running: list[dict[str, Any]] = []
+
+    @staticmethod
+    def _is_firefox_snap_launcher(executable: str, basename: str) -> bool:
+        if platform.system() != "Linux" or basename != "firefox":
+            return False
+        path = Path(executable)
+        if path.as_posix() == "/snap/bin/firefox":
+            return True
+        try:
+            return path.stat().st_size <= 128 * 1024 and "/snap/bin/firefox" in path.read_text(
+                encoding="utf-8", errors="ignore"
+            )
+        except OSError:
+            return False
+
+    def _profile_base(
+        self,
+        capsule: WorkspaceCapsule,
+        identity: str,
+        executable: str,
+        basename: str,
+    ) -> Path:
+        capsule_key = self.store._filename(capsule.name).removesuffix(".json")
+        application_key = hashlib.sha256(identity.casefold().encode("utf-8")).hexdigest()[:16]
+        if self._is_firefox_snap_launcher(executable, basename):
+            return _firefox_snap_profile_base() / capsule_key / application_key
+        return self.store.capsule_dir / "profiles" / capsule_key / application_key
+
+    def _profile_is_busy(self, profile: Path) -> bool:
+        profile_text = str(profile)
+        with self._running_lock:
+            for entry in self._running:
+                process = entry["process"]
+                if process.poll() is None and entry.get("profile") == profile_text:
+                    return True
+        return any(
+            os.path.lexists(profile / marker)
+            for marker in (
+                ".parentlock",
+                "parent.lock",
+                "lock",
+                "SingletonLock",
+                "SingletonCookie",
+                "SingletonSocket",
+            )
+        )
+
+    def _available_profile(self, base: Path) -> Path:
+        if not self._profile_is_busy(base):
+            return base
+        for instance in range(2, 34):
+            candidate = base.with_name(f"{base.name}-instance-{instance}")
+            if not self._profile_is_busy(candidate):
+                return candidate
+        return base.with_name(f"{base.name}-instance-{secrets.token_hex(6)}")
 
     def create(
         self,
@@ -341,12 +419,7 @@ class CapsuleManager:
         flags = self.PROFILE_FLAGS.get(basename)
         if not flags:
             return [], "No reviewed profile adapter exists for this application"
-        profile_root = (
-            self.store.capsule_dir
-            / "profiles"
-            / self.store._filename(capsule.name).removesuffix(".json")
-            / hashlib.sha256(identity.casefold().encode("utf-8")).hexdigest()[:16]
-        )
+        profile_root = self._profile_base(capsule, identity, executable, basename)
         return [str(executable), *flags, str(profile_root)], ""
 
     def preflight(self, name: str) -> dict[str, Any]:
@@ -441,8 +514,10 @@ class CapsuleManager:
         launched = 0
         launched_applications: list[dict[str, Any]] = []
         for identity, command in zip(plan["applications"], plan["commands"], strict=True):
+            profile: Path | None = None
             if plan["backend"] == "profile":
-                profile = Path(command[-1])
+                profile = self._available_profile(Path(command[-1]))
+                command = [*command[:-1], str(profile)]
                 profile.mkdir(parents=True, exist_ok=True)
                 if os.name != "nt":
                     os.chmod(profile, 0o700)
@@ -461,6 +536,7 @@ class CapsuleManager:
                 "application": identity,
                 "pid": process.pid if isinstance(process.pid, int) else 0,
                 "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "profile": str(profile) if profile is not None else "",
                 "process": process,
             }
             with self._running_lock:

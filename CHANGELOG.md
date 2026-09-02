@@ -4,6 +4,21 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.14
+
+- Fixed Firefox profile capsules on Ubuntu installations where `/usr/bin/firefox`
+  launches the strictly confined Firefox Snap. Capsule profiles now use
+  Firefox's accessible persistent Snap data area instead of the hidden
+  SessionSifu configuration tree that the browser cannot read or write.
+- Changed Firefox launches to the documented `--no-remote --profile` form.
+- Added lock-aware profile selection: launching a capsule again while its
+  Firefox, Chromium-family, Signal or editor profile is active selects a
+  separate numbered profile instead of showing an already-running error.
+- Extended explicit **Delete data** to remove both traditional capsule profiles
+  and Firefox Snap capsule profiles, including numbered instances.
+- Added cross-platform regression coverage for Snap launcher detection,
+  accessible profile placement, active-profile fallback and cleanup.
+
 ## 3.5.13
 
 - Made every supported profile capsule request an independent application

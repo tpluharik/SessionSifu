@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "SessionSifu 3.5.13 launches supported profile capsules as independent application instances even when the host app is already running, using reviewed per-app no-remote/new-window behavior and distinct capsule profile roots."
+  "notes": "SessionSifu 3.5.14 fixes Firefox Workspace Capsules on Ubuntu by storing Snap-Firefox profiles in its accessible persistent data area and automatically selecting a separate profile when an existing capsule profile is locked."
 }

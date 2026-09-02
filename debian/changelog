@@ -1,3 +1,11 @@
+sessionsifu (3.5.14-1~ppa1~resolute1) resolute; urgency=high
+
+  * Store Ubuntu Snap-Firefox capsule profiles in an accessible data location.
+  * Select another isolated profile when a capsule profile is already locked.
+  * Remove Firefox Snap capsule profiles through the explicit data deletion UI.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Wed, 02 Sep 2026 07:15:00 +0200
+
 sessionsifu (3.5.13-1~ppa1~resolute1) resolute; urgency=medium
 
   * Launch supported profile capsules as independent application instances.
