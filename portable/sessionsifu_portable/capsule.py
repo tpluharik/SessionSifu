@@ -38,6 +38,13 @@ MAX_APPLICATIONS = 32
 MAX_MAPPED_FOLDERS = 16
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$")
 FLATPAK_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+){2,}$")
+FLATPAK_ALIASES = {
+    "signal": "org.signal.Signal",
+    "signal-desktop": "org.signal.Signal",
+    "firefox": "org.mozilla.firefox",
+    "code": "com.visualstudio.code",
+    "codium": "com.vscodium.codium",
+}
 KEYRING_SERVICE = "org.sessionsifu.WorkspaceCapsules"
 KEYRING_ACCOUNT = "default"
 AAD = b"SessionSifuWorkspaceCapsule:v1"
@@ -273,6 +280,21 @@ class CapsuleStore:
                 _firefox_snap_profile_base() / capsule_key,
             ),
         ]
+        try:
+            capsule = self.load(name)
+        except (OSError, ValueError):
+            capsule = None
+        if capsule is not None and capsule.backend == "flatpak":
+            for application in capsule.applications:
+                app_id = FLATPAK_ALIASES.get(
+                    application.identity.casefold(), application.identity
+                )
+                if not FLATPAK_ID_RE.fullmatch(app_id):
+                    continue
+                app_root = _real_home() / ".var" / "app" / app_id
+                for data_kind in ("config", "data", "cache"):
+                    base = app_root / data_kind / "sessionsifu-capsules"
+                    targets.append((base, base / capsule_key))
         deleted = False
         for base, target in targets:
             if target.is_symlink():
@@ -320,7 +342,6 @@ class CapsuleManager:
         "brave-browser": ("--new-window", "--user-data-dir"),
         "microsoft-edge": ("--new-window", "--user-data-dir"),
         "vivaldi": ("--new-window", "--user-data-dir"),
-        "signal-desktop": ("--user-data-dir",),
     }
 
     def __init__(self, store: CapsuleStore) -> None:
@@ -416,11 +437,65 @@ class CapsuleManager:
             hint = f" (also checked: {', '.join(aliases)})" if aliases else ""
             return [], f"Application executable is unavailable{hint}"
         basename = Path(executable).name.casefold().removesuffix(".exe")
+        if basename == "signal-desktop":
+            return [], (
+                "Signal no longer honors its profile-directory switch; use the "
+                "Flatpak sandbox backend (org.signal.Signal) so launch cannot join "
+                "the existing host instance"
+            )
         flags = self.PROFILE_FLAGS.get(basename)
         if not flags:
             return [], "No reviewed profile adapter exists for this application"
         profile_root = self._profile_base(capsule, identity, executable, basename)
         return [str(executable), *flags, str(profile_root)], ""
+
+    @staticmethod
+    def _flatpak_id(identity: str) -> str:
+        return FLATPAK_ALIASES.get(identity.casefold(), identity)
+
+    def _flatpak_command(
+        self, flatpak: str, capsule: WorkspaceCapsule, identity: str
+    ) -> tuple[list[str], str]:
+        app_id = self._flatpak_id(identity)
+        if not FLATPAK_ID_RE.fullmatch(app_id):
+            return [], "invalid Flatpak application ID or unsupported application alias"
+        probe = subprocess.run(
+            [flatpak, "info", app_id],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=8,
+            check=False,
+        )
+        if probe.returncode != 0:
+            return [], (
+                f"Flatpak application {app_id} is not installed; install and review it "
+                f"first (for example: flatpak install flathub {app_id})"
+            )
+        capsule_key = self.store._filename(capsule.name).removesuffix(".json")
+        application_key = hashlib.sha256(app_id.encode("utf-8")).hexdigest()[:16]
+        relative_root = f"sessionsifu-capsules/{capsule_key}/{application_key}"
+        command = [
+            flatpak,
+            "run",
+            # Reset broad host filesystem grants inherited from the package or
+            # lower-precedence overrides. Portals and app-specific storage stay
+            # available, while unrelated host files remain outside the capsule.
+            "--nofilesystem=host:reset",
+            "--nosocket=ssh-auth",
+            "--nosocket=gpg-agent",
+            "--no-talk-name=org.freedesktop.secrets",
+            "--no-talk-name=org.kde.kwalletd5",
+            "--no-talk-name=org.kde.kwalletd6",
+            f"--env=XDG_CONFIG_HOME=/var/config/{relative_root}",
+            f"--env=XDG_DATA_HOME=/var/data/{relative_root}",
+            f"--env=XDG_CACHE_HOME=/var/cache/{relative_root}",
+            f"--env=XDG_STATE_HOME=/var/data/{relative_root}/state",
+            "--env=SESSIONSIFU_CAPSULE=1",
+            *(["--unshare=network"] if capsule.offline else []),
+            app_id,
+        ]
+        return command, ""
 
     def preflight(self, name: str) -> dict[str, Any]:
         capsule = self.store.load(name)
@@ -435,49 +510,42 @@ class CapsuleManager:
             "instance": "separate profile and process from an already-running host app",
         }
         if capsule.backend == "profile":
-            if capsule.offline:
-                errors.append("Profile-only capsules cannot enforce offline networking")
-            for application in capsule.applications:
-                command, error = self._profile_command(capsule, application.identity)
-                if error:
-                    errors.append(f"{application.identity}: {error}")
-                else:
-                    commands.append(command)
-            warnings.append("This mode separates supported profiles but is not a security sandbox")
+            boundary = "blocked legacy profile capsule"
+            effective = {
+                "network": "not isolated",
+                "files": "normal host application permissions",
+                "clipboard": "host access",
+                "identity": "profile switches are not an OS security boundary",
+            }
+            errors.append(
+                "Legacy profile-only capsules cannot meet strict container isolation; "
+                "convert this capsule to an installed Flatpak application"
+            )
+            warnings.append(
+                "The manifest remains available only for review, migration and data deletion"
+            )
         elif capsule.backend == "flatpak":
-            boundary = "Flatpak application sandbox"
+            boundary = "isolated Flatpak capsule"
             effective = {
                 "network": "disabled for this launch" if capsule.offline else "package permission",
-                "files": "Flatpak permissions and user-mediated portals",
+                "files": "broad host grants removed; user-mediated portals remain",
                 "clipboard": "desktop/compositor policy",
+                "credentials": "host keyring and authentication-agent access removed",
+                "identity": "capsule-specific clean application data",
+                "anonymity": "local app state only; network address is not anonymized",
             }
             flatpak = shutil.which("flatpak")
             if platform.system() != "Linux" or not flatpak:
                 errors.append("Flatpak is unavailable on this system")
             else:
                 for application in capsule.applications:
-                    if not FLATPAK_ID_RE.fullmatch(application.identity):
-                        errors.append(f"{application.identity}: invalid Flatpak application ID")
-                        continue
-                    probe = subprocess.run(
-                        [flatpak, "info", application.identity],
-                        stdin=subprocess.DEVNULL,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        timeout=8,
-                        check=False,
+                    command, error = self._flatpak_command(
+                        flatpak, capsule, application.identity
                     )
-                    if probe.returncode != 0:
-                        errors.append(f"{application.identity}: Flatpak application is not installed")
-                        continue
-                    commands.append(
-                        [
-                            flatpak,
-                            "run",
-                            *(["--unshare=network"] if capsule.offline else []),
-                            application.identity,
-                        ]
-                    )
+                    if error:
+                        errors.append(f"{application.identity}: {error}")
+                    else:
+                        commands.append(command)
             if capsule.mapped_folders:
                 errors.append("Flatpak capsules require portal-selected files, not static mapped folders")
         else:
@@ -496,7 +564,7 @@ class CapsuleManager:
             "backend": capsule.backend,
             "boundary": boundary,
             "security_boundary": capsule.backend in {"flatpak", "windows-sandbox"},
-            "separate_instance": capsule.backend == "profile",
+            "separate_instance": capsule.backend == "flatpak",
             "supported": not errors,
             "applications": [item.identity for item in capsule.applications],
             "commands": commands,

@@ -16,7 +16,7 @@ SessionSifu saves and reconstructs desktop layouts. It records running
 applications, documents and windows, then can relaunch applications and rebuild
 the supported parts of their layout.
 
-Version 3.5.14 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
+Version 3.5.15 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
 encrypted, per-window OCR activity timeline across GNOME, Windows, macOS, KDE
 Plasma 6 and other Linux desktops. Czech and English OCR data ships with the
 installer and verified update. Recall previews support two-finger panning,
@@ -26,6 +26,11 @@ per-capture completeness, and redacts recognized private/protected contexts.
 Recall search now reuses a bounded memory-only index, runs outside the interface
 thread and renders results in 24-item pages, so typing and browsing do not
 repeatedly decrypt every record or decode every screenshot.
+Workspace Capsules now default to installed Flatpak applications on Linux,
+use capsule-specific clean app data, remove broad host-file and credential-agent
+access, and fail closed rather than letting Signal or another unsupported app
+join an existing host process. This separates local application identity; it
+does not conceal the computer's network address.
 Automatic login restoration launches only visible desktop applications; Shell
 helpers and command-only processes are rejected, and application groups are
 bounded and paced to protect GNOME Shell and the Wayland compositor.
@@ -152,11 +157,11 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_3.5.14_all.deb` from the matching GitHub Release, or build it
+Download `sessionsifu_3.5.15_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_3.5.14_all.deb
+sudo apt install ./sessionsifu_3.5.15_all.deb
 ```
 
 The Ubuntu 26.04 PPA is active at `ppa:tpluharik77/sessionsifu` and its amd64
@@ -186,7 +191,7 @@ compatible GNOME release; SessionSifu never forces a desktop-shell upgrade.
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.5.14_all.deb
+sudo apt install ./dist/sessionsifu_3.5.15_all.deb
 ```
 
 After installation:
@@ -202,10 +207,10 @@ After installation:
 
 Tagged releases attach these self-contained artifacts:
 
-- `SessionSifu-3.5.14-windows-x64.zip`;
-- `SessionSifu-3.5.14-macos-arm64.zip`;
-- `SessionSifu-3.5.14-macos-x64.zip`; and
-- `SessionSifu-3.5.14-linux-x64.tar.gz`.
+- `SessionSifu-3.5.15-windows-x64.zip`;
+- `SessionSifu-3.5.15-macos-arm64.zip`;
+- `SessionSifu-3.5.15-macos-x64.zip`; and
+- `SessionSifu-3.5.15-linux-x64.tar.gz`.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -245,12 +250,15 @@ Version 3.5.6 introduces encrypted Workspace Capsules in both desktop
 interfaces. Each capsule has an explicit backend and must pass a permission
 preflight before launch:
 
-- **Profile** starts supported browsers/editors with separate data directories.
-  It is convenience separation, not hostile-code containment, and an offline
-  request is rejected because it cannot be enforced.
-- **Flatpak** accepts installed application IDs and can request an offline
-  per-launch sandbox without changing global Flatpak overrides. Files remain
-  portal-mediated.
+- **Flatpak (recommended on Linux)** accepts an installed application ID or a
+  reviewed alias such as `signal`. Each capsule receives separate XDG config,
+  data, cache and state roots. Broad host-file grants plus host keyring and
+  authentication-agent access are removed for the launch; files remain
+  portal-mediated. Offline mode additionally removes network access.
+- **Legacy profile separation** manifests remain readable for migration and
+  deletion, but launch is blocked because profile switches are not a container
+  or OS security boundary. Signal additionally ignores its historical profile
+  switch and can attach to the existing host process.
 - **Windows Sandbox** exports a reviewable `.wsb` file. Host folders are
   read-only and clipboard, printers, audio/video input and vGPU are disabled.
 
@@ -265,16 +273,24 @@ menu to open this workflow directly. The capsule view lists saved environments
 and monitors applications launched from that window while they remain alive.
 The visible form is saved automatically when **Review** or **Launch** is used;
 there is no required hidden save step. Common Ubuntu/Debian launcher names are
-resolved conservatively: entering `signal` starts the reviewed
-`signal-desktop` profile adapter. Unsupported applications remain blocked by
-preflight instead of being launched without an understood separation method.
+resolved conservatively: entering `signal` with the Flatpak backend resolves to
+the installed `org.signal.Signal` package. Unsupported or uninstalled
+applications remain blocked by preflight instead of being launched through a
+normal host process.
 Supported profile adapters explicitly request a separate process: Firefox uses
 `--no-remote` with its capsule profile, Chromium-family browsers and VS
 Code/VSCodium combine a new-window request with a capsule-owned data directory,
-and Signal uses its own Electron data directory. This lets a capsule instance
-run beside an already-open normal instance without sharing its profile. Each
+while Signal is intentionally excluded because that switch stopped being
+reliable upstream. Flatpak capsules use their own XDG roots and can therefore
+run beside an already-open normal instance without sharing its local identity. Each
 capsule name maps to a distinct owner-private profile root; the new instance may
 therefore require its own sign-in and first-run setup.
+
+“Clean identity” is local, not a promise of network anonymity. A networked
+capsule still uses the host's connection and public address. Select **Require
+offline launch** for an enforceable no-network capsule; stronger network
+anonymity requires a separately reviewed VPN/Tor or virtual-machine design and
+is not silently improvised by SessionSifu.
 
 On Ubuntu, SessionSifu detects the `/usr/bin/firefox` launcher for the strictly
 confined Firefox Snap and keeps its capsule profiles below
@@ -426,7 +442,7 @@ each match identifies the application, exact window title, time and its own
 opted-in files. On GNOME, the focused window receives a small ranking boost. Application
 exclusions remain enforced during capture and search.
 
-On GNOME, version 3.5.14 saves application metadata across every workspace and
+On GNOME, version 3.5.15 saves application metadata across every workspace and
 records the total workspace count. Recall retains a bounded in-memory preview
 when a window is visible and unobscured, then reuses that preview if the window
 is on an inactive workspace at the next snapshot. Cached images display their
@@ -534,7 +550,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.5.14_all.deb
+dist/sessionsifu_3.5.15_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -555,7 +571,7 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v3.5.14` tag publishes the artifacts and `SHA256SUMS` as a GitHub
+A pushed `v3.5.15` tag publishes the artifacts and `SHA256SUMS` as a GitHub
 Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
@@ -590,7 +606,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Publishing and distribution](docs/PUBLISHING.md)
 - [Documentation index](docs/README.md)
 
-The current 3.5.14 release includes verified Czech and English fast Tesseract
+The current 3.5.15 release includes verified Czech and English fast Tesseract
 models in the Debian package, signed in-app update and portable artifacts. Mixed
 Czech/English desktop text therefore works without installing a separate
 language package, while recognition stays completely local. Recall search is

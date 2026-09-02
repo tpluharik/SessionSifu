@@ -183,6 +183,23 @@ shortcut. Portable editions accept Ctrl/Alt/Shift/Super plus Space, A-Z or 0-9.
 The top-bar/tray **Browse Recall Snapshots…** action remains available as a
 fallback.
 
+## A capsule opens the existing Signal instance
+
+Update to 3.5.15 or newer. Signal releases after 7.80 stopped honoring the
+historical `--user-data-dir` switch, so SessionSifu now blocks Signal in the
+legacy profile backend. All legacy profile-only launches are blocked because
+they are not OS containers. Choose **Isolated Flatpak capsule**, enter `signal`
+(or `org.signal.Signal`), and review the permission plan. The Flatpak must
+already be installed; SessionSifu never replaces the official Signal package
+or installs an unreviewed package silently.
+
+The Flatpak capsule uses separate config, data, cache and state paths and
+cannot fall back to the host executable. It may therefore show Signal's first
+run/linking screen. This is expected and proves it did not reuse the existing
+local Signal identity. It is not network anonymity: use **Require offline
+launch** to deny networking, understanding that Signal cannot communicate in
+that mode.
+
 ## A restored application does not reopen its document
 
 SessionSifu checks process descriptors, explicit process arguments and GNOME's

@@ -4,7 +4,7 @@ This package contains the shared SessionSifu 3 desktop application used by the
 Windows, macOS, KDE Plasma and generic GNOME builds. See the repository README
 for platform capabilities and installation artifacts.
 
-The current 3.5.14 manager includes encrypted visual Privacy Recall. It is off by default;
+The current 3.5.15 manager includes encrypted visual Privacy Recall. It is off by default;
 screenshots, open paths, OCR and related ranking require separate choices. Its
 tray menu shows when capture is active and offers timed pauses. Application and
 observable website exclusions redact matching activity from new captures
@@ -45,13 +45,17 @@ Version 3.5.6 adds a **Workspace capsules** tab and matching command-line
 operations. Capsule manifests are encrypted and store only explicit application
 identities, backend policy and selected mappings:
 
-- profile capsules use reviewed Firefox, Chromium-family and VS Code/VSCodium
-  profile switches, and are labelled as separation rather than containment;
-- Linux Flatpak capsules accept installed application IDs, keep file access in
-  portal/package policy and optionally add `--unshare=network` for that launch;
+- Linux Flatpak capsules are the recommended default, accept installed app IDs
+  plus reviewed aliases, and use capsule-specific XDG state. Broad host-file,
+  keyring, SSH-agent and GPG-agent access is removed; portals remain available
+  and optional offline mode also unshares the network;
+- legacy profile-capsule manifests remain readable for migration and data
+  deletion, but their launch is blocked because profile switches are not an OS
+  container boundary. Signal also ignores its former profile-directory switch;
 - Windows Sandbox capsules export `.wsb` configuration with read-only mappings
   and privacy-oriented device/clipboard defaults.
 
 Use **Review preflight** before launch. Any requested boundary that cannot be
 enforced is blocked. Deleting the encrypted manifest and deleting a capsule's
-separate profile directory are deliberately separate actions.
+separate local application data are deliberately separate actions. A clean
+local identity does not anonymize the host's network address.

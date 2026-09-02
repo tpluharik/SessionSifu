@@ -488,9 +488,9 @@ class MainWindow(QMainWindow):
         capsule_box = QWidget()
         capsule_layout = QVBoxLayout(capsule_box)
         capsule_notice = QLabel(
-            "Workspace capsules keep an encrypted launch manifest. Profile capsules separate "
-            "supported application data but are not a security sandbox; Flatpak and Windows "
-            "Sandbox plans show their effective boundary before launch or export."
+            "Workspace capsules keep an encrypted launch manifest. On Linux, use an installed "
+            "Flatpak for a clean containerized instance with capsule-specific local state. "
+            "This does not conceal the network address; Offline is the enforceable no-network mode."
         )
         capsule_notice.setWordWrap(True)
         capsule_layout.addWidget(capsule_notice)
@@ -499,13 +499,13 @@ class MainWindow(QMainWindow):
         self.capsule_name.setPlaceholderText("Research")
         capsule_form.addRow("Capsule name", self.capsule_name)
         self.capsule_backend = QComboBox()
-        self.capsule_backend.addItem("Separate supported application profiles", "profile")
-        self.capsule_backend.addItem("Flatpak application sandbox", "flatpak")
+        self.capsule_backend.addItem("Isolated Flatpak capsule (recommended)", "flatpak")
+        self.capsule_backend.addItem("Legacy profile (blocked; migrate to Flatpak)", "profile")
         self.capsule_backend.addItem("Windows Sandbox export", "windows-sandbox")
         capsule_form.addRow("Backend", self.capsule_backend)
         self.capsule_apps = QLineEdit()
         self.capsule_apps.setPlaceholderText(
-            "firefox, code, signal · or org.mozilla.firefox for Flatpak"
+            "signal, firefox · or an installed Flatpak ID such as org.gnome.Evince"
         )
         capsule_form.addRow("Applications", self.capsule_apps)
         self.capsule_folders = QLineEdit()
@@ -532,7 +532,7 @@ class MainWindow(QMainWindow):
         capsule_export.clicked.connect(self.export_windows_capsule)
         capsule_delete = QPushButton("Delete manifest")
         capsule_delete.clicked.connect(self.delete_capsule)
-        capsule_delete_data = QPushButton("Delete profile data")
+        capsule_delete_data = QPushButton("Delete capsule data")
         capsule_delete_data.clicked.connect(self.delete_capsule_data)
         for button in (
             capsule_plan, capsule_launch, capsule_export, capsule_delete, capsule_delete_data
@@ -734,13 +734,13 @@ class MainWindow(QMainWindow):
             return
         answer = QMessageBox.question(
             self,
-            "Delete workspace profile data?",
-            "The capsule's separate browser/editor profile data will be permanently deleted.",
+            "Delete workspace capsule data?",
+            "The capsule's separate local application data will be permanently deleted.",
         )
         if answer == QMessageBox.StandardButton.Yes:
             self._perform(
                 lambda: self.controller.delete_capsule_data(name),
-                "Deleted the capsule's separate profile data.",
+                "Deleted the capsule's separate local application data.",
             )
 
     def restore_named(self) -> None:

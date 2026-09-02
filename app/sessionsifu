@@ -59,7 +59,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.5.14"
+CURRENT_VERSION = "3.5.15"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -2900,8 +2900,8 @@ class ManagerWindow(Adw.ApplicationWindow):
         capsule_group = Adw.PreferencesGroup(
             title="Workspace capsules",
             description=(
-                "Encrypted launch plans for separate profiles, Flatpak sandboxes "
-                "and reviewable Windows Sandbox workspaces."
+                "Use an installed Flatpak for a clean, containerized Linux instance. "
+                "Local state is separate; network identity is unchanged unless offline."
             ),
         )
         self._capsule_names: list[str] = []
@@ -2922,12 +2922,12 @@ class ManagerWindow(Adw.ApplicationWindow):
 
         self.capsule_backend_row = Adw.ComboRow(
             title="Isolation backend",
-            subtitle="Profile separation is convenient but is not a security sandbox",
+            subtitle="Flatpak is the recommended fail-closed Linux boundary",
         )
         self.capsule_backend_row.set_model(
             Gtk.StringList.new([
-                "Separate supported profile",
-                "Flatpak sandbox",
+                "Isolated Flatpak capsule (recommended)",
+                "Legacy profile (blocked; migrate to Flatpak)",
                 "Windows Sandbox export",
             ])
         )
@@ -2935,10 +2935,11 @@ class ManagerWindow(Adw.ApplicationWindow):
 
         capsule_apps_row = Adw.ActionRow(
             title="Applications",
-            subtitle="Comma-separated executable names or Flatpak application IDs",
+            subtitle="Flatpak IDs; common aliases such as signal and firefox are resolved safely",
         )
         self.capsule_apps_entry = Gtk.Entry(
-            placeholder_text="firefox, code, signal", hexpand=True, valign=Gtk.Align.CENTER
+            placeholder_text="signal, firefox, org.gnome.Evince", hexpand=True,
+            valign=Gtk.Align.CENTER,
         )
         capsule_apps_row.add_suffix(self.capsule_apps_entry)
         capsule_group.add(capsule_apps_row)
@@ -3039,7 +3040,7 @@ class ManagerWindow(Adw.ApplicationWindow):
 
     def _capsule_values(self) -> tuple[str, str, list[str], list[str], bool]:
         name = self.capsule_name_entry.get_text().strip()
-        backend = ("profile", "flatpak", "windows-sandbox")[
+        backend = ("flatpak", "profile", "windows-sandbox")[
             min(self.capsule_backend_row.get_selected(), 2)
         ]
         applications = [
@@ -3142,7 +3143,7 @@ class ManagerWindow(Adw.ApplicationWindow):
             return
         self.capsule_name_entry.set_text(capsule.name)
         self.capsule_backend_row.set_selected(
-            ("profile", "flatpak", "windows-sandbox").index(capsule.backend)
+            ("flatpak", "profile", "windows-sandbox").index(capsule.backend)
         )
         self.capsule_apps_entry.set_text(
             ", ".join(application.identity for application in capsule.applications)

@@ -1,11 +1,11 @@
 {
-  "version": "3.5.14",
+  "version": "3.5.15",
   "channel": "stable",
-  "issued_at": "2026-09-02T04:42:27Z",
-  "expires_at": "2026-10-17T04:42:27Z",
+  "issued_at": "2026-09-02T07:33:38Z",
+  "expires_at": "2026-10-17T07:33:38Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.14_all.deb",
-  "sha256": "b84c30498f5dd170f84c45726248d05071cd8fadfbbb762951d95345fd1411a7",
-  "size": 3763922,
-  "notes": "SessionSifu 3.5.14 fixes Firefox Workspace Capsules on Ubuntu by storing Snap-Firefox profiles in its accessible persistent data area and automatically selecting a separate profile when an existing capsule profile is locked."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.15_all.deb",
+  "sha256": "0948e9106cae7d21a05354b8aab843f0236550b288201034aa60f7c0f5dd4f93",
+  "size": 3767066,
+  "notes": "SessionSifu 3.5.15 prevents Signal capsules from joining an existing host process. Linux capsules now default to installed Flatpaks with capsule-specific clean XDG state, reset broad host-file grants and no shared host keyring or authentication agents."
 }

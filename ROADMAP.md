@@ -1,10 +1,10 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.5.14. It separates shipped
+This roadmap describes the product after version 3.5.15. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
 
-## Shipped foundation — 3.5.14
+## Shipped foundation — 3.5.15
 
 SessionSifu now combines session restoration with an encrypted, opt-in visual
 history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
@@ -34,11 +34,12 @@ history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
 - existing app/site exclusions, protected-context redaction, pause controls,
   quotas, granular deletion, restore preview and signed GNOME updates.
 - direct Workspace Capsule setup from both tray implementations, with saved
-  environment selection, save-before-launch validation, reviewed Signal
-  profile support and a scoped live monitor of launched applications.
+  environment selection, save-before-launch validation, capsule-specific
+  Flatpak identities, fail-closed Signal handling and a scoped live monitor of
+  launched applications.
 
 The session, Recall and retrieval foundations were delivered incrementally
-through 3.5.14. The user-visible workflow and underlying data model remain
+through 3.5.15. The user-visible workflow and underlying data model remain
 consistent across supported editions, while platform adapters report their
 real capabilities instead of implying parity.
 

@@ -1,3 +1,9 @@
+sessionsifu (3.5.15-1~ppa1~resolute1) resolute; urgency=high
+
+  * Isolate Flatpak capsule state and fail closed for current Signal builds.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Wed, 02 Sep 2026 10:00:00 +0200
+
 sessionsifu (3.5.14-1~ppa1~resolute1) resolute; urgency=high
 
   * Store Ubuntu Snap-Firefox capsule profiles in an accessible data location.

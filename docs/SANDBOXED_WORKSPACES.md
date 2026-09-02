@@ -39,6 +39,19 @@ locked, SessionSifu selects a distinct numbered profile for the additional
 instance. Explicit capsule-data deletion covers both storage roots; ordinary
 Firefox profiles are never read, copied or deleted.
 
+Version 3.5.15 fixes a false isolation promise exposed by newer Signal builds.
+Signal no longer honors the historical `--user-data-dir` launch switch, so its
+legacy profile adapter now fails closed instead of opening the host instance.
+All profile-only launches are disabled under the strict capsule policy because
+environment variables and application flags are not container boundaries;
+existing encrypted manifests remain readable for migration and data deletion.
+The Linux UI defaults to an installed Flatpak; reviewed names such as `signal`
+resolve to `org.signal.Signal`. Each capsule name and application receives a
+dedicated XDG config/data/cache/state root, broad inherited host-filesystem
+grants are reset, and host keyring plus SSH/GPG agent access is removed. This is
+a Flatpak-enforced process/filesystem boundary with a clean local app identity,
+not network anonymity. Offline mode is the only built-in network denial.
+
 ## Product idea
 
 A SessionSifu workspace capsule combines the shipped launch-plan foundation
@@ -68,6 +81,12 @@ D-Bus services are unavailable unless explicitly granted. XDG Desktop Portals
 provide user-mediated file, URI, screenshot and related access without giving
 blanket host access. Per-application data already has a defined location below
 `~/.var/app/<app-id>`.
+
+SessionSifu places each capsule below dedicated subdirectories of that app data,
+so a normal Flatpak instance and differently named capsules do not share the
+XDG identity selected at launch. The application package itself remains a
+separately trusted component; the community Flatpak for Signal is not an
+upstream-supported Signal distribution.
 
 SessionSifu should initially orchestrate only installed Flatpak applications
 and existing portal flows. It should not rewrite global overrides silently or
@@ -217,6 +236,8 @@ A backend may be called sandboxed only when all of the following are true:
 ## Primary references
 
 - [Flatpak sandbox permissions](https://docs.flatpak.org/en/latest/sandbox-permissions.html)
+- [Signal upstream profile-switch regression](https://github.com/signalapp/Signal-Desktop/issues/7730)
+- [Signal community Flatpak packaging](https://github.com/flathub/org.signal.Signal)
 - [XDG Desktop Portal API](https://docs.flatpak.org/en/latest/portal-api-reference.html)
 - [Bubblewrap security model and limitations](https://github.com/containers/bubblewrap#sandboxing)
 - [Windows Sandbox configuration](https://learn.microsoft.com/windows/security/application-security/application-isolation/windows-sandbox/windows-sandbox-configure-using-wsb-file)

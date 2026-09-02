@@ -79,23 +79,15 @@ class PortableTests(unittest.TestCase):
             self.assertNotIn(str(executable).encode(), raw)
             self.assertEqual(store.load("Research").applications[0].identity, str(executable))
             plan = manager.preflight("Research")
-            self.assertTrue(plan["supported"])
+            self.assertFalse(plan["supported"])
             self.assertFalse(plan["security_boundary"])
-            self.assertTrue(plan["separate_instance"])
-            self.assertEqual(plan["commands"][0][1:3], ["--no-remote", "--profile"])
-            self.assertIn("not a security sandbox", plan["warnings"][0])
+            self.assertFalse(plan["separate_instance"])
+            self.assertEqual(plan["commands"], [])
+            self.assertIn("strict container isolation", plan["errors"][0])
             with mock.patch("sessionsifu_portable.capsule.subprocess.Popen") as launch:
-                launch.return_value.pid = 4242
-                launch.return_value.poll.return_value = None
-                result = manager.launch("Research")
-                running = manager.list_running()
-            self.assertEqual(result["launched"], 1)
-            self.assertEqual(result["launched_applications"][0]["pid"], 4242)
-            self.assertEqual(running[0]["capsule"], "Research")
-            self.assertEqual(running[0]["application"], str(executable))
-            launch.return_value.poll.return_value = 0
-            self.assertEqual(manager.list_running(), [])
-            launch.assert_called_once()
+                with self.assertRaises(RuntimeError):
+                    manager.launch("Research")
+                launch.assert_not_called()
             with self.assertRaises(ValueError):
                 manager.create("../escape", "profile", [str(executable)])
             manager.create("Offline profile", "profile", [str(executable)], offline=True)
@@ -114,13 +106,36 @@ class PortableTests(unittest.TestCase):
                 plan = manager.preflight("Web")
             self.assertTrue(plan["supported"])
             self.assertTrue(plan["security_boundary"])
-            self.assertEqual(
-                plan["commands"],
-                [["/usr/bin/flatpak", "run", "--unshare=network", "org.mozilla.firefox"]],
-            )
+            command = plan["commands"][0]
+            self.assertEqual(command[:3], ["/usr/bin/flatpak", "run", "--nofilesystem=host:reset"])
+            self.assertIn("--unshare=network", command)
+            self.assertEqual(command[-1], "org.mozilla.firefox")
+            self.assertTrue(plan["separate_instance"])
+            self.assertIn("capsule-specific clean", plan["effective_permissions"]["identity"])
+            self.assertTrue(any(value.startswith("--env=XDG_CONFIG_HOME=/var/config/sessionsifu-capsules/") for value in command))
             probe.assert_called_once()
+            with (
+                mock.patch(
+                    "sessionsifu_portable.capsule.platform.system", return_value="Linux"
+                ),
+                mock.patch(
+                    "sessionsifu_portable.capsule.shutil.which",
+                    return_value="/usr/bin/flatpak",
+                ),
+                mock.patch(
+                    "sessionsifu_portable.capsule.subprocess.run",
+                    return_value=completed,
+                ),
+                mock.patch("sessionsifu_portable.capsule.subprocess.Popen") as launch,
+            ):
+                launch.return_value.pid = 4242
+                launch.return_value.poll.return_value = None
+                result = manager.launch("Web")
+                running = manager.list_running()
+            self.assertEqual(result["launched"], 1)
+            self.assertEqual(running[0]["application"], "org.mozilla.firefox")
 
-    def test_profile_capsule_resolves_signal_desktop_name(self) -> None:
+    def test_signal_profile_launch_fails_closed_and_flatpak_alias_is_isolated(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             executable = root / "signal-desktop"
@@ -133,11 +148,57 @@ class PortableTests(unittest.TestCase):
                 side_effect=lambda name: str(executable) if name == "signal-desktop" else None,
             ):
                 plan = manager.preflight("Messaging")
-            self.assertTrue(plan["supported"])
-            self.assertEqual(
-                plan["commands"][0][:2],
-                [str(executable), "--user-data-dir"],
+                command, signal_error = manager._profile_command(
+                    manager.store.load("Messaging"), "signal"
+                )
+            self.assertFalse(plan["supported"])
+            self.assertIn("strict container isolation", plan["errors"][0])
+            self.assertEqual(plan["commands"], [])
+            self.assertEqual(command, [])
+            self.assertIn("no longer honors", signal_error)
+
+            manager.create("Private Signal", "flatpak", ["signal"])
+            with (
+                mock.patch("sessionsifu_portable.capsule.platform.system", return_value="Linux"),
+                mock.patch("sessionsifu_portable.capsule.shutil.which", return_value="/usr/bin/flatpak"),
+                mock.patch(
+                    "sessionsifu_portable.capsule.subprocess.run",
+                    return_value=mock.Mock(returncode=0),
+                ) as probe,
+            ):
+                isolated = manager.preflight("Private Signal")
+            self.assertTrue(isolated["supported"])
+            self.assertEqual(probe.call_args.args[0], ["/usr/bin/flatpak", "info", "org.signal.Signal"])
+            self.assertEqual(isolated["commands"][0][-1], "org.signal.Signal")
+            self.assertIn("--nofilesystem=host:reset", isolated["commands"][0])
+            self.assertIn("network address is not anonymized", isolated["effective_permissions"]["anonymity"])
+
+    def test_flatpak_capsule_data_deletion_is_scoped_to_capsule(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            store = CapsuleStore(root / "data", test_key=b"d" * 32)
+            manager = CapsuleManager(store)
+            manager.create("Private Signal", "flatpak", ["signal"])
+            capsule_key = store._filename("Private Signal").removesuffix(".json")
+            capsule_data = (
+                home
+                / ".var"
+                / "app"
+                / "org.signal.Signal"
+                / "config"
+                / "sessionsifu-capsules"
+                / capsule_key
             )
+            unrelated = capsule_data.parent / "unrelated"
+            capsule_data.mkdir(parents=True)
+            unrelated.mkdir()
+            with mock.patch(
+                "sessionsifu_portable.capsule._real_home", return_value=home
+            ):
+                self.assertTrue(store.delete_data("Private Signal"))
+            self.assertFalse(capsule_data.exists())
+            self.assertTrue(unrelated.exists())
 
     def test_profile_capsules_use_distinct_instances_and_profile_roots(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -145,16 +206,23 @@ class PortableTests(unittest.TestCase):
             executable = root / "code"
             executable.write_text("test executable", encoding="utf-8")
             executable.chmod(0o700)
-            manager = CapsuleManager(CapsuleStore(root / "data", test_key=b"i" * 32))
+            store = CapsuleStore(root / "data", test_key=b"i" * 32)
+            manager = CapsuleManager(store)
             manager.create("Work", "profile", [str(executable)])
             manager.create("Personal", "profile", [str(executable)])
-            work = manager.preflight("Work")
-            personal = manager.preflight("Personal")
+            work, work_error = manager._profile_command(
+                store.load("Work"), str(executable)
+            )
+            personal, personal_error = manager._profile_command(
+                store.load("Personal"), str(executable)
+            )
+            self.assertEqual(work_error, "")
+            self.assertEqual(personal_error, "")
             self.assertEqual(
-                work["commands"][0][1:3],
+                work[1:3],
                 ["--new-window", "--user-data-dir"],
             )
-            self.assertNotEqual(work["commands"][0][-1], personal["commands"][0][-1])
+            self.assertNotEqual(work[-1], personal[-1])
 
     def test_firefox_snap_uses_accessible_profile_and_avoids_live_lock(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -173,25 +241,22 @@ class PortableTests(unittest.TestCase):
                 mock.patch("sessionsifu_portable.capsule._real_home", return_value=home),
                 mock.patch("sessionsifu_portable.capsule.subprocess.Popen") as launch,
             ):
-                plan = manager.preflight("Web")
-                primary = Path(plan["commands"][0][-1])
+                command, error = manager._profile_command(
+                    store.load("Web"), str(executable)
+                )
+                self.assertEqual(error, "")
+                primary = Path(command[-1])
                 self.assertEqual(
                     primary.parents[1],
                     home / "snap" / "firefox" / "common" / "sessionsifu-profiles",
                 )
                 primary.mkdir(parents=True)
                 (primary / ".parentlock").touch()
-                launch.return_value.pid = 9191
-                launch.return_value.poll.return_value = None
-                result = manager.launch("Web")
-                launched_profile = Path(launch.call_args.args[0][-1])
+                launched_profile = manager._available_profile(primary)
                 self.assertEqual(launched_profile.name, f"{primary.name}-instance-2")
-                self.assertEqual(
-                    result["launched_applications"][0]["profile"],
-                    str(launched_profile),
-                )
                 self.assertTrue(store.delete_data("Web"))
                 self.assertFalse(primary.parent.exists())
+                launch.assert_not_called()
 
     def test_windows_sandbox_export_has_safe_defaults_and_read_only_folders(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -238,7 +303,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.5.14")
+        self.assertEqual(VERSION, "3.5.15")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -670,7 +735,7 @@ class PortableTests(unittest.TestCase):
             controller.save_named("Work")
             api = LocalApi(controller)
             status = api.dispatch({"method": "status"})
-            self.assertEqual(status["version"], "3.5.14")
+            self.assertEqual(status["version"], "3.5.15")
             preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
             self.assertEqual(preview["applications"][0]["application"], "Editor")
             with self.assertRaises(ValueError):
@@ -731,7 +796,7 @@ class PortableTests(unittest.TestCase):
             controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
             controller.save_named("Work")
             mcp = ReadOnlyMcp(controller)
-            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.14")
+            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.15")
             self.assertTrue(mcp.call("restore_preview", {"name": "Work"}))
             with self.assertRaises(ValueError):
                 mcp.call("restore_execute", {"name": "Work"})

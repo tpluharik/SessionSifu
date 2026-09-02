@@ -4,6 +4,30 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.15
+
+- Fixed Signal capsules opening or focusing the already-running host Signal
+  process. Current Signal releases no longer honor the historical
+  `--user-data-dir` switch, so that profile adapter now fails closed.
+- Made an installed Flatpak the recommended Linux capsule backend and added
+  reviewed aliases including `signal` → `org.signal.Signal`.
+- Disabled launch for every legacy profile-only capsule because profile flags
+  are not an OS container boundary. Existing manifests remain readable for
+  review, migration and explicit data deletion.
+- Added capsule-specific XDG config, data, cache and state roots to every
+  Flatpak capsule so it starts with an identity separate from the ordinary
+  Flatpak installation and from other capsule names.
+- Reset inherited broad host-filesystem access and remove host keyring, SSH
+  agent and GPG agent access for Flatpak capsule launches. Portal-mediated
+  file selection and the package's remaining declared permissions stay visible
+  in preflight.
+- Made the interface and documentation explicit that local identity separation
+  is not network anonymity. **Offline** remains the enforceable no-network
+  option; unsupported or uninstalled applications are blocked without an
+  unsandboxed fallback.
+- Extended **Delete capsule data** to remove the capsule-owned Flatpak config,
+  data and cache trees as well as legacy profile data.
+
 ## 3.5.14
 
 - Fixed Firefox profile capsules on Ubuntu installations where `/usr/bin/firefox`

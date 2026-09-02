@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.5.14 runtime and release layout. User-facing
+This document describes the 3.5.15 runtime and release layout. User-facing
 Recall steps live in [RECALL_GUIDE.md](RECALL_GUIDE.md).
 
 SessionSifu 3 has a full GNOME runtime, a portable runtime shared by Windows,
@@ -127,11 +127,14 @@ in widget code.
 are AES-GCM authenticated, written atomically below owner-private directories
 with hashed filenames and never contain generated shell text. `preflight()`
 resolves structured command arrays and effective permissions before launch.
-Profile adapters are explicitly non-security boundaries. The Flatpak pilot
-requires an already installed application ID and does not mutate global
-overrides; the Windows backend emits a reviewable `.wsb` file with read-only
-host mappings. Profile data deletion is an explicit operation independent of
-manifest deletion.
+Profile adapters are explicitly non-security boundaries and can no longer
+launch; their manifests are retained for migration and data deletion. Signal
+also ignores the former profile switch. The Flatpak
+pilot requires an already installed application ID, assigns capsule-specific
+XDG roots, resets broad host-filesystem grants and removes shared credential
+agents without mutating global overrides. The Windows backend emits a
+reviewable `.wsb` file with read-only host mappings. Capsule data deletion is
+an explicit operation independent of manifest deletion.
 
 The GNOME top-bar and portable tray open capsule setup directly. A process
 registry owned by the active manager records only successfully spawned capsule
