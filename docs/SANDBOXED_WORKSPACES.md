@@ -39,7 +39,7 @@ locked, SessionSifu selects a distinct numbered profile for the additional
 instance. Explicit capsule-data deletion covers both storage roots; ordinary
 Firefox profiles are never read, copied or deleted.
 
-Version 3.5.15 fixes a false isolation promise exposed by newer Signal builds.
+Version 3.5.16 fixes a false isolation promise exposed by newer Signal builds.
 Signal no longer honors the historical `--user-data-dir` launch switch, so its
 legacy profile adapter now fails closed instead of opening the host instance.
 All profile-only launches are disabled under the strict capsule policy because
@@ -51,6 +51,22 @@ dedicated XDG config/data/cache/state root, broad inherited host-filesystem
 grants are reset, and host keyring plus SSH/GPG agent access is removed. This is
 a Flatpak-enforced process/filesystem boundary with a clean local app identity,
 not network anonymity. Offline mode is the only built-in network denial.
+
+Version 3.5.16 removes the need to type application IDs in either desktop
+manager. SessionSifu asks Flatpak for the installed application catalog and
+shows only entries that can use the enforced Flatpak boundary. Selecting an
+application assigns a communications, browser, development, documents or
+generic isolated profile and records that profile inside the encrypted
+manifest. Multiple installed applications may be added to one capsule. Host
+executables are deliberately absent because SessionSifu cannot turn them into
+containers safely at runtime.
+
+The automatic profile also changes the structured launch plan where the app
+has a reviewed interface: Firefox receives its own browser profile;
+Chromium-family browsers receive a private user-data directory; and VS Code or
+VSCodium receive private data and extension directories. Every Flatpak receives
+a capsule-specific home and XDG tree. Signal does not receive an unsupported
+profile argument and relies on its private XDG tree instead.
 
 ## Product idea
 

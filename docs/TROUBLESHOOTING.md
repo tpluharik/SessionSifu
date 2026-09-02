@@ -185,7 +185,7 @@ fallback.
 
 ## A capsule opens the existing Signal instance
 
-Update to 3.5.15 or newer. Signal releases after 7.80 stopped honoring the
+Update to 3.5.16 or newer. Signal releases after 7.80 stopped honoring the
 historical `--user-data-dir` switch, so SessionSifu now blocks Signal in the
 legacy profile backend. All legacy profile-only launches are blocked because
 they are not OS containers. Choose **Isolated Flatpak capsule**, enter `signal`

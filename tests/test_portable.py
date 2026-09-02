@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 import threading
 import time
@@ -109,10 +110,13 @@ class PortableTests(unittest.TestCase):
             command = plan["commands"][0]
             self.assertEqual(command[:3], ["/usr/bin/flatpak", "run", "--nofilesystem=host:reset"])
             self.assertIn("--unshare=network", command)
-            self.assertEqual(command[-1], "org.mozilla.firefox")
+            self.assertIn("org.mozilla.firefox", command)
+            self.assertEqual(command[-3:-1], ["--no-remote", "--profile"])
+            self.assertTrue(command[-1].endswith("/browser-profile"))
             self.assertTrue(plan["separate_instance"])
             self.assertIn("capsule-specific clean", plan["effective_permissions"]["identity"])
             self.assertTrue(any(value.startswith("--env=XDG_CONFIG_HOME=/var/config/sessionsifu-capsules/") for value in command))
+            self.assertTrue(any(value.startswith("--env=HOME=/var/data/sessionsifu-capsules/") for value in command))
             probe.assert_called_once()
             with (
                 mock.patch(
@@ -134,6 +138,46 @@ class PortableTests(unittest.TestCase):
                 running = manager.list_running()
             self.assertEqual(result["launched"], 1)
             self.assertEqual(running[0]["application"], "org.mozilla.firefox")
+
+    def test_capsule_catalog_lists_only_isolated_apps_and_selects_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manager = CapsuleManager(CapsuleStore(Path(directory), test_key=b"a" * 32))
+            listing = mock.Mock(
+                returncode=0,
+                stdout=(
+                    "org.gnome.Evince\tDocument Viewer\n"
+                    "org.signal.Signal\tSignal\n"
+                    "invalid-entry\tUnsafe Host App\n"
+                    "com.visualstudio.code\tVisual Studio Code\n"
+                ),
+            )
+            with (
+                mock.patch("sessionsifu_portable.capsule.platform.system", return_value="Linux"),
+                mock.patch("sessionsifu_portable.capsule.shutil.which", return_value="/usr/bin/flatpak"),
+                mock.patch("sessionsifu_portable.capsule.subprocess.run", return_value=listing) as discover,
+            ):
+                catalog = manager.available_applications()
+            self.assertEqual(
+                [item["identity"] for item in catalog],
+                ["org.gnome.Evince", "org.signal.Signal", "com.visualstudio.code"],
+            )
+            self.assertEqual(catalog[0]["profile"], "documents")
+            self.assertEqual(catalog[1]["profile"], "communications")
+            self.assertEqual(catalog[2]["profile"], "development")
+            self.assertTrue(all(item["backend"] == "flatpak" for item in catalog))
+            discover.assert_called_once_with(
+                ["/usr/bin/flatpak", "list", "--app", "--columns=application,name"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=8,
+                check=False,
+            )
+
+            manager.create("Chat", "flatpak", ["org.signal.Signal"])
+            capsule = manager.store.load("Chat")
+            self.assertEqual(capsule.applications[0].profile, "communications")
 
     def test_signal_profile_launch_fails_closed_and_flatpak_alias_is_isolated(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -303,7 +347,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.5.15")
+        self.assertEqual(VERSION, "3.5.16")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -735,7 +779,7 @@ class PortableTests(unittest.TestCase):
             controller.save_named("Work")
             api = LocalApi(controller)
             status = api.dispatch({"method": "status"})
-            self.assertEqual(status["version"], "3.5.15")
+            self.assertEqual(status["version"], "3.5.16")
             preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
             self.assertEqual(preview["applications"][0]["application"], "Editor")
             with self.assertRaises(ValueError):
@@ -796,7 +840,7 @@ class PortableTests(unittest.TestCase):
             controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
             controller.save_named("Work")
             mcp = ReadOnlyMcp(controller)
-            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.15")
+            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.16")
             self.assertTrue(mcp.call("restore_preview", {"name": "Work"}))
             with self.assertRaises(ValueError):
                 mcp.call("restore_execute", {"name": "Work"})

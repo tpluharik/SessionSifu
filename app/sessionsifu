@@ -59,7 +59,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.5.15"
+CURRENT_VERSION = "3.5.16"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -2933,15 +2933,39 @@ class ManagerWindow(Adw.ApplicationWindow):
         )
         capsule_group.add(self.capsule_backend_row)
 
+        self._capsule_available_apps: list[dict[str, str]] = []
+        self.capsule_app_catalog_row = Adw.ComboRow(
+            title="Available application",
+            subtitle="Installed containerized applications are detected automatically",
+        )
+        self.capsule_app_catalog_row.set_model(
+            Gtk.StringList.new(["Scanning installed Flatpaks…"])
+        )
+        self.capsule_app_catalog_row.set_sensitive(False)
+        add_capsule_app = Gtk.Button(label="Add", valign=Gtk.Align.CENTER)
+        add_capsule_app.connect("clicked", self._add_capsule_application)
+        self.capsule_app_catalog_row.add_suffix(add_capsule_app)
+        refresh_capsule_apps = Gtk.Button(
+            icon_name="view-refresh-symbolic", valign=Gtk.Align.CENTER,
+            tooltip_text="Refresh installed applications",
+        )
+        refresh_capsule_apps.connect("clicked", self._refresh_capsule_application_catalog)
+        self.capsule_app_catalog_row.add_suffix(refresh_capsule_apps)
+        capsule_group.add(self.capsule_app_catalog_row)
+
         capsule_apps_row = Adw.ActionRow(
-            title="Applications",
-            subtitle="Flatpak IDs; common aliases such as signal and firefox are resolved safely",
+            title="Selected applications",
+            subtitle="Each application receives its automatically selected isolated profile",
         )
         self.capsule_apps_entry = Gtk.Entry(
-            placeholder_text="signal, firefox, org.gnome.Evince", hexpand=True,
+            placeholder_text="Choose an installed application above", hexpand=True,
             valign=Gtk.Align.CENTER,
         )
+        self.capsule_apps_entry.set_editable(False)
         capsule_apps_row.add_suffix(self.capsule_apps_entry)
+        clear_capsule_apps = Gtk.Button(label="Clear", valign=Gtk.Align.CENTER)
+        clear_capsule_apps.connect("clicked", self._clear_capsule_applications)
+        capsule_apps_row.add_suffix(clear_capsule_apps)
         capsule_group.add(capsule_apps_row)
 
         capsule_folders_row = Adw.ActionRow(
@@ -3028,6 +3052,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         self._available_update: dict | None = None
         self._installed_update: Path | None = None
 
+        self._refresh_capsule_application_catalog()
         self.refresh()
         self._capsule_refresh_source = GLib.timeout_add_seconds(
             2, self._refresh_capsule_running
@@ -3037,6 +3062,59 @@ class ManagerWindow(Adw.ApplicationWindow):
     def _message(self, text: str) -> None:
         self.banner.set_title(text)
         self.banner.set_revealed(True)
+
+    def _refresh_capsule_application_catalog(self, _button=None) -> None:
+        self._capsule_available_apps = self._capsules.available_applications()
+        if not self._capsule_available_apps:
+            self.capsule_app_catalog_row.set_model(
+                Gtk.StringList.new(["No isolated applications available"])
+            )
+            self.capsule_app_catalog_row.set_subtitle(
+                "Install a Flatpak application, then refresh this list"
+            )
+            self.capsule_app_catalog_row.set_sensitive(False)
+            return
+        labels = [
+            f"{item['name']} — {item['profile_label']}"
+            for item in self._capsule_available_apps
+        ]
+        self.capsule_app_catalog_row.set_model(Gtk.StringList.new(labels))
+        self.capsule_app_catalog_row.set_selected(0)
+        self.capsule_app_catalog_row.set_sensitive(True)
+        self.capsule_app_catalog_row.set_subtitle(
+            f"{len(labels)} installed Flatpak application(s); profile is selected automatically"
+        )
+
+    def _add_capsule_application(self, _button) -> None:
+        selected = self.capsule_app_catalog_row.get_selected()
+        if selected >= len(self._capsule_available_apps):
+            self._message("No isolated application is selected.")
+            return
+        application = self._capsule_available_apps[selected]
+        current = [
+            value.strip()
+            for value in self.capsule_apps_entry.get_text().split(",")
+            if value.strip()
+        ]
+        if application["identity"] not in current:
+            current.append(application["identity"])
+        self.capsule_apps_entry.set_text(", ".join(current))
+        backend_index = ("flatpak", "profile", "windows-sandbox").index(
+            application["backend"]
+        )
+        self.capsule_backend_row.set_selected(backend_index)
+        self.capsule_backend_row.set_sensitive(False)
+        self.capsule_backend_row.set_subtitle(
+            f"Selected automatically: {application['profile_label']} via Flatpak"
+        )
+
+    def _clear_capsule_applications(self, _button) -> None:
+        self.capsule_apps_entry.set_text("")
+        self.capsule_backend_row.set_selected(0)
+        self.capsule_backend_row.set_sensitive(True)
+        self.capsule_backend_row.set_subtitle(
+            "Flatpak is the recommended fail-closed Linux boundary"
+        )
 
     def _capsule_values(self) -> tuple[str, str, list[str], list[str], bool]:
         name = self.capsule_name_entry.get_text().strip()
@@ -3145,6 +3223,22 @@ class ManagerWindow(Adw.ApplicationWindow):
         self.capsule_backend_row.set_selected(
             ("flatpak", "profile", "windows-sandbox").index(capsule.backend)
         )
+        self.capsule_backend_row.set_sensitive(
+            not capsule.applications or capsule.backend != "flatpak"
+        )
+        if capsule.backend == "flatpak" and capsule.applications:
+            profiles = {
+                self._capsules.PROFILE_LABELS.get(
+                    application.profile
+                    if application.profile != "auto"
+                    else self._capsules.application_profile(application.identity),
+                    "Isolated application",
+                )
+                for application in capsule.applications
+            }
+            self.capsule_backend_row.set_subtitle(
+                "Selected automatically: " + ", ".join(sorted(profiles))
+            )
         self.capsule_apps_entry.set_text(
             ", ".join(application.identity for application in capsule.applications)
         )

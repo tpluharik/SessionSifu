@@ -4,7 +4,7 @@ This package contains the shared SessionSifu 3 desktop application used by the
 Windows, macOS, KDE Plasma and generic GNOME builds. See the repository README
 for platform capabilities and installation artifacts.
 
-The current 3.5.15 manager includes encrypted visual Privacy Recall. It is off by default;
+The current 3.5.16 manager includes encrypted visual Privacy Recall. It is off by default;
 screenshots, open paths, OCR and related ranking require separate choices. Its
 tray menu shows when capture is active and offers timed pauses. Application and
 observable website exclusions redact matching activity from new captures
@@ -49,6 +49,9 @@ identities, backend policy and selected mappings:
   plus reviewed aliases, and use capsule-specific XDG state. Broad host-file,
   keyring, SSH-agent and GPG-agent access is removed; portals remain available
   and optional offline mode also unshares the network;
+- the manager discovers installed Flatpak applications, lets you add them from
+  a list and automatically stores the matching communications, browser,
+  development, documents or generic isolated profile;
 - legacy profile-capsule manifests remain readable for migration and data
   deletion, but their launch is blocked because profile switches are not an OS
   container boundary. Signal also ignores its former profile-directory switch;

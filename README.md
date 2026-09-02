@@ -16,7 +16,7 @@ SessionSifu saves and reconstructs desktop layouts. It records running
 applications, documents and windows, then can relaunch applications and rebuild
 the supported parts of their layout.
 
-Version 3.5.15 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
+Version 3.5.16 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
 encrypted, per-window OCR activity timeline across GNOME, Windows, macOS, KDE
 Plasma 6 and other Linux desktops. Czech and English OCR data ships with the
 installer and verified update. Recall previews support two-finger panning,
@@ -30,7 +30,9 @@ Workspace Capsules now default to installed Flatpak applications on Linux,
 use capsule-specific clean app data, remove broad host-file and credential-agent
 access, and fail closed rather than letting Signal or another unsupported app
 join an existing host process. This separates local application identity; it
-does not conceal the computer's network address.
+does not conceal the computer's network address. Capsule setup discovers
+installed Flatpaks and presents them by name; choosing one automatically assigns
+its communications, browser, development, document or generic isolation profile.
 Automatic login restoration launches only visible desktop applications; Shell
 helpers and command-only processes are rejected, and application groups are
 bounded and paced to protect GNOME Shell and the Wayland compositor.
@@ -84,6 +86,8 @@ The project is open source under GPL-3.0.
   explicit eligible/captured/missing/protected-window diagnostics.
 - A bounded read-only JSON API over inherited stdin/stdout pipes for trusted
   launchers and integrations; SessionSifu opens no local network service.
+- A refreshable installed-application picker for Workspace Capsules, with
+  automatic fail-closed backend and per-application profile selection.
 
 ## Recall walkthrough
 
@@ -157,11 +161,11 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_3.5.15_all.deb` from the matching GitHub Release, or build it
+Download `sessionsifu_3.5.16_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_3.5.15_all.deb
+sudo apt install ./sessionsifu_3.5.16_all.deb
 ```
 
 The Ubuntu 26.04 PPA is active at `ppa:tpluharik77/sessionsifu` and its amd64
@@ -191,7 +195,7 @@ compatible GNOME release; SessionSifu never forces a desktop-shell upgrade.
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.5.15_all.deb
+sudo apt install ./dist/sessionsifu_3.5.16_all.deb
 ```
 
 After installation:
@@ -207,10 +211,10 @@ After installation:
 
 Tagged releases attach these self-contained artifacts:
 
-- `SessionSifu-3.5.15-windows-x64.zip`;
-- `SessionSifu-3.5.15-macos-arm64.zip`;
-- `SessionSifu-3.5.15-macos-x64.zip`; and
-- `SessionSifu-3.5.15-linux-x64.tar.gz`.
+- `SessionSifu-3.5.16-windows-x64.zip`;
+- `SessionSifu-3.5.16-macos-arm64.zip`;
+- `SessionSifu-3.5.16-macos-x64.zip`; and
+- `SessionSifu-3.5.16-linux-x64.tar.gz`.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -442,7 +446,7 @@ each match identifies the application, exact window title, time and its own
 opted-in files. On GNOME, the focused window receives a small ranking boost. Application
 exclusions remain enforced during capture and search.
 
-On GNOME, version 3.5.15 saves application metadata across every workspace and
+On GNOME, version 3.5.16 saves application metadata across every workspace and
 records the total workspace count. Recall retains a bounded in-memory preview
 when a window is visible and unobscured, then reuses that preview if the window
 is on an inactive workspace at the next snapshot. Cached images display their
@@ -550,7 +554,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.5.15_all.deb
+dist/sessionsifu_3.5.16_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -571,7 +575,7 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v3.5.15` tag publishes the artifacts and `SHA256SUMS` as a GitHub
+A pushed `v3.5.16` tag publishes the artifacts and `SHA256SUMS` as a GitHub
 Release; ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
@@ -606,7 +610,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Publishing and distribution](docs/PUBLISHING.md)
 - [Documentation index](docs/README.md)
 
-The current 3.5.15 release includes verified Czech and English fast Tesseract
+The current 3.5.16 release includes verified Czech and English fast Tesseract
 models in the Debian package, signed in-app update and portable artifacts. Mixed
 Czech/English desktop text therefore works without installing a separate
 language package, while recognition stays completely local. Recall search is

@@ -57,13 +57,24 @@ def _bounded_text(value: Any, maximum: int = 512) -> str:
 @dataclass(slots=True)
 class CapsuleApplication:
     identity: str
+    profile: str = "auto"
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "CapsuleApplication":
         identity = _bounded_text(value.get("identity"))
         if not identity or any(ord(char) < 32 for char in identity):
             raise ValueError("Capsule application identity is invalid")
-        return cls(identity=identity)
+        profile = _bounded_text(value.get("profile") or "auto", 64)
+        if profile not in {
+            "auto",
+            "communications",
+            "browser",
+            "development",
+            "documents",
+            "standard",
+        }:
+            raise ValueError("Capsule application profile is invalid")
+        return cls(identity=identity, profile=profile)
 
 
 @dataclass(slots=True)
@@ -343,11 +354,91 @@ class CapsuleManager:
         "microsoft-edge": ("--new-window", "--user-data-dir"),
         "vivaldi": ("--new-window", "--user-data-dir"),
     }
+    PROFILE_LABELS = {
+        "communications": "Private communications",
+        "browser": "Private browsing",
+        "development": "Isolated development",
+        "documents": "Isolated documents",
+        "standard": "Isolated application",
+    }
+    PROFILE_HINTS = {
+        "communications": (
+            "signal", "telegram", "discord", "slack", "element", "zulip",
+            "teams", "thunderbird", "whatsapp", "messenger",
+        ),
+        "browser": (
+            "firefox", "chromium", "chrome", "brave", "edge", "vivaldi",
+            "browser", "epiphany",
+        ),
+        "development": (
+            "visualstudio", "vscode", "codium", "jetbrains", "eclipse",
+            "androidstudio", "builder", "gitg",
+        ),
+        "documents": (
+            "libreoffice", "onlyoffice", "evince", "okular", "document",
+            "texteditor", "gedit", "writer", "calc",
+        ),
+    }
 
     def __init__(self, store: CapsuleStore) -> None:
         self.store = store
         self._running_lock = threading.Lock()
         self._running: list[dict[str, Any]] = []
+
+    @classmethod
+    def application_profile(cls, identity: str, name: str = "") -> str:
+        """Choose a conservative display/policy profile from trusted app metadata."""
+        searchable = f"{identity} {name}".casefold()
+        for profile, hints in cls.PROFILE_HINTS.items():
+            if any(hint in searchable for hint in hints):
+                return profile
+        return "standard"
+
+    def available_applications(self) -> list[dict[str, str]]:
+        """Return only applications for which an enforceable capsule backend exists.
+
+        Linux host executables are intentionally absent: listing them would imply a
+        security boundary SessionSifu cannot provide. Flatpak supplies both the
+        discoverable application catalog and the enforced sandbox boundary.
+        """
+        if platform.system() != "Linux":
+            return []
+        flatpak = shutil.which("flatpak")
+        if not flatpak:
+            return []
+        try:
+            result = subprocess.run(
+                [flatpak, "list", "--app", "--columns=application,name"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=8,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if result.returncode != 0:
+            return []
+        applications: dict[str, dict[str, str]] = {}
+        for raw_line in result.stdout.splitlines()[:4096]:
+            columns = raw_line.split("\t", 1)
+            app_id = columns[0].strip()
+            if not FLATPAK_ID_RE.fullmatch(app_id):
+                continue
+            name = columns[1].strip() if len(columns) > 1 else ""
+            profile = self.application_profile(app_id, name)
+            applications[app_id.casefold()] = {
+                "name": name or app_id,
+                "identity": app_id,
+                "backend": "flatpak",
+                "profile": profile,
+                "profile_label": self.PROFILE_LABELS[profile],
+            }
+        return sorted(
+            applications.values(),
+            key=lambda item: (item["name"].casefold(), item["identity"].casefold()),
+        )
 
     @staticmethod
     def _is_firefox_snap_launcher(executable: str, basename: str) -> bool:
@@ -416,7 +507,17 @@ class CapsuleManager:
         capsule = WorkspaceCapsule(
             name=self.store.validate_name(name),
             backend=backend,
-            applications=[CapsuleApplication(identity=item) for item in applications],
+            applications=[
+                CapsuleApplication(
+                    identity=item,
+                    profile=(
+                        self.application_profile(self._flatpak_id(item))
+                        if backend == "flatpak"
+                        else "auto"
+                    ),
+                )
+                for item in applications
+            ],
             offline=offline,
             mapped_folders=mapped_folders or [],
         )
@@ -475,6 +576,29 @@ class CapsuleManager:
         capsule_key = self.store._filename(capsule.name).removesuffix(".json")
         application_key = hashlib.sha256(app_id.encode("utf-8")).hexdigest()[:16]
         relative_root = f"sessionsifu-capsules/{capsule_key}/{application_key}"
+        private_root = f"/var/data/{relative_root}"
+        app_key = app_id.casefold()
+        application_arguments: list[str] = []
+        if app_key == "org.mozilla.firefox":
+            application_arguments = [
+                "--no-remote", "--profile", f"{private_root}/browser-profile",
+            ]
+        elif app_key in {
+            "org.chromium.chromium",
+            "com.google.chrome",
+            "com.brave.browser",
+            "com.microsoft.edge",
+            "com.vivaldi.vivaldi",
+        }:
+            application_arguments = [
+                "--new-window", f"--user-data-dir={private_root}/browser-profile",
+            ]
+        elif app_key in {"com.visualstudio.code", "com.vscodium.codium"}:
+            application_arguments = [
+                "--new-window",
+                f"--user-data-dir={private_root}/editor-data",
+                f"--extensions-dir={private_root}/editor-extensions",
+            ]
         command = [
             flatpak,
             "run",
@@ -491,9 +615,11 @@ class CapsuleManager:
             f"--env=XDG_DATA_HOME=/var/data/{relative_root}",
             f"--env=XDG_CACHE_HOME=/var/cache/{relative_root}",
             f"--env=XDG_STATE_HOME=/var/data/{relative_root}/state",
+            f"--env=HOME={private_root}/home",
             "--env=SESSIONSIFU_CAPSULE=1",
             *(["--unshare=network"] if capsule.offline else []),
             app_id,
+            *application_arguments,
         ]
         return command, ""
 
@@ -567,6 +693,23 @@ class CapsuleManager:
             "separate_instance": capsule.backend == "flatpak",
             "supported": not errors,
             "applications": [item.identity for item in capsule.applications],
+            "application_profiles": [
+                {
+                    "identity": item.identity,
+                    "profile": (
+                        self.application_profile(self._flatpak_id(item.identity))
+                        if item.profile == "auto" and capsule.backend == "flatpak"
+                        else item.profile
+                    ),
+                    "label": self.PROFILE_LABELS.get(
+                        self.application_profile(self._flatpak_id(item.identity))
+                        if item.profile == "auto" and capsule.backend == "flatpak"
+                        else item.profile,
+                        "Legacy profile",
+                    ),
+                }
+                for item in capsule.applications
+            ],
             "commands": commands,
             "effective_permissions": effective,
             "errors": errors,

@@ -1,3 +1,11 @@
+sessionsifu (3.5.16-1~ppa1~resolute1) resolute; urgency=high
+
+  * Discover installed Flatpak applications for capsule selection.
+  * Assign and persist safe application-specific capsule profiles.
+  * Keep host executables out of the containerized application catalog.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Wed, 02 Sep 2026 11:00:00 +0200
+
 sessionsifu (3.5.15-1~ppa1~resolute1) resolute; urgency=high
 
   * Isolate Flatpak capsule state and fail closed for current Signal builds.

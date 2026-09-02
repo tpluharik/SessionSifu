@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "SessionSifu 3.5.15 prevents Signal capsules from joining an existing host process. Linux capsules now default to installed Flatpaks with capsule-specific clean XDG state, reset broad host-file grants and no shared host keyring or authentication agents."
+  "notes": "SessionSifu 3.5.16 discovers installed Flatpak applications for capsule selection and automatically assigns a communications, browser, development, documents or generic isolated profile. Host executables remain excluded so capsule creation cannot silently downgrade containment."
 }

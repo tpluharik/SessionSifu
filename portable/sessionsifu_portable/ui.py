@@ -503,11 +503,30 @@ class MainWindow(QMainWindow):
         self.capsule_backend.addItem("Legacy profile (blocked; migrate to Flatpak)", "profile")
         self.capsule_backend.addItem("Windows Sandbox export", "windows-sandbox")
         capsule_form.addRow("Backend", self.capsule_backend)
+        self._capsule_available_apps: list[dict[str, str]] = []
+        application_picker = QWidget()
+        application_picker_layout = QHBoxLayout(application_picker)
+        application_picker_layout.setContentsMargins(0, 0, 0, 0)
+        self.capsule_app_catalog = QComboBox()
+        application_picker_layout.addWidget(self.capsule_app_catalog, 1)
+        capsule_app_add = QPushButton("Add")
+        capsule_app_add.clicked.connect(self.add_capsule_application)
+        application_picker_layout.addWidget(capsule_app_add)
+        capsule_app_refresh = QPushButton("Refresh")
+        capsule_app_refresh.clicked.connect(self.refresh_capsule_application_catalog)
+        application_picker_layout.addWidget(capsule_app_refresh)
+        capsule_form.addRow("Available application", application_picker)
         self.capsule_apps = QLineEdit()
-        self.capsule_apps.setPlaceholderText(
-            "signal, firefox · or an installed Flatpak ID such as org.gnome.Evince"
-        )
-        capsule_form.addRow("Applications", self.capsule_apps)
+        self.capsule_apps.setPlaceholderText("Choose installed applications above")
+        self.capsule_apps.setReadOnly(True)
+        selected_apps = QWidget()
+        selected_apps_layout = QHBoxLayout(selected_apps)
+        selected_apps_layout.setContentsMargins(0, 0, 0, 0)
+        selected_apps_layout.addWidget(self.capsule_apps, 1)
+        capsule_apps_clear = QPushButton("Clear")
+        capsule_apps_clear.clicked.connect(self.clear_capsule_applications)
+        selected_apps_layout.addWidget(capsule_apps_clear)
+        capsule_form.addRow("Selected applications", selected_apps)
         self.capsule_folders = QLineEdit()
         self.capsule_folders.setPlaceholderText("Windows Sandbox read-only folders, separated by ;")
         capsule_form.addRow("Mapped folders", self.capsule_folders)
@@ -518,6 +537,7 @@ class MainWindow(QMainWindow):
         capsule_create.clicked.connect(self.create_capsule)
         capsule_layout.addWidget(capsule_create)
         self.capsule_items = QListWidget()
+        self.capsule_items.currentItemChanged.connect(self.select_capsule_item)
         capsule_layout.addWidget(self.capsule_items, 1)
         capsule_layout.addWidget(QLabel("Applications running from this SessionSifu capsule window"))
         self.capsule_running_items = QListWidget()
@@ -564,6 +584,7 @@ class MainWindow(QMainWindow):
         self.capsule_running_timer.setInterval(2000)
         self.capsule_running_timer.timeout.connect(self.refresh_running_capsules)
         self.capsule_running_timer.start()
+        self.refresh_capsule_application_catalog()
         self.refresh()
 
     def _list_page(self, widget: QListWidget, restore_callback, delete_callback=None) -> QWidget:
@@ -620,6 +641,47 @@ class MainWindow(QMainWindow):
             f"Saved encrypted workspace capsule “{name}”. Review preflight before launch.",
         )
 
+    def refresh_capsule_application_catalog(self) -> None:
+        self._capsule_available_apps = self.controller.capsules.available_applications()
+        self.capsule_app_catalog.clear()
+        if not self._capsule_available_apps:
+            self.capsule_app_catalog.addItem("No isolated applications available")
+            self.capsule_app_catalog.setEnabled(False)
+            return
+        for application in self._capsule_available_apps:
+            self.capsule_app_catalog.addItem(
+                f"{application['name']} — {application['profile_label']}",
+                application,
+            )
+        self.capsule_app_catalog.setEnabled(True)
+
+    def add_capsule_application(self) -> None:
+        application = self.capsule_app_catalog.currentData()
+        if not isinstance(application, dict):
+            self.status.setText("No isolated application is selected.")
+            return
+        current = [
+            item.strip() for item in self.capsule_apps.text().split(",") if item.strip()
+        ]
+        identity = str(application.get("identity") or "")
+        if identity and identity not in current:
+            current.append(identity)
+        self.capsule_apps.setText(", ".join(current))
+        backend_index = self.capsule_backend.findData(application.get("backend"))
+        if backend_index >= 0:
+            self.capsule_backend.setCurrentIndex(backend_index)
+        self.capsule_backend.setEnabled(False)
+        self.status.setText(
+            f"Selected {application.get('name')} with the "
+            f"{application.get('profile_label')} profile."
+        )
+
+    def clear_capsule_applications(self) -> None:
+        self.capsule_apps.clear()
+        self.capsule_backend.setCurrentIndex(0)
+        self.capsule_backend.setEnabled(True)
+        self.status.setText("Application selection cleared.")
+
     def _capsule_values(self) -> tuple[str, str, list[str], list[str], bool] | None:
         name = self.capsule_name.text().strip()
         applications = [
@@ -653,6 +715,30 @@ class MainWindow(QMainWindow):
     def _selected_capsule(self) -> str:
         item = self.capsule_items.currentItem()
         return str(item.data(Qt.UserRole)) if item else ""
+
+    def select_capsule_item(self, current, _previous=None) -> None:
+        if current is None:
+            return
+        name = str(current.data(Qt.UserRole) or "")
+        if not name:
+            return
+        try:
+            capsule = self.controller.capsules.store.load(name)
+        except Exception as error:
+            self.status.setText(f"Could not load workspace capsule: {error}")
+            return
+        self.capsule_name.setText(capsule.name)
+        backend_index = self.capsule_backend.findData(capsule.backend)
+        if backend_index >= 0:
+            self.capsule_backend.setCurrentIndex(backend_index)
+        self.capsule_backend.setEnabled(
+            not capsule.applications or capsule.backend != "flatpak"
+        )
+        self.capsule_apps.setText(
+            ", ".join(application.identity for application in capsule.applications)
+        )
+        self.capsule_folders.setText("; ".join(capsule.mapped_folders))
+        self.capsule_offline.setChecked(capsule.offline)
 
     def preflight_capsule(self) -> None:
         try:

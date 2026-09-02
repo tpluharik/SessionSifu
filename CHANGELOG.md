@@ -4,6 +4,25 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.16
+
+- Replaced free-form capsule application entry in the GNOME and portable
+  managers with a refreshable catalog of installed applications that have an
+  enforceable isolation backend.
+- Added automatic application-profile selection for communications, browsers,
+  development tools, document tools and generic Flatpaks. The selected profile
+  is stored in the encrypted capsule manifest and exposed by preflight.
+- Made those profiles functional: all selected apps receive a private home and
+  XDG tree, Firefox receives a separate browser profile, Chromium-family apps
+  receive a separate user-data directory, and VS Code/VSCodium receive separate
+  user data and extension directories. Signal intentionally uses only its clean
+  XDG identity because its current build rejects the former profile switch.
+- Kept multi-application capsules by allowing catalog entries to be added to a
+  read-only selection, with a separate clear action. Existing capsule manifests
+  remain readable and retain their application selections.
+- Excluded ordinary host executables from the catalog so selecting an app can
+  never silently downgrade a Linux capsule to an uncontained process.
+
 ## 3.5.15
 
 - Fixed Signal capsules opening or focusing the already-running host Signal

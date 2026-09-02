@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.5.15 runtime and release layout. User-facing
+This document describes the 3.5.16 runtime and release layout. User-facing
 Recall steps live in [RECALL_GUIDE.md](RECALL_GUIDE.md).
 
 SessionSifu 3 has a full GNOME runtime, a portable runtime shared by Windows,
@@ -135,6 +135,18 @@ XDG roots, resets broad host-filesystem grants and removes shared credential
 agents without mutating global overrides. The Windows backend emits a
 reviewable `.wsb` file with read-only host mappings. Capsule data deletion is
 an explicit operation independent of manifest deletion.
+
+Both managers populate capsule choices from `flatpak list --app` and retain
+the immutable Flatpak application ID separately from its localized display
+name. A bounded classifier assigns the encrypted manifest's application profile
+from trusted ID/name metadata. The catalog contains no host executable fallback;
+an empty or unavailable catalog is shown as unavailable and launch remains
+fail-closed.
+
+The selected profile is operational rather than cosmetic. The Flatpak command
+builder adds a capsule home/XDG tree to every application and reviewed native
+arguments for Firefox, Chromium-family browsers, VS Code and VSCodium. Argument
+vectors remain structured; no application metadata is evaluated by a shell.
 
 The GNOME top-bar and portable tray open capsule setup directly. A process
 registry owned by the active manager records only successfully spawned capsule
