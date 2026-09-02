@@ -417,12 +417,17 @@ const AutostartService = GObject.registerClass(
             } else {
                 removeAfterRestore = true;
             }
-            return this._restorePreviousSession(removeAfterRestore);
+            let automatic = args.automatic;
+            if (automatic)
+                automatic = automatic.get_boolean();
+            else
+                automatic = true;
+            return this._restorePreviousSession(removeAfterRestore, automatic);
         }
 
-        _restorePreviousSession(removeAfterRestore) {
+        _restorePreviousSession(removeAfterRestore, automatic = true) {
             const enableRestorePreviousSession = this._settings.get_boolean('enable-restore-previous-session');
-            if (!enableRestorePreviousSession) {
+            if (automatic && !enableRestorePreviousSession) {
                 const enableRestoreSelectedSession = this._settings.get_boolean('enable-autorestore-sessions');
                 if (enableRestoreSelectedSession) {
                     return "Ignoring this operation. RestorePreviousSession is disabled, but RestoreSession is enabled";
@@ -437,7 +442,7 @@ const AutostartService = GObject.registerClass(
                 this._log.info(`${msg}, gnome shell layoutManager has been started up.`);
                 Main.notify('SessionSifu', msg);
 
-                this._restorePreviousWithDelay(removeAfterRestore);
+                this._restorePreviousWithDelay(removeAfterRestore, automatic);
                 return msg;
             } else {
                 if (_requiredToRestorePrevious) return;
@@ -449,20 +454,26 @@ const AutostartService = GObject.registerClass(
                     const msg = 'Restoring the previous apps and windows';
                     this._log.info(`${msg} after startup-complete`);
                     Main.notify('SessionSifu', msg);
-                    this._restorePreviousWithDelay(removeAfterRestore);
+                    this._restorePreviousWithDelay(removeAfterRestore, automatic);
                 });
                 return msg;
             }
 
         }
 
-        _restorePreviousWithDelay(removeAfterRestore) {
-            const restorePreviousDelay = this._settings.get_int('restore-previous-delay') * 1000;
+        _restorePreviousWithDelay(removeAfterRestore, automatic = true) {
+            if (this._restorePreviousSourceId) {
+                GLib.Source.remove(this._restorePreviousSourceId);
+                this._restorePreviousSourceId = 0;
+            }
+            const restorePreviousDelay = automatic
+                ? this._settings.get_int('restore-previous-delay') * 1000
+                : 0;
             this._restorePreviousSourceId = GLib.timeout_add(GLib.PRIORITY_LOW, restorePreviousDelay,
                 () => {
                     this._restorePreviousSourceId = 0;
                     const restoreSession = new RestoreSession.RestoreSession();
-                    restoreSession.restorePreviousSession(removeAfterRestore);
+                    restoreSession.restorePreviousSession(removeAfterRestore, automatic);
                     return GLib.SOURCE_REMOVE;
                 });
         }

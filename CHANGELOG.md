@@ -4,6 +4,21 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.17
+
+- Fixed saved-session restoration silently skipping applications that were
+  already running. SessionSifu now applies the saved workspace, monitor,
+  geometry and window state to matching existing windows.
+- Replaced overlapping timer callbacks with an awaited, paced restore queue so
+  one slow application cannot create concurrent restore work in GNOME Shell.
+- Added **Restore previous desktop now** to the manager and
+  **Restore Previous Desktop** to the top-bar menu. Manual recovery bypasses
+  only the automatic crash-loop timer; all application and compositor safety
+  checks remain active.
+- Automatic login restoration now retires successfully handled records. This
+  prevents old duplicates from accumulating into large restore bursts on later
+  logins while retaining records that could not be restored.
+
 ## 3.5.16
 
 - Replaced free-form capsule application entry in the GNOME and portable

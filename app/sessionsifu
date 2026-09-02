@@ -59,7 +59,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.5.16"
+CURRENT_VERSION = "3.5.17"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -2559,6 +2559,16 @@ class ManagerWindow(Adw.ApplicationWindow):
         self.restore_switch.connect("notify::active", self._toggle_restore)
         behavior_group.add(self.restore_switch)
 
+        restore_now_row = Adw.ActionRow(
+            title="Restore previous desktop now",
+            subtitle="Manual recovery remains available if automatic retry protection is active",
+        )
+        restore_now_button = Gtk.Button(label="Restore Now", valign=Gtk.Align.CENTER)
+        restore_now_button.add_css_class("suggested-action")
+        restore_now_button.connect("clicked", self._restore_previous_now)
+        restore_now_row.add_suffix(restore_now_button)
+        behavior_group.add(restore_now_row)
+
         self.indicator_switch = Adw.SwitchRow(
             title="Show top-bar icon",
             subtitle="Provides Save, Restore and session shortcuts in GNOME Shell",
@@ -3475,6 +3485,17 @@ class ManagerWindow(Adw.ApplicationWindow):
         if enabled:
             self._settings.set_boolean("enable-autorestore-sessions", False)
 
+    def _restore_previous_now(self, _button) -> None:
+        result = self._call(
+            "RestorePreviousSession",
+            GLib.Variant("(a{sv})", ({
+                "removeAfterRestore": GLib.Variant("b", True),
+                "automatic": GLib.Variant("b", False),
+            },)),
+        )
+        if result and not result.startswith("ERROR:"):
+            self._message("Restoring the previous desktop in a paced queue.")
+
     def _toggle_indicator(self, row, _param) -> None:
         if self._settings.get_boolean("recall-enabled") and not row.get_active():
             row.set_active(True)
@@ -4040,7 +4061,10 @@ def autostart() -> int:
         return 0
     time.sleep(max(0, min(config.get_int("autostart-delay"), 60)))
     try:
-        call("RestorePreviousSession", GLib.Variant("(a{sv})", ({"removeAfterRestore": GLib.Variant("b", False)},)), 15000)
+        call("RestorePreviousSession", GLib.Variant("(a{sv})", ({
+            "removeAfterRestore": GLib.Variant("b", True),
+            "automatic": GLib.Variant("b", True),
+        },)), 15000)
         return 0
     except GLib.Error as error:
         print(f"sessionsifu: {error.message}", file=sys.stderr)

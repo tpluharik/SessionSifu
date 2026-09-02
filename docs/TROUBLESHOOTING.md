@@ -185,7 +185,7 @@ fallback.
 
 ## A capsule opens the existing Signal instance
 
-Update to 3.5.16 or newer. Signal releases after 7.80 stopped honoring the
+Update to 3.5.17 or newer. Signal releases after 7.80 stopped honoring the
 historical `--user-data-dir` switch, so SessionSifu now blocks Signal in the
 legacy profile backend. All legacy profile-only launches are blocked because
 they are not OS containers. Choose **Isolated Flatpak capsule**, enter `signal`
@@ -211,6 +211,19 @@ Untitled and unsaved in-memory documents, deleted files and applications whose
 desktop entry does not declare a document MIME type cannot be restored
 generically. Protocol-only launchers are deliberately excluded even when their
 command line contains `%U`.
+
+## Restore reports success but windows do not move or reopen
+
+Update to 3.5.17 or newer. Older releases filtered out an application when it
+was already running and had no restorable document, which made restoration look
+successful without applying its saved window layout. Current releases restore
+matching existing windows and process every application through one paced queue.
+
+If automatic retry protection paused restoration after a recent desktop restart,
+use **Restore previous desktop now** in the manager or **Restore Previous
+Desktop** in the top-bar menu. This manual action keeps the normal application,
+window and compositor safety checks. Successfully restored previous-session
+records are then retired; records that fail remain available for another attempt.
 
 ## SessionSifu was turned off from the top bar
 

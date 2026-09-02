@@ -1,11 +1,11 @@
 {
-  "version": "3.5.16",
+  "version": "3.5.17",
   "channel": "stable",
-  "issued_at": "2026-09-02T08:14:13Z",
-  "expires_at": "2026-10-17T08:14:13Z",
+  "issued_at": "2026-09-02T09:03:51Z",
+  "expires_at": "2026-10-17T09:03:51Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.16_all.deb",
-  "sha256": "eea70c64ef1dc34022238cc6d15dee58eb57e0c49632155d51edb5dfaad5dfca",
-  "size": 3775682,
-  "notes": "SessionSifu 3.5.16 discovers installed Flatpak applications for capsule selection and automatically assigns a communications, browser, development, documents or generic isolated profile. Host executables remain excluded so capsule creation cannot silently downgrade containment."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.17_all.deb",
+  "sha256": "e865bd3cb1d43287978ccc9ef65892eaec8b604faa6a6c449ae6d2136206a343",
+  "size": 3775522,
+  "notes": "SessionSifu 3.5.17 fixes session restoration for applications that are already running, serializes restore work through a paced queue, adds manual previous-desktop recovery, and retires successfully restored login records to prevent duplicate restore bursts."
 }

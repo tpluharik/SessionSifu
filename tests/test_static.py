@@ -48,8 +48,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.5.16"
-assert metadata["version"] == 50
+assert metadata["version-name"] == "3.5.17"
+assert metadata["version"] == 51
 autostart_source = (extension / "ui" / "autostart.js").read_text()
 file_utils_source = (extension / "utils" / "fileUtils.js").read_text()
 assert "extensionObject.metadata['version-name']" in file_utils_source
@@ -87,7 +87,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.5.16"' in build_script
+assert 'version="3.5.17"' in build_script
 package_control = (root / "packaging" / "control").read_text()
 assert "python3-pyatspi" in package_control
 assert "gnome-settings-daemon-common" in package_control
@@ -184,7 +184,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.5.16"' in app_source
+assert 'CURRENT_VERSION = "3.5.17"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -385,7 +385,18 @@ assert "_waitForCompositor()" in source_text
 assert "move_frame(true" not in source_text
 assert "Main.activateWindow(metaWindow" not in source_text
 assert "mayRestoreApplications" in source_text
-assert "restorePreviousDelay = this._settings.get_int('restore-previous-delay') * 1000" in source_text
+assert "const restorePreviousDelay = automatic" in source_text
+assert "restorePreviousSession(removeAfterRestore, automatic)" in source_text
+assert "restorePreviousSession(removeAfterRestore, automatic = true)" in source_text
+assert "moveWindowsByShellApp(" in source_text
+assert "No matching existing window was found" in source_text
+assert "return restoredAny" in source_text
+assert "removeAfterRestore && launched" in source_text
+assert "this._appIsRunning(shellApp) && savedDocuments.length === 0" not in source_text
+assert "Restore Previous Desktop" in source_text
+assert '"automatic": GLib.Variant("b", False)' in app_source
+assert '"automatic": GLib.Variant("b", True)' in app_source
+assert '"removeAfterRestore": GLib.Variant("b", True)' in app_source
 assert "_sessionApplicationKey" in source_text
 assert "command-sha256:" in source_text
 assert "session.cmd.join('\\u0000')" not in source_text
@@ -423,7 +434,7 @@ for required in (
     assert required.is_file(), required
 
 roadmap = (root / "ROADMAP.md").read_text()
-assert "## Shipped foundation — 3.5.16" in roadmap
+assert "## Shipped foundation — 3.5.17" in roadmap
 for shipped_feature in ("semantic embedding", "restore journals", "scene grouping", "collections", "JetBrains", "monitor identity", "Ask history", "MCP", "export/import"):
     assert shipped_feature in roadmap
 assert "## Explicit non-goals" in roadmap

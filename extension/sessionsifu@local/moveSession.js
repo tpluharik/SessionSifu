@@ -101,9 +101,10 @@ export const MoveSession = class {
             const interestingWindows = this._getAutoMoveInterestingWindows(shellApp, saved_window_sessions);
 
             if (!interestingWindows.length) {
-                return;
+                return false;
             }
 
+            let restoredAny = false;
             for (const interestingWindow of interestingWindows) {
                 const metaWindow = interestingWindow.open_window;
                 if (UiHelper.ignoreWindows(metaWindow) || !this._isWindowUsable(metaWindow))
@@ -136,11 +137,14 @@ export const MoveSession = class {
                     this._log.error(e, `Failed to move window ${title} for ${shellApp.get_name()} automatically`);
                 }
                 saved_window_session.moved = true;
+                restoredAny = true;
                 if (!await this._waitForCompositor())
-                    return;
+                    return restoredAny;
             }
+            return restoredAny;
         } catch (error) {
             this._log.error(error, shellApp ? shellApp.get_name() : 'This app may be closed.');
+            return false;
         }
     }
 

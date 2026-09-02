@@ -11,6 +11,7 @@ import * as SubprocessUtils from './utils/subprocessUtils.js';
 import * as DateUtils from './utils/dateUtils.js';
 import * as StringUtils from './utils/stringUtils.js';
 import * as OpenFiles from './openFiles.js';
+import * as MoveSession from './moveSession.js';
 import {mayRestoreApplications} from './runtimeSafety.js';
 import {MAX_WORKSPACE_INDEX} from './windowSafety.js';
 import {
@@ -52,6 +53,7 @@ export const RestoreSession = class {
         // All launched apps info by Shell.App#launch()
         this._restoredApps = new Map();
         this._launchedFilesByApp = new Map();
+        this._moveSession = new MoveSession.MoveSession();
 
         // Tracking cmd and appId mapping
         this._cmdAppIdMap = new Map();
@@ -101,15 +103,12 @@ export const RestoreSession = class {
         }
 
         this._log.info('Restoring a validated saved session');
-        try {
-            this.restoreSessionFromFile(
-                session_file_path, selectedApplicationKeys, automatic);
-        } catch (e) {
-            logError(e, 'Failed to restore saved session');
-        }
+        this.restoreSessionFromFile(
+            session_file_path, selectedApplicationKeys, automatic)
+            .catch(e => logError(e, 'Failed to restore saved session'));
     }
 
-    restoreSessionFromFile(
+    async restoreSessionFromFile(
         session_file_path, selectedApplicationKeys = null, automatic = false
     ) {
         if (!mayRestoreApplications() || this._destroyed)
@@ -152,55 +151,27 @@ export const RestoreSession = class {
             }
         }
 
-        session_config_objects = session_config_objects.filter(session_config_object => {
-            const desktop_file_id = session_config_object.desktop_file_id;
-            if (!desktop_file_id) {
-                return true;
-            }
-            const shellApp = this._defaultAppSystem.lookup_app(desktop_file_id);
-            if (!shellApp) {
-                return true;
-            }
+        if (session_config_objects.length === 0) return;
 
-            const canRestoreDocuments = OpenFiles.appInfoSupportsDocumentFiles(
-                shellApp.get_app_info());
-            const savedDocuments = canRestoreDocuments
-                ? OpenFiles.existingOpenFiles(session_config_object.open_files)
-                : [];
-            if (this._appIsRunning(shellApp) && savedDocuments.length === 0) {
-                this._log.debug(`${shellApp.get_name()} is already running`)
+        const interval = automatic
+            ? Math.max(this._restore_session_interval, AUTOMATIC_RESTORE_INTERVAL_MS)
+            : this._restore_session_interval;
+        for (let index = 0; index < session_config_objects.length; index++) {
+            if (!mayRestoreApplications() || this._destroyed)
                 return false;
-            }
-
-            return true;
-        });
-        if (session_config_objects.length === 0) return;
-
-        this._restoreOneSession(session_config_objects.shift());
-        if (session_config_objects.length === 0) return;
-
-        this._restoreSessionTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
-            // In milliseconds.
-            // Note that this timing might not be precise, see https://gjs-docs.gnome.org/glib20~2.66.1/glib.timeout_add
-            automatic
-                ? Math.max(this._restore_session_interval, AUTOMATIC_RESTORE_INTERVAL_MS)
-                : this._restore_session_interval,
-            () => {
-                if (!session_config_objects.length || !mayRestoreApplications() ||
-                    this._destroyed) {
-                    return GLib.SOURCE_REMOVE;
-                }
-                this._restoreOneSession(session_config_objects.shift());
-                return GLib.SOURCE_CONTINUE;
-            }
-        );
+            await this._restoreOneSession(session_config_objects[index]);
+            if (session_config_objects[index + 1] &&
+                !await this._waitBeforeNextRestore(interval))
+                return false;
+        }
+        return true;
     }
 
-    async restorePreviousSession(removeAfterRestore) {
+    async restorePreviousSession(removeAfterRestore, automatic = true) {
         try {
             if (!mayRestoreApplications() || this._destroyed)
                 return;
-            if (!this._beginAutomaticRestore())
+            if (automatic && !this._beginAutomaticRestore())
                 return;
 
             this._log.info(`Restoring the previous session from ${FileUtils.current_session_path}`);
@@ -295,8 +266,8 @@ export const RestoreSession = class {
                     if (!mayRestoreApplications() || this._destroyed)
                         break;
                     const {file, sessionConfig} = groupEntries[entryIndex];
-                    const [launched, running] = await this._restoreOneSession(sessionConfig);
-                    if (removeAfterRestore && launched && !running) {
+                    const [launched] = await this._restoreOneSession(sessionConfig);
+                    if (removeAfterRestore && launched) {
                         this._log.debug(`Restored one window for ${sessionConfig.app_name}`);
                         FileUtils.removeFile(file.get_path());
                     }
@@ -397,102 +368,112 @@ export const RestoreSession = class {
             if (!mayRestoreApplications() || this._destroyed)
                 return [launched, running];
 
-            return await new Promise((resolve, reject) => {
-                let desktop_file_id = session_config_object.desktop_file_id;
-                const shell_app = desktop_file_id ? this._defaultAppSystem.lookup_app(desktop_file_id) : null;
-                if (shell_app) {
-                    const restoringShellAppData = restoreSessionObject.restoringApps.get(shell_app);
-                    if (restoringShellAppData) {
-                        restoringShellAppData.saved_window_sessions.push(session_config_object);
+            const desktop_file_id = session_config_object.desktop_file_id;
+            const shell_app = desktop_file_id
+                ? this._defaultAppSystem.lookup_app(desktop_file_id)
+                : null;
+            if (shell_app) {
+                const appWasRunning = this._appIsRunning(shell_app);
+                const appInfo = shell_app.get_app_info();
+                const restorableDocuments = OpenFiles.appInfoSupportsDocumentFiles(appInfo)
+                    ? OpenFiles.existingOpenFiles(session_config_object.open_files)
+                    : [];
+                const restoringShellAppData = restoreSessionObject.restoringApps.get(shell_app);
+                if (restoringShellAppData) {
+                    restoringShellAppData.saved_window_sessions.push(session_config_object);
+                } else {
+                    restoreSessionObject.restoringApps.set(shell_app, {
+                        saved_window_sessions: [session_config_object]
+                    });
+                }
+
+                [launched, running] = this.launch(
+                    shell_app,
+                    session_config_object.desktop_number,
+                    session_config_object.open_files);
+                if (launched) {
+                    if (!running)
+                        this._log.info(`${app_name} launched; preparing its saved window state`);
+                    const existingShellAppData = this._restoredApps.get(shell_app);
+                    if (existingShellAppData) {
+                        existingShellAppData.saved_window_sessions.push(session_config_object);
                     } else {
-                        restoreSessionObject.restoringApps.set(shell_app, {
+                        this._restoredApps.set(shell_app, {
                             saved_window_sessions: [session_config_object]
                         });
                     }
 
-                    const desktopNumber = session_config_object.desktop_number;
-                    [launched, running] = this.launch(
-                        shell_app,
-                        desktopNumber,
-                        session_config_object.open_files);
-                    if (launched) {
-                        if (!running) {
-                            this._log.info(`${app_name} launched; preparing its saved window state`);
+                    // A running application may not create another window. Apply
+                    // the saved state to its existing matching window instead of
+                    // silently treating the record as restored.
+                    if (appWasRunning && restorableDocuments.length === 0) {
+                        const movedExisting = await this._moveSession.moveWindowsByShellApp(
+                            shell_app, [session_config_object]);
+                        if (!movedExisting) {
+                            launched = false;
+                            this._log.warn(
+                                `No matching existing window was found for ${app_name}; retaining its restore record`);
                         }
-                        const existingShellAppData = this._restoredApps.get(shell_app);
-                        if (existingShellAppData) {
-                            existingShellAppData.saved_window_sessions.push(session_config_object);
-                        } else {
-                            this._restoredApps.set(shell_app, {
-                                saved_window_sessions: [session_config_object]
-                            });
-                        }
-                    } else {
-                        this._log.error(`Failed to launch ${app_name}`, `Failed to launch ${app_name}`);
-                        global.notify_error(`Failed to launch ${app_name}`, `Failed to launch ${app_name}`);
                     }
-                    resolve([launched, running]);
                 } else {
-                    // https://gjs-docs.gnome.org/gio20~2.0/gio.subprocesslauncher#method-set_environ
-                    // TODO Support snap apps
-
-                    const cmd = session_config_object.cmd;
-                    if (cmd && cmd.length) {
-                        if (!restoreCommandAllowed(cmd)) {
-                            const message = `Refused to launch unsafe Shell helper ${app_name}`;
-                            this._log.warn(message);
-                            global.notify_error(
-                                message,
-                                'SessionSifu will not relaunch compositor or desktop services.');
-                            resolve([launched, running]);
-                            return;
-                        }
-                        const cmdKey = cmd.join('\0');
-                        const pid = this._cmdAppIdMap.get(cmdKey);
-                        if (pid) {
-                            this._log.debug(`${app_name} might be running; preparing saved state`);
-
-                            // Here we use pid as the key, because the associated ShellApp might not be instantiated at this moment
-                            const restoringShellAppData = restoreSessionObject.restoringApps.get(pid);
-                            if (restoringShellAppData) {
-                                restoringShellAppData.saved_window_sessions.push(session_config_object);
-                            } else {
-                                restoreSessionObject.restoringApps.set(pid, {
-                                    saved_window_sessions: [session_config_object]
-                                });
-                            }
-                            launched = true;
-                            running = true;
-                            resolve([launched, running]);
-                            return;
-                        }
-
-                        try {
-                            const [, childPid, normalizedKey] = SubprocessUtils.spawnDirectArgv(cmd);
-                            this._log.info(`Launching ${app_name} using a validated argument array`);
-                            this._cmdAppIdMap.set(cmdKey, childPid);
-                            this._cmdAppIdMap.set(normalizedKey, childPid);
-                            restoreSessionObject.restoringApps.set(childPid, {
-                                saved_window_sessions: [session_config_object]
-                            });
-                            launched = true;
-                            resolve([launched, running]);
-                        } catch (error) {
-                            const message = `Failed to launch ${app_name} safely`;
-                            this._log.error(error, message);
-                            global.notify_error(message, 'The saved executable or arguments were rejected.');
-                            resolve([launched, running]);
-                        }
-                    } else {
-                        // TODO try to launch via app_info by searching the app name?
-                        let errorMsg = `Failed to launch ${app_name} via command line`;
-                        let errorDetail = 'The saved argument array is missing or invalid.';
-                        this._log.error(errorMsg, errorDetail);
-                        global.notify_error(errorMsg, errorDetail);
-                        resolve([launched, running]);
-                    }
+                    this._log.error(`Failed to launch ${app_name}`, `Failed to launch ${app_name}`);
+                    global.notify_error(`Failed to launch ${app_name}`, `Failed to launch ${app_name}`);
                 }
-            });
+                return [launched, running];
+            }
+
+            // https://gjs-docs.gnome.org/gio20~2.0/gio.subprocesslauncher#method-set_environ
+            // TODO Support snap apps
+            const cmd = session_config_object.cmd;
+            if (cmd && cmd.length) {
+                if (!restoreCommandAllowed(cmd)) {
+                    const message = `Refused to launch unsafe Shell helper ${app_name}`;
+                    this._log.warn(message);
+                    global.notify_error(
+                        message,
+                        'SessionSifu will not relaunch compositor or desktop services.');
+                    return [launched, running];
+                }
+                const cmdKey = cmd.join('\0');
+                const pid = this._cmdAppIdMap.get(cmdKey);
+                if (pid) {
+                    this._log.debug(`${app_name} might be running; preparing saved state`);
+
+                    // Here we use pid as the key, because the associated ShellApp might not be instantiated at this moment
+                    const restoringShellAppData = restoreSessionObject.restoringApps.get(pid);
+                    if (restoringShellAppData) {
+                        restoringShellAppData.saved_window_sessions.push(session_config_object);
+                    } else {
+                        restoreSessionObject.restoringApps.set(pid, {
+                            saved_window_sessions: [session_config_object]
+                        });
+                    }
+                    launched = true;
+                    running = true;
+                    return [launched, running];
+                }
+
+                try {
+                    const [, childPid, normalizedKey] = SubprocessUtils.spawnDirectArgv(cmd);
+                    this._log.info(`Launching ${app_name} using a validated argument array`);
+                    this._cmdAppIdMap.set(cmdKey, childPid);
+                    this._cmdAppIdMap.set(normalizedKey, childPid);
+                    restoreSessionObject.restoringApps.set(childPid, {
+                        saved_window_sessions: [session_config_object]
+                    });
+                    launched = true;
+                } catch (error) {
+                    const message = `Failed to launch ${app_name} safely`;
+                    this._log.error(error, message);
+                    global.notify_error(message, 'The saved executable or arguments were rejected.');
+                }
+            } else {
+                const errorMsg = `Failed to launch ${app_name} via command line`;
+                const errorDetail = 'The saved argument array is missing or invalid.';
+                this._log.error(errorMsg, errorDetail);
+                global.notify_error(errorMsg, errorDetail);
+            }
+            return [launched, running];
         } catch (e) {
             logError(e, `Failed to restore ${app_name}`);
             if (!launched) {
@@ -598,6 +579,10 @@ export const RestoreSession = class {
             this._launchedFilesByApp.clear();
             this._launchedFilesByApp = null;
         }
+        if (this._moveSession) {
+            this._moveSession.destroy();
+            this._moveSession = null;
+        }
 
         if (this._defaultAppSystem) {
             this._defaultAppSystem = null;
@@ -617,11 +602,6 @@ export const RestoreSession = class {
                 obj.disconnect(id);
             }
             this._connectIds = null;
-        }
-
-        if (this._restoreSessionTimeoutId) {
-            GLib.Source.remove(this._restoreSessionTimeoutId);
-            this._restoreSessionTimeoutId = null;
         }
 
     }

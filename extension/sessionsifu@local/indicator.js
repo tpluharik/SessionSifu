@@ -446,6 +446,11 @@ class AwsIndicator extends PanelMenu.Button {
                 this._log.error(error, 'Could not open Workspace Capsule setup');
             }
         });
+        this.menu.addAction('Restore Previous Desktop', () => {
+            const restorer = new RestoreSession.RestoreSession();
+            restorer.restorePreviousSession(true, false).catch(error =>
+                this._log.error(error, 'Could not restore the previous desktop'));
+        });
         this._recallChangedId = this._settings.connect(
             'changed::recall-enabled', () => this._updateRecallItem());
         this._recallPauseChangedId = this._settings.connect(
