@@ -4,6 +4,26 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.18
+
+- Fixed another GNOME 50/Wayland crash path observed in live Shell logs when
+  automatic login restoration touched half-mapped windows whose applications
+  were still in the `STARTING` state. Such windows now wait for the existing
+  shown/title settle callbacks; immediate layout changes are reserved for
+  stable `RUNNING` applications.
+- Reduced one automatic login batch to four applications and two windows per
+  application, with eight seconds between application groups and 750
+  milliseconds between window mutations. Named/manual restore remains
+  available for larger explicitly reviewed layouts.
+- Changed the automatic restore timestamp into a completion marker. A complete
+  restore clears it; a Shell interruption leaves it set and blocks another
+  automatic attempt for 24 hours, preventing repeated black-screen loops while
+  keeping manual recovery available.
+- Reduced the pre-plan previous-session ceiling from 64 to 32 records and added
+  regression assertions for every new compositor-safety bound.
+- Included the new session restoration guide in Debian and signed in-app update
+  packages.
+
 ## 3.5.17
 
 - Fixed saved-session restoration silently skipping applications that were

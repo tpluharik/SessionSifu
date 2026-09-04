@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.5.17 runtime and release layout. User-facing
+This document describes the 3.5.18 runtime and release layout. User-facing
 steps live in the [session restoration guide](RESTORE_GUIDE.md) and
 [Privacy Recall guide](RECALL_GUIDE.md).
 
@@ -62,6 +62,14 @@ Previous-session files are restored through a paced queue rather than parallel
 callbacks. A shared runtime safety gate stops launches and window operations as
 soon as GNOME confirms logout, reboot or shutdown; canceling the end-session
 dialog reopens the gate.
+
+Automatic GNOME recovery admits at most four application groups and two saved
+windows per group, with an eight-second inter-application delay. Windows owned
+by an application still in `Shell.AppState.STARTING` are never mutated through
+the immediate existing-window path; the indicator waits for the window's
+shown/title settle callbacks. The automatic-attempt marker is cleared only on a
+complete restore, so a Shell interruption suppresses another automatic attempt
+for 24 hours without disabling reviewed manual restore.
 
 `continuousSaver.js` owns the rolling history timer. It reads the GSettings
 interval, performs an initial save shortly after startup, prevents overlapping

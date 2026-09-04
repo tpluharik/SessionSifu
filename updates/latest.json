@@ -1,11 +1,11 @@
 {
-  "version": "3.5.17",
+  "version": "3.5.18",
   "channel": "stable",
-  "issued_at": "2026-09-02T09:03:51Z",
-  "expires_at": "2026-10-17T09:03:51Z",
+  "issued_at": "2026-09-04T08:00:27Z",
+  "expires_at": "2026-10-19T08:00:27Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.17_all.deb",
-  "sha256": "e865bd3cb1d43287978ccc9ef65892eaec8b604faa6a6c449ae6d2136206a343",
-  "size": 3775522,
-  "notes": "SessionSifu 3.5.17 fixes session restoration for applications that are already running, serializes restore work through a paced queue, adds manual previous-desktop recovery, and retires successfully restored login records to prevent duplicate restore bursts."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.18_all.deb",
+  "sha256": "1f598f2114e64a4f0392dca12b51795fd940238058a2ac200cab5ec0f313b278",
+  "size": 3773014,
+  "notes": "SessionSifu 3.5.18 prevents repeated GNOME/Wayland restore crashes by waiting for starting applications to settle, bounding automatic login recovery to four applications and two windows each, slowing compositor mutations, and retaining a 24-hour crash marker only when restoration is interrupted."
 }

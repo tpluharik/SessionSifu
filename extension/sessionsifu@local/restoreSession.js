@@ -151,7 +151,11 @@ export const RestoreSession = class {
             }
         }
 
-        if (session_config_objects.length === 0) return;
+        if (session_config_objects.length === 0) {
+            if (automatic)
+                this._completeAutomaticRestore();
+            return true;
+        }
 
         const interval = automatic
             ? Math.max(this._restore_session_interval, AUTOMATIC_RESTORE_INTERVAL_MS)
@@ -164,6 +168,8 @@ export const RestoreSession = class {
                 !await this._waitBeforeNextRestore(interval))
                 return false;
         }
+        if (automatic)
+            this._completeAutomaticRestore();
         return true;
     }
 
@@ -257,14 +263,15 @@ export const RestoreSession = class {
                 }
             }
 
+            let completed = true;
             for (let groupIndex = 0; groupIndex < planned.groups.length; groupIndex++) {
                 if (!mayRestoreApplications() || this._destroyed)
-                    break;
+                    return;
 
                 const groupEntries = planned.groups[groupIndex].entries;
                 for (let entryIndex = 0; entryIndex < groupEntries.length; entryIndex++) {
                     if (!mayRestoreApplications() || this._destroyed)
-                        break;
+                        return;
                     const {file, sessionConfig} = groupEntries[entryIndex];
                     const [launched] = await this._restoreOneSession(sessionConfig);
                     if (removeAfterRestore && launched) {
@@ -272,14 +279,20 @@ export const RestoreSession = class {
                         FileUtils.removeFile(file.get_path());
                     }
                     if (groupEntries[entryIndex + 1] &&
-                        !await this._waitBeforeNextRestore(MIN_RESTORE_INTERVAL_MS))
+                        !await this._waitBeforeNextRestore(MIN_RESTORE_INTERVAL_MS)) {
+                        completed = false;
                         break;
+                    }
                 }
 
                 if (planned.groups[groupIndex + 1] &&
-                    !await this._waitBeforeNextRestore(AUTOMATIC_RESTORE_INTERVAL_MS))
+                    !await this._waitBeforeNextRestore(AUTOMATIC_RESTORE_INTERVAL_MS)) {
+                    completed = false;
                     break;
+                }
             }
+            if (automatic && completed && mayRestoreApplications() && !this._destroyed)
+                this._completeAutomaticRestore();
         } catch (error) {
             this._log.error(error);
         }
@@ -311,6 +324,11 @@ export const RestoreSession = class {
         }
         this._settings.set_int64('last-automatic-restore-attempt', now);
         return true;
+    }
+
+    _completeAutomaticRestore() {
+        this._settings.set_int64('last-automatic-restore-attempt', 0);
+        this._log.info('Automatic restore completed; cleared the crash-loop marker');
     }
 
     _sessionApplicationKey(sessionConfig) {
@@ -373,7 +391,13 @@ export const RestoreSession = class {
                 ? this._defaultAppSystem.lookup_app(desktop_file_id)
                 : null;
             if (shell_app) {
-                const appWasRunning = this._appIsRunning(shell_app);
+                // STARTING applications can expose half-mapped windows while
+                // their StartupNotify transaction is still active. Touching
+                // those windows immediately has crashed Mutter on Wayland.
+                // The indicator's shown/title callbacks restore them after the
+                // normal settle delay; only stable RUNNING apps are moved here.
+                const appWasStableRunning =
+                    shell_app.get_state() === Shell.AppState.RUNNING;
                 const appInfo = shell_app.get_app_info();
                 const restorableDocuments = OpenFiles.appInfoSupportsDocumentFiles(appInfo)
                     ? OpenFiles.existingOpenFiles(session_config_object.open_files)
@@ -406,7 +430,7 @@ export const RestoreSession = class {
                     // A running application may not create another window. Apply
                     // the saved state to its existing matching window instead of
                     // silently treating the record as restored.
-                    if (appWasRunning && restorableDocuments.length === 0) {
+                    if (appWasStableRunning && restorableDocuments.length === 0) {
                         const movedExisting = await this._moveSession.moveWindowsByShellApp(
                             shell_app, [session_config_object]);
                         if (!movedExisting) {

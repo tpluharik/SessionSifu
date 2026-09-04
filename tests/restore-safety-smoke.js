@@ -40,10 +40,12 @@ if (deduplicated.entries.length !== 2 || deduplicated.duplicates.length !== 1)
 if (!deduplicated.entries.includes(newEntry) || !deduplicated.duplicates.includes(oldEntry))
     throw new Error('The newest duplicate previous-session window was not retained');
 
-if (MIN_RESTORE_INTERVAL_MS < 750 || WINDOW_RESTORE_INTERVAL_MS < 250 ||
-    MAX_PREVIOUS_SESSION_WINDOWS > 100)
+if (MIN_RESTORE_INTERVAL_MS < 1000 || WINDOW_RESTORE_INTERVAL_MS < 750 ||
+    MAX_PREVIOUS_SESSION_WINDOWS > 32 ||
+    MAX_AUTOMATIC_RESTORE_APPLICATIONS > 4 ||
+    MAX_AUTOMATIC_WINDOWS_PER_APPLICATION > 2)
     throw new Error('Previous-session restore safety limits are too permissive');
-if (AUTOMATIC_RESTORE_COOLDOWN_SECONDS < 5 * 60 ||
+if (AUTOMATIC_RESTORE_COOLDOWN_SECONDS < 24 * 60 * 60 ||
     !automaticRestoreAttemptAllowed(0, 1000) ||
     automaticRestoreAttemptAllowed(950, 1000) ||
     !automaticRestoreAttemptAllowed(1, 1000, 100))
@@ -87,7 +89,7 @@ if (automaticPlan.groups.some(group =>
     throw new Error('Automatic restore per-application window cap was not applied');
 if (automaticPlan.rejected.length !== 1)
     throw new Error('Command-only Shell helper was not rejected');
-if (AUTOMATIC_RESTORE_INTERVAL_MS < 2000)
+if (AUTOMATIC_RESTORE_INTERVAL_MS < 8000)
     throw new Error('Automatic restore launch pacing is too aggressive');
 
 for (const command of [

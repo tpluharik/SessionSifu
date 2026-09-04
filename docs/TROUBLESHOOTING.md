@@ -2,19 +2,27 @@
 
 ## Wayland returns to a black screen while restoring a session
 
-Upgrade to SessionSifu 3.5.9 or newer. Earlier releases could allow several
+Upgrade to SessionSifu 3.5.18 or newer. Earlier releases could allow several
 newly launched windows to change monitor, geometry, workspace and focus at the
 same time. A crash-recovery directory could also retain older records with
 changing window titles, making one login restore far more windows than were
 actually open. On GNOME/Mutter this could terminate the compositor without an
 application core dump.
 
-Version 3.5.9 serializes and paces window changes, caps automatic recovery to
-the newest saved window count, never forces focus across workspaces, clamps
-geometry to the live monitor work area, and pauses automatic recovery for ten
-minutes after an attempt. Manual restore stays available during this pause.
-The pause prevents the same restore from immediately repeating if GNOME Shell
-is restarted.
+Version 3.5.18 also addresses a second failure reproduced on GNOME Shell 50:
+an application in the `STARTING` state could already expose a half-mapped
+window, and immediate monitor/geometry/workspace changes could race its active
+StartupNotify transaction. SessionSifu now waits for the normal shown/title
+settle callbacks before touching such a window. Immediate reuse is limited to
+applications that GNOME reports as stably `RUNNING`.
+
+Automatic login recovery is now limited to four applications and two windows
+per application in one attempt, with eight seconds between application groups
+and at least 750 milliseconds between window mutations. Larger layouts remain
+available through the reviewed manual restore workflow. A successful automatic
+restore clears its attempt marker; if GNOME Shell disappears mid-restore, the
+marker remains and blocks another automatic attempt for 24 hours. Manual
+restore stays available during that guard period.
 
 If the affected desktop cannot remain open long enough to update, disable the
 extension from a text console, log back in, update SessionSifu, then enable the
@@ -26,6 +34,9 @@ gnome-extensions disable sessionsifu@local
 
 The fix does not delete named sessions or Recall history. After updating, use
 the restore preview to deselect applications that you do not want to relaunch.
+If 3.5.18 reports **Automatic restore paused**, that is evidence that the prior
+attempt did not complete. Inspect the saved selection and use manual restore
+rather than clearing the marker and repeating the same automatic batch.
 
 ## The control panel does not open after an in-app update
 

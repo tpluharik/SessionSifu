@@ -1,3 +1,11 @@
+sessionsifu (3.5.18-1~ppa1~resolute1) resolute; urgency=high
+
+  * Avoid touching windows while their applications are still starting.
+  * Bound and slow automatic login restoration on GNOME/Wayland.
+  * Preserve an interrupted-restore marker to prevent black-screen loops.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Fri, 04 Sep 2026 10:30:00 +0200
+
 sessionsifu (3.5.17-1~ppa1~resolute1) resolute; urgency=high
 
   * Restore matching windows for applications that are already running.

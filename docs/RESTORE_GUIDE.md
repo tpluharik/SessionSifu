@@ -1,6 +1,6 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.17.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.18.
 It covers named sessions, rolling automatic history and the optional previous-
 desktop restore on GNOME, KDE Plasma, Windows, macOS and portable Linux.
 
@@ -51,7 +51,10 @@ declares support for their real file type.
 Enable **Restore previous desktop after login** only when you want automatic
 recovery. SessionSifu waits for its startup delay, rejects helper and command-
 only processes, then restores visible desktop applications through the same
-bounded queue used by manual restoration.
+bounded queue used by manual restoration. On GNOME/Wayland, one automatic
+attempt processes at most four applications and two windows per application.
+The remaining records are retained for manual recovery instead of being forced
+through the compositor during login.
 
 If automatic retry protection is active after a desktop restart, use
 **Restore previous desktop now** in the manager or **Restore Previous Desktop**
@@ -61,7 +64,9 @@ application, selection and compositor safety checks remain active.
 Successfully handled previous-session records are retired after the restore.
 Records that could not be handled remain available for another attempt. This
 prevents old successful entries from accumulating into a large duplicate launch
-burst on a later login.
+burst on a later login. A completed automatic restore clears its crash marker;
+an interrupted Shell leaves the marker active for 24 hours so login cannot
+immediately repeat the same failing batch.
 
 ## What can and cannot return
 

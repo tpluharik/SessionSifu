@@ -5,7 +5,7 @@ project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 extension_dir="$project_dir/extension/sessionsifu@local"
 dist_dir="$project_dir/dist"
 updates_dir="$project_dir/updates"
-version="3.5.17"
+version="3.5.18"
 package="$dist_dir/sessionsifu_${version}_all.deb"
 update_package="$updates_dir/sessionsifu_${version}_all.deb"
 stage=$(mktemp -d /tmp/sessionsifu-package.XXXXXX)
@@ -86,6 +86,7 @@ install -m 0644 "$project_dir/docs/SECURITY_AUDIT.md" "$stage/usr/share/doc/sess
 install -m 0644 "$project_dir/docs/PRIVACY.md" "$stage/usr/share/doc/sessionsifu/docs/PRIVACY.md"
 install -m 0644 "$project_dir/docs/RECALL_RESEARCH.md" "$stage/usr/share/doc/sessionsifu/docs/RECALL_RESEARCH.md"
 install -m 0644 "$project_dir/docs/RECALL_GUIDE.md" "$stage/usr/share/doc/sessionsifu/docs/RECALL_GUIDE.md"
+install -m 0644 "$project_dir/docs/RESTORE_GUIDE.md" "$stage/usr/share/doc/sessionsifu/docs/RESTORE_GUIDE.md"
 install -m 0644 "$project_dir/docs/COMPETITIVE_ANALYSIS.md" "$stage/usr/share/doc/sessionsifu/docs/COMPETITIVE_ANALYSIS.md"
 install -m 0644 "$project_dir/docs/RELEASE_SECURITY.md" "$stage/usr/share/doc/sessionsifu/docs/RELEASE_SECURITY.md"
 install -m 0644 "$project_dir/docs/PUBLISHING.md" "$stage/usr/share/doc/sessionsifu/docs/PUBLISHING.md"
