@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.20_all.deb",
   "sha256": "6e9c570552f7419366293b9edb1e963bd23c5b168199d4fd86690f4ec00fad95",
   "size": 3780858,
-  "notes": "SessionSifu 3.5.20 restores complete paced application queues, removes the day-long global retry block, isolates interrupted applications, adds launch readiness deadlines and visible progress, and preserves failed or updated recovery records. Update the GNOME integration and log out/in once to load the fix."
+  "notes": "SessionSifu 3.5.20 serializes launch, window-layout and Recall screenshot operations across the GNOME extension, cancels stale restore callbacks and retains incomplete window layouts. Normal restore and Recall remain enabled. Update the GNOME integration and log out/in once to load the changes. The hardware-specific shutdown cause remains under investigation."
 }
