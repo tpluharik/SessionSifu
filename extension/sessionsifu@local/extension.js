@@ -18,6 +18,7 @@ import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/ex
 import * as Log from './utils/log.js';
 import * as FileUtils from './utils/fileUtils.js';
 import {prefsUtilsInit, prefsUtilsDestroy} from './utils/prefsUtils.js';
+import {beginShutdown, cancelShutdown} from './runtimeSafety.js';
 
 
 let _indicator;
@@ -39,6 +40,8 @@ export default class SessionSifuExtension extends Extension {
     }
 
     enable() {
+        cancelShutdown();
+        this._shutdownId = global.connect('shutdown', () => beginShutdown());
         // settings is needed by the initialization of some utils
         this._settings = this.getSettings('org.gnome.shell.extensions.sessionsifu');
         this._recallShortcutRegistered = false;
@@ -139,6 +142,12 @@ export default class SessionSifuExtension extends Extension {
     }
 
     disable() {
+        // Gate pending callbacks before destroying UI, settings or Meta objects.
+        beginShutdown();
+        if (this._shutdownId) {
+            global.disconnect(this._shutdownId);
+            this._shutdownId = 0;
+        }
 
         this._removeRecallShortcut();
 

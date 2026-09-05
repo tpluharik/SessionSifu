@@ -2,12 +2,18 @@
 
 ## Wayland returns to a black screen while restoring a session
 
-Upgrade to SessionSifu 3.5.19 or newer. Earlier releases could allow several
-newly launched windows to change monitor, geometry, workspace and focus at the
-same time. A crash-recovery directory could also retain older records with
-changing window titles, making one login restore far more windows than were
-actually open. On GNOME/Mutter this could terminate the compositor without an
-application core dump.
+SessionSifu 3.5.20 fixes overlapping SessionSifu compositor operations and stale
+window callbacks. Launch requests, layout changes and native Recall captures
+now share one queue across the extension's UI and restoration objects. This
+does not disable automatic restoration or Recall. Earlier releases serialized
+some individual callers but did not coordinate all of them.
+
+The September 5 shutdown is not conclusively attributed to these races. Logs
+show client failures and an AMD driver warning *after* GNOME began shutting
+down; these are not proof of the initiating cause. If it recurs, retain the
+GNOME Shell and kernel journal for the affected boot and note the loaded
+extension version. See [the restoration guide](RESTORE_GUIDE.md#gnome-compositor-operation-coordination)
+for the verified fixes and test limitations.
 
 Version 3.5.18 addressed a suspected startup race on GNOME Shell 50:
 an application in the `STARTING` state could already expose a half-mapped
@@ -16,7 +22,7 @@ StartupNotify transaction. SessionSifu now waits for the normal shown/title
 settle callbacks before touching such a window. Immediate reuse is limited to
 applications that GNOME reports as stably `RUNNING`.
 
-Version 3.5.19 removes the four-application/two-window whole-attempt limit from
+Version 3.5.19 removed the four-application/two-window whole-attempt limit from
 3.5.18. Both recovery modes process all eligible groups sequentially, keeping
 eight seconds between application groups and at least 750 milliseconds between
 window mutations. Historical records are bounded by their saved window count

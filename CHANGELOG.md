@@ -4,6 +4,24 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.20
+
+- Serialize SessionSifu's GNOME launch requests, window-layout mutations and
+  native Recall screenshot operations through one shared queue. Previously,
+  separate indicator/restorer queues could overlap with each other and capture.
+- Wait for RUNNING application state in delayed window callbacks; invalidate
+  callbacks after launch timeouts, queue completion, cancellation and disable.
+- Apply pending layouts before retiring previous-session records. Merely being
+  on the target workspace, or catching a layout exception, is no longer success.
+  Require monitor transfers to reach the intended monitor before resizing.
+- Avoid redundant workspace moves and assigning one saved record to multiple
+  live windows. Gate compositor access before extension teardown.
+- Recheck Recall privacy conditions after waiting for the shared queue and after
+  capture. Keep normal restoration, document reopening and Recall enabled.
+- Add behavioral concurrency, cancellation and record-retention regressions.
+  These address confirmed code races; the initiating cause of the reported
+  GNOME shutdown and subsequent AMD driver warning is not conclusively identified.
+
 ## 3.5.19
 
 - Restore all eligible application groups in a single paced queue instead of

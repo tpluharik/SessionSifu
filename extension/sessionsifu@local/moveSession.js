@@ -19,6 +19,7 @@ import {
 } from './windowSafety.js';
 import {mayRestoreApplications} from './runtimeSafety.js';
 import {WINDOW_RESTORE_INTERVAL_MS} from './restoreSafety.js';
+import {compositorOperations} from './compositorOperations.js';
 
 
 export const MoveSession = class {
@@ -38,7 +39,7 @@ export const MoveSession = class {
     }
 
     _isWindowUsable(metaWindow) {
-        return mayRestoreApplications() &&
+        return !this._destroyed && mayRestoreApplications() &&
             !this._cancelledWindows.has(metaWindow) && isWindowUsable(metaWindow);
     }
 
@@ -96,7 +97,13 @@ export const MoveSession = class {
         }
     }
 
-    async moveWindowsByShellApp(shellApp, saved_window_sessions) {
+    moveWindowsByShellApp(shellApp, saved_window_sessions) {
+        return compositorOperations.run(
+            () => this._moveWindowsByShellApp(shellApp, saved_window_sessions),
+            () => !this._destroyed && mayRestoreApplications());
+    }
+
+    async _moveWindowsByShellApp(shellApp, saved_window_sessions) {
         try {
             const interestingWindows = this._getAutoMoveInterestingWindows(shellApp, saved_window_sessions);
 
@@ -111,6 +118,8 @@ export const MoveSession = class {
                     continue;
 
                 const saved_window_session = interestingWindow.saved_window_session;
+                if (saved_window_session.moved)
+                    continue;
                 const title = metaWindow.get_title();
                 const desktop_number = saved_window_session.desktop_number;
 
@@ -134,7 +143,8 @@ export const MoveSession = class {
                 } catch (e) {
                     // I just don't want one failure breaks the loop
 
-                    this._log.error(e, `Failed to move window ${title} for ${shellApp.get_name()} automatically`);
+                    this._log?.error(e, `Failed to move window ${title} for ${shellApp.get_name()} automatically`);
+                    continue;
                 }
                 saved_window_session.moved = true;
                 restoredAny = true;
@@ -277,7 +287,8 @@ export const MoveSession = class {
                 unmanagingId = metaWindow.connect('unmanaging', () => finish(null));
                 timeoutId = GLib.timeout_add(GLib.PRIORITY_LOW, 1000, () => {
                     timeoutId = 0;
-                    finish(this._isWindowUsable(metaWindow) ? metaWindow : null);
+                    finish(this._isWindowUsable(metaWindow) &&
+                        metaWindow.get_monitor() === toMonitorIndex ? metaWindow : null);
                     return GLib.SOURCE_REMOVE;
                 });
                 this._pendingMonitorWaits.set(metaWindow, finish);
@@ -293,7 +304,13 @@ export const MoveSession = class {
         return Promise.resolve(metaWindow);
     }
 
-    async createEnoughWorkspaceAndMoveWindows(metaWindow, saved_window_sessions) {
+    createEnoughWorkspaceAndMoveWindows(metaWindow, saved_window_sessions) {
+        return compositorOperations.run(
+            () => this._createEnoughWorkspaceAndMoveWindows(metaWindow, saved_window_sessions),
+            () => this._isWindowUsable(metaWindow));
+    }
+
+    async _createEnoughWorkspaceAndMoveWindows(metaWindow, saved_window_sessions) {
         try {
             if (UiHelper.ignoreWindows(metaWindow) || !this._isWindowUsable(metaWindow))
                 return null;
@@ -328,7 +345,13 @@ export const MoveSession = class {
         }
     }
 
-    async moveWindowByMetaWindow(metaWindow, saved_window_sessions) {
+    moveWindowByMetaWindow(metaWindow, saved_window_sessions, isCurrent = () => true) {
+        return compositorOperations.run(
+            () => this._moveWindowByMetaWindow(metaWindow, saved_window_sessions),
+            () => isCurrent() && this._isWindowUsable(metaWindow));
+    }
+
+    async _moveWindowByMetaWindow(metaWindow, saved_window_sessions) {
         try {
             if (UiHelper.ignoreWindows(metaWindow) || !this._isWindowUsable(metaWindow))
                 return false;
@@ -370,6 +393,8 @@ export const MoveSession = class {
         if (!this._isWindowUsable(metaWindow) || !isValidWorkspaceIndex(desktop_number) ||
             desktop_number >= global.workspace_manager.n_workspaces)
             return false;
+        if (metaWindow.get_workspace().index() === desktop_number)
+            return true;
         metaWindow.change_workspace_by_index(desktop_number, false);
         // Restoration must never follow focus across workspaces. Activating each
         // newly launched window while several clients are mapping creates a
@@ -394,7 +419,6 @@ export const MoveSession = class {
                         const shellApp = this._windowTracker.get_window_app(metaWindow);
                         this._log.debug(`The window '${shellApp?.get_name()} - ${title}' is already on workspace ${desktop_number}`);
                     }
-                    saved_window_session.moved = true;
                 }
 
                 return saved_window_session;
@@ -568,9 +592,13 @@ export const MoveSession = class {
         }
 
         let autoMoveInterestingWindows = [];
+        const assignedWindows = new Set();
         const open_windows = shellApp.get_windows();
         saved_window_sessions.forEach(saved_window_session => {
             open_windows.forEach(open_window => {
+                if (assignedWindows.has(open_window) || !this._isWindowUsable(open_window) ||
+                    autoMoveInterestingWindows.some(item => item.saved_window_session === saved_window_session))
+                    return;
                 if (open_window.get_wm_class() != saved_window_session.wm_class) {
                     return;
                 }
@@ -588,6 +616,7 @@ export const MoveSession = class {
                         open_window: open_window,
                         saved_window_session: saved_window_session
                     });
+                    assignedWindows.add(open_window);
                 }
 
             });
@@ -639,6 +668,7 @@ export const MoveSession = class {
     }
 
     destroy() {
+        this._destroyed = true;
         if (this._defaultAppSystem) {
             this._defaultAppSystem = null;
         }

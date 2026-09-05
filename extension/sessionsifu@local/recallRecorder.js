@@ -13,6 +13,8 @@ import * as SaveSession from './saveSession.js';
 import * as WorkspaceCache from './recallWorkspaceCache.js';
 import * as UiHelper from './ui/uiHelper.js';
 import {recallActivity} from './recallActivity.js';
+import {compositorOperations} from './compositorOperations.js';
+import {mayRestoreApplications} from './runtimeSafety.js';
 import {isWindowCaptureSafe, isWindowRegionUnobscured} from './windowSafety.js';
 import {
     recallExclusions,
@@ -209,7 +211,15 @@ function _excludedApplicationVisible(excludedApps = []) {
     return false;
 }
 
-function _captureScreenshot(path) {
+function _captureScreenshot(path, shouldContinue) {
+    return compositorOperations.run(() => {
+        if (!mayRestoreApplications() || !shouldContinue())
+            throw new Error('Recall capture cancelled before compositor access');
+        return _captureScreenshotNow(path, shouldContinue);
+    });
+}
+
+function _captureScreenshotNow(path, shouldContinue) {
     return new Promise((resolve, reject) => {
         let stream;
         try {
@@ -220,6 +230,8 @@ function _captureScreenshot(path) {
                 try {
                     const [success] = source.screenshot_finish(result);
                     stream.close(null);
+                    if (!mayRestoreApplications() || !shouldContinue())
+                        throw new Error('Recall capture cancelled during compositor access');
                     if (!success)
                         throw new Error('GNOME Shell did not return a screenshot');
                     const size = Gio.File.new_for_path(path).query_info(
@@ -245,6 +257,7 @@ function _captureScreenshot(path) {
             } catch (_) {
                 // Ignore cleanup failures while reporting the original error.
             }
+            _removeFile(path);
             reject(error);
         }
     });
@@ -259,7 +272,15 @@ function _yieldToShell() {
     });
 }
 
-function _captureWindowArea(path, metaWindow, actor, expectedTitle = metaWindow.get_title()) {
+function _captureWindowArea(path, metaWindow, actor, expectedTitle, shouldContinue) {
+    return compositorOperations.run(() => {
+        if (!mayRestoreApplications() || !shouldContinue())
+            throw new Error('Recall capture cancelled before compositor access');
+        return _captureWindowAreaNow(path, metaWindow, actor, expectedTitle, shouldContinue);
+    });
+}
+
+function _captureWindowAreaNow(path, metaWindow, actor, expectedTitle, shouldContinue) {
     return new Promise((resolve, reject) => {
         let stream;
         try {
@@ -276,6 +297,8 @@ function _captureWindowArea(path, metaWindow, actor, expectedTitle = metaWindow.
                     try {
                         const [success] = source.screenshot_area_finish(result);
                         stream.close(null);
+                        if (!mayRestoreApplications() || !shouldContinue())
+                            throw new Error('Recall capture cancelled during compositor access');
                         if (!success)
                             throw new Error('GNOME Shell could not capture the Recall window area');
                         if (!_isWindowPreviewSafe(metaWindow, actor) ||
@@ -367,7 +390,7 @@ async function _captureWindowActors(name, excludedApps = [], shouldContinue = ()
         try {
             const previewPath = _windowScreenshotPath(name, index, true);
             const previewContext = String(windowRecords[index].window_title ?? '');
-            await _captureWindowArea(previewPath, metaWindow, actor, previewContext);
+            await _captureWindowArea(previewPath, metaWindow, actor, previewContext, shouldContinue);
             windowRecords[index].recall_preview_source = 'live';
             windowRecords[index].recall_preview_captured_at =
                 new Date().toISOString();
@@ -789,7 +812,8 @@ export const RecallRecorder = class {
                     if (!temporaryPath)
                         continue;
                     const previewContext = String(metaWindow.get_title() ?? '');
-                    await _captureWindowArea(temporaryPath, metaWindow, actor, previewContext);
+                    await _captureWindowArea(temporaryPath, metaWindow, actor, previewContext,
+                        () => generation === this._screenshotGeneration && this._mayCaptureWorkspace());
                     if (generation === this._screenshotGeneration && this._mayCaptureWorkspace()) {
                         WorkspaceCache.storePreview(windowId, temporaryPath, previewContext);
                         captured++;
@@ -943,7 +967,8 @@ export const RecallRecorder = class {
             const windowOnly = screenshotCaptureMode(
                 _excludedApplicationVisible(exclusions)) === 'windows-only';
             if (!windowOnly)
-                await _captureScreenshot(rawPath);
+                await _captureScreenshot(rawPath,
+                    () => shouldContinue() && !_excludedApplicationVisible(exclusions));
             await _compressScreenshot(
                 rawPath, name, displays,
                 this._settings.get_string('recall-preview-quality'),

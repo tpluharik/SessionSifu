@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.5.19 runtime and release layout. User-facing
+This document describes the 3.5.20 runtime and release layout. User-facing
 steps live in the [session restoration guide](RESTORE_GUIDE.md) and
 [Privacy Recall guide](RECALL_GUIDE.md).
 
@@ -8,6 +8,14 @@ SessionSifu 3 has a full GNOME runtime, a portable runtime shared by Windows,
 macOS and Linux desktops, and platform-specific distribution layers.
 
 ## Trust boundaries
+
+Within GNOME, `compositorOperations.js` provides a shared FIFO for native Recall
+capture, launch requests and layout operations from all `MoveSession` instances.
+An operation retains ownership until its promise settles; failure does not
+poison later requests. Lifetime/privacy checks run at dispatch, and native
+capture also checks privacy on completion. Extension disable gates queued work
+before tearing down its dependencies. This coordinates only SessionSifu callers,
+not application rendering or other extensions. See [restore safety](RESTORE_GUIDE.md#gnome-compositor-operation-coordination).
 
 SessionSifu has no privileged service. The GNOME extension and both managers
 run as the logged-in user; the Debian maintainer scripts only compile installed

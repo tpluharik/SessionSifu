@@ -1,6 +1,6 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.19.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.20.
 It covers named sessions, rolling automatic history and the optional previous-
 desktop restore on GNOME, KDE Plasma, Windows, macOS and portable Linux.
 
@@ -82,6 +82,28 @@ unavailable, deferred and failed records. Queue completion confirms that launch
 requests were processed; it does not prove that an application recovered every
 document or private state. A second restore request cannot overlap the active
 queue. Disabling the integration cancels pending restore work.
+
+### GNOME compositor-operation coordination
+
+Version 3.5.20 uses one shared queue for SessionSifu launch requests, window
+placement and native Recall screenshots, including requests from separate UI
+and restore objects. A screenshot keeps its slot until its native callback
+returns; JavaScript does not pretend a timed-out native operation has ended.
+Privacy and window-lifetime checks run again when queued work actually starts.
+This serializes SessionSifu's own operations, not every application's rendering
+or other GNOME extensions.
+
+New-window callbacks wait for RUNNING state (at most 30 seconds) and cannot
+reuse mappings from an expired restore. A previous-session record is retained
+if no matching window layout can be applied. Normal restore and Recall options
+remain unchanged; this update does not disable automatic restoration.
+
+The September 5 report showed GNOME Shell shutting down during restoration,
+followed by client display-connection failures and an AMD driver use-after-free
+warning during teardown. Those later errors do not establish the initiating
+cause. The concurrency and lifecycle defects above are regression-tested, but
+the tests do not prove the hardware-specific shutdown is eliminated. No live
+crash reproduction or kernel configuration changes are part of release testing.
 
 ## What can and cannot return
 

@@ -30,6 +30,8 @@ const stubs = {
     './utils/prefsUtils.js': {PrefsUtils: {}}, './utils/subprocessUtils.js': {},
     './utils/dateUtils.js': {}, './utils/stringUtils.js': {}, './openFiles.js': {},
     './moveSession.js': {}, './runtimeSafety.js': {mayRestoreApplications: () => safe},
+    './compositorOperations.js': {compositorOperations: {run: (operation, mayRun) =>
+        Promise.resolve(mayRun() ? operation() : false)}},
     './windowSafety.js': {MAX_WORKSPACE_INDEX: 32},
 };
 const source = new vm.SourceTextModule(await readFile(new URL('restoreSession.js', base), 'utf8'), {context});
@@ -101,15 +103,29 @@ assert.equal(restoreSessionObject.activeRestorer, null);
 restorer._heldApplications = {};
 restorer._timedOutApps = new Set();
 restorer._restoreOneSession = async () => [true, false];
+restorer._moveSession = {moveWindowsByShellApp: async () => true};
 restorer._waitBeforeNextRestore = async milliseconds => { now += milliseconds * 1000; return safe; };
-restorer._defaultAppSystem = {lookup_app: id => ({
+const testApps = new Map();
+restorer._defaultAppSystem = {lookup_app: id => {
+    if (!testApps.has(id)) testApps.set(id, {
     get_state: () => id === 'slow.desktop' ? 1 : 2,
     get_windows: () => id === 'slow.desktop' ? [] : [{}],
-})};
+    });
+    return testApps.get(id);
+}};
+const slowApp = restorer._defaultAppSystem.lookup_app('slow.desktop');
+restoreSessionObject.restoringApps.set(slowApp, {saved_window_sessions: []});
 assert.equal((await restorer._restoreQueuedEntry({desktop_file_id: 'slow.desktop'}))[0], false);
+assert.equal(restoreSessionObject.restoringApps.has(slowApp), false,
+    'Timed-out launches must not retain late window callbacks');
+
 assert.equal(now, 30000000);
 assert.equal((await restorer._restoreQueuedEntry({desktop_file_id: 'ready.desktop'}))[0], true);
 assert.equal((await restorer._restoreQueuedEntry({desktop_file_id: 'slow.desktop'}))[0], false);
+
+// A running app whose layout could not be applied must retain its record.
+restorer._moveSession = {moveWindowsByShellApp: async () => false};
+assert.equal((await restorer._restoreQueuedEntry({desktop_file_id: 'unmatched.desktop'}))[0], false);
 
 // Errors release the queue lock and keep an actionable failure status.
 ({restorer, state} = make());

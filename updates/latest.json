@@ -1,11 +1,11 @@
 {
-  "version": "3.5.19",
+  "version": "3.5.20",
   "channel": "stable",
-  "issued_at": "2026-09-05T06:11:31Z",
-  "expires_at": "2026-10-20T06:11:31Z",
+  "issued_at": "2026-09-05T07:09:35Z",
+  "expires_at": "2026-10-20T07:09:35Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.19_all.deb",
-  "sha256": "7949c37a9ce56c52ee2cd3227e8a82366b9279b7e6aba7f3bb5736ba58065ce0",
-  "size": 3777402,
-  "notes": "SessionSifu 3.5.19 restores complete paced application queues, removes the day-long global retry block, isolates interrupted applications, adds launch readiness deadlines and visible progress, and preserves failed or updated recovery records. Update the GNOME integration and log out/in once to load the fix."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.20_all.deb",
+  "sha256": "6e9c570552f7419366293b9edb1e963bd23c5b168199d4fd86690f4ec00fad95",
+  "size": 3780858,
+  "notes": "SessionSifu 3.5.20 restores complete paced application queues, removes the day-long global retry block, isolates interrupted applications, adds launch readiness deadlines and visible progress, and preserves failed or updated recovery records. Update the GNOME integration and log out/in once to load the fix."
 }

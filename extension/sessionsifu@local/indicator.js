@@ -119,13 +119,28 @@ class AwsIndicator extends PanelMenu.Button {
         const promise = new Promise(resolve => {
             finish = resolve;
         });
+        const deadline = GLib.get_monotonic_time() + 30 * 1000000;
         const sourceId = GLib.timeout_add(
             GLib.PRIORITY_LOW,
             NEW_WINDOW_SETTLE_DELAY_MS,
             () => {
+                let app = null;
+                if (!this._isDestroyed && !this._closingWindows.has(metaWindow) &&
+                    mayRestoreApplications()) {
+                    try {
+                        app = this._windowTracker?.get_window_app(metaWindow);
+                    } catch (_error) {
+                        // Disposed windows must settle as cancelled, not strand
+                        // a promise from a GLib timer callback.
+                    }
+                }
+                if (!this._isDestroyed && !this._closingWindows.has(metaWindow) &&
+                    mayRestoreApplications() && app?.get_state() === Shell.AppState.STARTING &&
+                    GLib.get_monotonic_time() < deadline)
+                    return GLib.SOURCE_CONTINUE;
                 this._windowSettleWaits?.delete(metaWindow);
                 finish(!this._isDestroyed && !this._closingWindows.has(metaWindow) &&
-                    mayRestoreApplications());
+                    mayRestoreApplications() && app?.get_state() === Shell.AppState.RUNNING);
                 return GLib.SOURCE_REMOVE;
             });
         this._windowSettleWaits.set(metaWindow, {sourceId, finish, promise});
@@ -199,9 +214,21 @@ class AwsIndicator extends PanelMenu.Button {
             if (!await this._waitForWindowRestoreTurn(delay) ||
                 this._closingWindows.has(metaWindow))
                 return false;
+            // A launch timeout, cancellation or a new restore invalidates old
+            // shown/title callbacks. Never apply an earlier queue's layout.
+            const isCurrent = () => {
+                if (this._isDestroyed || this._closingWindows.has(metaWindow))
+                    return false;
+                const app = this._windowTracker?.get_window_app(metaWindow);
+                const mappings = RestoreSession.restoreSessionObject.restoringApps;
+                const mapping = mappings?.get(app) ?? mappings?.get(metaWindow.get_pid());
+                return mapping?.saved_window_sessions === savedWindowSessions;
+            };
+            if (!isCurrent())
+                return false;
             try {
                 return await moveSession.moveWindowByMetaWindow(
-                    metaWindow, savedWindowSessions);
+                    metaWindow, savedWindowSessions, isCurrent);
             } finally {
                 this._lastWindowRestoreAt = Date.now();
             }

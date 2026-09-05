@@ -1,3 +1,10 @@
+sessionsifu (3.5.20-1~ppa1~resolute1) resolute; urgency=high
+
+  * Serialize compositor capture and restoration across extension instances.
+  * Cancel stale layout callbacks and retain incomplete restoration records.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Sat, 05 Sep 2026 11:00:00 +0200
+
 sessionsifu (3.5.19-1~ppa1~resolute1) resolute; urgency=high
 
   * Restore complete paced application queues with per-application crash holds.

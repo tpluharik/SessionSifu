@@ -13,6 +13,7 @@ import * as StringUtils from './utils/stringUtils.js';
 import * as OpenFiles from './openFiles.js';
 import * as MoveSession from './moveSession.js';
 import {mayRestoreApplications} from './runtimeSafety.js';
+import {compositorOperations} from './compositorOperations.js';
 import {MAX_WORKSPACE_INDEX} from './windowSafety.js';
 import {
     AUTOMATIC_RESTORE_INTERVAL_MS,
@@ -343,6 +344,7 @@ export const RestoreSession = class {
             this._log.error(error);
             return false;
         } finally {
+            restoreSessionObject.restoringApps?.clear();
             if (restoreSessionObject.activeRestorer === this)
                 restoreSessionObject.activeRestorer = null;
         }
@@ -365,6 +367,7 @@ export const RestoreSession = class {
             while (app.get_state() !== Shell.AppState.RUNNING || !app.get_windows().length) {
                 if (GLib.get_monotonic_time() >= deadline) {
                     this._timedOutApps.add(id);
+                    restoreSessionObject.restoringApps?.delete(app);
                     this._log.warn(`Application did not become ready within 30 seconds: ${id}`);
                     return [false, result[1]];
                 }
@@ -373,6 +376,12 @@ export const RestoreSession = class {
             }
             // Let mapped windows settle before issuing another launch request.
             if (!await this._waitBeforeNextRestore(MIN_RESTORE_INTERVAL_MS, true))
+                return [false, result[1]];
+            // Readiness is not layout completion. Share the native-operation
+            // queue with shown/title callbacks and Recall before retiring data.
+            if (!sessionConfig.moved &&
+                !await this._moveSession.moveWindowsByShellApp(app, [sessionConfig]) &&
+                !sessionConfig.moved)
                 return [false, result[1]];
         }
         if (result[0]) {
@@ -504,10 +513,12 @@ export const RestoreSession = class {
                     });
                 }
 
-                [launched, running] = this.launch(
-                    shell_app,
-                    session_config_object.desktop_number,
-                    session_config_object.open_files);
+                const launchResult = await compositorOperations.run(
+                    () => this.launch(shell_app,
+                        session_config_object.desktop_number,
+                        session_config_object.open_files),
+                    () => !this._destroyed && mayRestoreApplications());
+                [launched, running] = launchResult || [false, false];
                 if (launched) {
                     if (!running)
                         this._log.info(`${app_name} launched; preparing its saved window state`);
@@ -675,6 +686,8 @@ export const RestoreSession = class {
 
     cancel() {
         this._destroyed = true;
+        if (restoreSessionObject.activeRestorer === this)
+            restoreSessionObject.restoringApps?.clear();
         for (const [sourceId, resolve] of this._pendingRestoreDelays ?? []) {
             GLib.Source.remove(sourceId);
             resolve(false);
