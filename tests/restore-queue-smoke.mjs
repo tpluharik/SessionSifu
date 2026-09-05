@@ -8,6 +8,9 @@ let now = 0;
 let safe = true;
 let files = [];
 const removed = [];
+let restoreBusy = 0;
+const timers = new Map();
+let timerId = 0;
 const context = vm.createContext({
     console, Date, Map, Set, JSON,
     global: {notify_error() {}}, logError() {},
@@ -18,7 +21,11 @@ await safety.evaluate();
 const stubs = {
     'gi://Shell': {default: {AppState: {RUNNING: 2}}},
     'gi://Gio': {default: {Settings: {sync() {}}, FileQueryInfoFlags: {NOFOLLOW_SYMLINKS: 0}}},
-    'gi://GLib': {default: {get_monotonic_time: () => now, build_filenamev: parts => parts.join('/')}},
+    'gi://GLib': {default: {get_monotonic_time: () => now, build_filenamev: parts => parts.join('/'),
+        timeout_add: (_priority, delay, callback) => {
+            timers.set(++timerId, {delay, callback}); return timerId;
+        },
+    }},
     './utils/fileUtils.js': {
         current_session_path: '/state',
         listAllSessions: async (_path, _recursive, callback) => {
@@ -32,6 +39,9 @@ const stubs = {
     './moveSession.js': {}, './runtimeSafety.js': {mayRestoreApplications: () => safe},
     './compositorOperations.js': {compositorOperations: {run: (operation, mayRun) =>
         Promise.resolve(mayRun() ? operation() : false)}},
+    './recallActivity.js': {restoreActivity: {
+        begin: () => restoreBusy++, end: () => restoreBusy--,
+    }},
     './windowSafety.js': {MAX_WORKSPACE_INDEX: 32},
 };
 const source = new vm.SourceTextModule(await readFile(new URL('restoreSession.js', base), 'utf8'), {context});
@@ -90,13 +100,16 @@ assert.equal(restorer._automaticRestorePlan(entries, false).groups.length, 9);
 let finish;
 const first = make().restorer;
 const pending = first._runRestore(() => new Promise(resolve => { finish = resolve; }), false);
+assert.equal(restoreBusy, 1, 'Restore activity must cover waiting as well as launches');
 const map = restoreSessionObject.restoringApps;
 const second = make().restorer;
 assert.equal(await second._runRestore(async () => true, false), false);
 assert.equal(restoreSessionObject.restoringApps, map);
+assert.equal(restoreBusy, 1, 'Rejected overlapping request must not change activity');
 finish(true);
 await pending;
 assert.equal(restoreSessionObject.activeRestorer, null);
+assert.equal(restoreBusy, 0);
 
 // Readiness has a real deadline, failed apps do not stall the next app.
 ({restorer, state} = make());
@@ -132,6 +145,7 @@ assert.equal((await restorer._restoreQueuedEntry({desktop_file_id: 'unmatched.de
 assert.equal(await restorer._runRestore(async () => { throw Error('test'); }, false), false);
 assert.equal(restoreSessionObject.activeRestorer, null);
 assert.match(state.get('restore-progress'), /failed/);
+assert.equal(restoreBusy, 0, 'Restore activity must stop on errors');
 
 // Exercise the complete previous-desktop loop, including more than 32 records,
 // failed entries, and a record rewritten by the live tracker during restore.
@@ -165,6 +179,32 @@ state.set('last-automatic-restore-attempt', yesterday);
 assert.equal(await restorer.restorePreviousSession(true, true), true);
 assert.equal(processed.length, 45, 'Automatic recovery must finish every eligible group too');
 assert.equal(state.get('last-automatic-restore-attempt'), 0);
+
+// Test the real scheduler: elapsed readiness counts toward pacing, but fixed
+// compositor-settle waits and a larger user-configured interval remain intact.
+({restorer, state} = make());
+restorer._pendingRestoreDelays = new Map();
+restorer._restore_session_interval = 1000;
+restorer._entryStartedAt = 0;
+now = 1750000;
+let pacing = restorer._waitBeforeNextRestore(8000);
+assert.equal(timers.get(timerId).delay, 6250);
+timers.get(timerId).callback();
+assert.equal(await pacing, true);
+assert.equal(restorer._pendingRestoreDelays.size, 0);
+now = 30000000;
+const previousTimerId = timerId;
+assert.equal(await restorer._waitBeforeNextRestore(8000), true);
+assert.equal(timerId, previousTimerId, 'Slow readiness must not add another eight seconds');
+pacing = restorer._waitBeforeNextRestore(1000, true);
+assert.equal(timers.get(timerId).delay, 1000, 'Fixed settle delay must not shrink');
+timers.get(timerId).callback();
+await pacing;
+restorer._restore_session_interval = 40000;
+pacing = restorer._waitBeforeNextRestore(8000);
+assert.equal(timers.get(timerId).delay, 10000, 'Keep user-selected pacing');
+timers.get(timerId).callback();
+await pacing;
 
 // Stopping the integration cancels pending waits without starting another app.
 ({restorer, state} = make());

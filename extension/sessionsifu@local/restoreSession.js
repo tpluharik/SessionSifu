@@ -14,6 +14,7 @@ import * as OpenFiles from './openFiles.js';
 import * as MoveSession from './moveSession.js';
 import {mayRestoreApplications} from './runtimeSafety.js';
 import {compositorOperations} from './compositorOperations.js';
+import {restoreActivity} from './recallActivity.js';
 import {MAX_WORKSPACE_INDEX} from './windowSafety.js';
 import {
     AUTOMATIC_RESTORE_INTERVAL_MS,
@@ -25,6 +26,7 @@ import {
     interruptedRestoreApplications,
     previousSessionIdentity,
     restoreCommandAllowed,
+    remainingRestoreDelay,
 } from './restoreSafety.js';
 
 
@@ -325,6 +327,7 @@ export const RestoreSession = class {
         restoreSessionObject.restoringApps = new Map();
         this._retained = 0;
         this._timedOutApps = new Set();
+        restoreActivity.begin();
         try {
             if (!this._beginAutomaticRestore(automatic))
                 return false;
@@ -347,10 +350,12 @@ export const RestoreSession = class {
             restoreSessionObject.restoringApps?.clear();
             if (restoreSessionObject.activeRestorer === this)
                 restoreSessionObject.activeRestorer = null;
+            restoreActivity.end();
         }
     }
 
     async _restoreQueuedEntry(sessionConfig) {
+        this._entryStartedAt = GLib.get_monotonic_time();
         const id = sessionConfig.desktop_file_id ?? '';
         if (this._timedOutApps.has(id))
             return [false, false];
@@ -375,7 +380,8 @@ export const RestoreSession = class {
                     return [false, result[1]];
             }
             // Let mapped windows settle before issuing another launch request.
-            if (!await this._waitBeforeNextRestore(MIN_RESTORE_INTERVAL_MS, true))
+            if (!sessionConfig.moved &&
+                !await this._waitBeforeNextRestore(MIN_RESTORE_INTERVAL_MS, true))
                 return [false, result[1]];
             // Readiness is not layout completion. Share the native-operation
             // queue with shown/title callbacks and Recall before retiring data.
@@ -467,10 +473,15 @@ export const RestoreSession = class {
         if (!mayRestoreApplications() || this._destroyed)
             return Promise.resolve(false);
 
+        const interval = fixedDelay ? minimumIntervalMs
+            : remainingRestoreDelay(Math.max(minimumIntervalMs, this._restore_session_interval),
+                this._entryStartedAt, GLib.get_monotonic_time());
+        if (interval <= 0)
+            return Promise.resolve(true);
         return new Promise(resolve => {
             const sourceId = GLib.timeout_add(
                 GLib.PRIORITY_LOW,
-                fixedDelay ? minimumIntervalMs : Math.max(minimumIntervalMs, this._restore_session_interval),
+                interval,
                 () => {
                     this._pendingRestoreDelays.delete(sourceId);
                     resolve(mayRestoreApplications() && !this._destroyed);
@@ -514,9 +525,14 @@ export const RestoreSession = class {
                 }
 
                 const launchResult = await compositorOperations.run(
-                    () => this.launch(shell_app,
-                        session_config_object.desktop_number,
-                        session_config_object.open_files),
+                    () => {
+                        const result = this.launch(shell_app,
+                            session_config_object.desktop_number,
+                            session_config_object.open_files);
+                        // Time queued behind capture is not a launch safety gap.
+                        this._entryStartedAt = GLib.get_monotonic_time();
+                        return result;
+                    },
                     () => !this._destroyed && mayRestoreApplications());
                 [launched, running] = launchResult || [false, false];
                 if (launched) {
@@ -583,6 +599,7 @@ export const RestoreSession = class {
 
                 try {
                     const [, childPid, normalizedKey] = SubprocessUtils.spawnDirectArgv(cmd);
+                    this._entryStartedAt = GLib.get_monotonic_time();
                     this._log.info(`Launching ${app_name} using a validated argument array`);
                     this._cmdAppIdMap.set(cmdKey, childPid);
                     this._cmdAppIdMap.set(normalizedKey, childPid);

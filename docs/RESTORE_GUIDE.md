@@ -1,8 +1,24 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.20.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.21.
 It covers named sessions, rolling automatic history and the optional previous-
 desktop restore on GNOME, KDE Plasma, Windows, macOS and portable Linux.
+
+## Restore performance and activity indicator
+
+Version 3.5.21 counts time already spent on launch readiness and layout toward
+the pacing interval instead of adding the entire pause afterward. The eight-
+second pacing floor is unchanged, and time queued behind a screenshot before
+launch does not count toward it. Fixed window-settle delays remain fixed. For
+example, 1.75 seconds of work leaves 6.25 seconds of an eight-second interval,
+not eight more seconds. These are scheduler timings, not measured application
+startup speedups; slow applications can still need their readiness timeout.
+
+The yin-yang panel icon gains a native animated spinner for the full restore
+queue, including planning and waits. Open its menu for the current progress.
+Recall saving has an independent activity state and cannot prematurely stop a
+restore's spinner. When idle, the spinner stops and the normal icon preference
+is restored; accessibility/reduced-motion settings remain controlled by GNOME.
 
 ## Choose the right kind of restore
 
@@ -85,7 +101,7 @@ queue. Disabling the integration cancels pending restore work.
 
 ### GNOME compositor-operation coordination
 
-Version 3.5.20 uses one shared queue for SessionSifu launch requests, window
+Version 3.5.21 uses one shared queue for SessionSifu launch requests, window
 placement and native Recall screenshots, including requests from separate UI
 and restore objects. A screenshot keeps its slot until its native callback
 returns; JavaScript does not pretend a timed-out native operation has ended.

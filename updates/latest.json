@@ -1,11 +1,11 @@
 {
-  "version": "3.5.20",
+  "version": "3.5.21",
   "channel": "stable",
-  "issued_at": "2026-09-05T07:09:35Z",
-  "expires_at": "2026-10-20T07:09:35Z",
+  "issued_at": "2026-09-05T08:01:38Z",
+  "expires_at": "2026-10-20T08:01:38Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.20_all.deb",
-  "sha256": "6e9c570552f7419366293b9edb1e963bd23c5b168199d4fd86690f4ec00fad95",
-  "size": 3780858,
-  "notes": "SessionSifu 3.5.20 serializes launch, window-layout and Recall screenshot operations across the GNOME extension, cancels stale restore callbacks and retains incomplete window layouts. Normal restore and Recall remain enabled. Update the GNOME integration and log out/in once to load the changes. The hardware-specific shutdown cause remains under investigation."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.21_all.deb",
+  "sha256": "9a610fa583f92a7094ee762992d5a21933d3cc02b138f90bfb79dfe4fd61893c",
+  "size": 3781944,
+  "notes": "SessionSifu 3.5.21 reduces unnecessary restore waits by counting post-launch readiness and layout time toward existing pacing intervals, while retaining the shared compositor queue and safety delays. A native animated tray spinner remains visible throughout restoration, with progress in the menu. Update the GNOME integration and log out/in once to load the changes."
 }

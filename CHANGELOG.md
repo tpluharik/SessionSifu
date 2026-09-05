@@ -4,6 +4,17 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.21
+
+- Count readiness and layout time toward inter-entry restore pacing instead of
+  appending the full pause afterward. Keep the eight-second launch pacing floor,
+  fixed compositor-settle waits, user-configured intervals and shared queue.
+- Skip a duplicate settle wait for an existing window whose layout was applied.
+- Replace the Recall-only static panel dot with GNOME's native animated spinner.
+  A separate restore activity lifetime covers planning, launching, waiting and
+  layout through completion/failure, with progress in the menu and accessible
+  label. Show the indicator during restoration even when normally hidden.
+
 ## 3.5.20
 
 - Serialize SessionSifu's GNOME launch requests, window-layout mutations and

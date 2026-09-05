@@ -1,3 +1,10 @@
+sessionsifu (3.5.21-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Reduce redundant restore waits without weakening compositor safety pacing.
+  * Keep a native animated activity indicator visible throughout restoration.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Sat, 05 Sep 2026 10:01:00 +0200
+
 sessionsifu (3.5.20-1~ppa1~resolute1) resolute; urgency=high
 
   * Serialize compositor capture and restoration across extension instances.

@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.5.20 runtime and release layout. User-facing
+This document describes the 3.5.21 runtime and release layout. User-facing
 steps live in the [session restoration guide](RESTORE_GUIDE.md) and
 [Privacy Recall guide](RECALL_GUIDE.md).
 

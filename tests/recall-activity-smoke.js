@@ -1,6 +1,6 @@
 #!/usr/bin/gjs -m
 
-import {recallActivity} from '../extension/sessionsifu@local/recallActivity.js';
+import {recallActivity, restoreActivity} from '../extension/sessionsifu@local/recallActivity.js';
 
 const states = [];
 const signalId = recallActivity.connect('changed', (_activity, saving) => states.push(saving));
@@ -16,5 +16,14 @@ recallActivity.end();
 if (recallActivity.saving || JSON.stringify(states) !== JSON.stringify([true, false]))
     throw new Error(`Unexpected Recall activity transitions: ${JSON.stringify(states)}`);
 recallActivity.disconnect(signalId);
+
+restoreActivity.begin();
+recallActivity.begin();
+recallActivity.end();
+if (!restoreActivity.saving || recallActivity.saving)
+    throw new Error('Recall completion incorrectly cleared restore activity');
+restoreActivity.end();
+if (restoreActivity.saving)
+    throw new Error('Restore activity remained active after completion');
 
 print('Recall activity checks passed');

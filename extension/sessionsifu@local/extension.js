@@ -19,6 +19,7 @@ import * as Log from './utils/log.js';
 import * as FileUtils from './utils/fileUtils.js';
 import {prefsUtilsInit, prefsUtilsDestroy} from './utils/prefsUtils.js';
 import {beginShutdown, cancelShutdown} from './runtimeSafety.js';
+import {restoreActivity} from './recallActivity.js';
 
 
 let _indicator;
@@ -47,6 +48,8 @@ export default class SessionSifuExtension extends Extension {
         this._recallShortcutRegistered = false;
 
         this.initUtils();
+        this._restoreActivityChangedId = restoreActivity.connect(
+            'changed', () => this.showOrHideIndicator());
 
         this._showIndicatorChangedId = this._settings.connect(
             'changed::show-indicator', () => this.showOrHideIndicator());
@@ -80,7 +83,7 @@ export default class SessionSifuExtension extends Extension {
 
     showOrHideIndicator() {
         if (this._settings.get_boolean('show-indicator') ||
-            this._settings.get_boolean('recall-enabled')) {
+            this._settings.get_boolean('recall-enabled') || restoreActivity.saving) {
             if (!_indicator) {
                 _indicator = new Indicator.AwsIndicator();
                 Main.panel.addToStatusArea('SessionSifu', _indicator);
@@ -142,6 +145,10 @@ export default class SessionSifuExtension extends Extension {
     }
 
     disable() {
+        if (this._restoreActivityChangedId) {
+            restoreActivity.disconnect(this._restoreActivityChangedId);
+            this._restoreActivityChangedId = 0;
+        }
         // Gate pending callbacks before destroying UI, settings or Meta objects.
         beginShutdown();
         if (this._shutdownId) {

@@ -32,3 +32,5 @@ const RecallActivity = GObject.registerClass({
 });
 
 export const recallActivity = new RecallActivity();
+// Separate lifetime: Recall capture finishing must not clear restore status.
+export const restoreActivity = new RecallActivity();

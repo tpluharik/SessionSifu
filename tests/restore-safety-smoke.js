@@ -13,7 +13,16 @@ import {
     previousSessionIdentity,
     restoreCommandAllowed,
     interruptedRestoreApplications,
+    remainingRestoreDelay,
 } from '../extension/sessionsifu@local/restoreSafety.js';
+
+for (const [started, now, expected] of [
+    [0, 1750000, 6250], [0, 30000000, 0], [10000000, 10000000, 8000],
+    [10000000, 9000000, 8000], [undefined, 10000000, 8000],
+]) {
+    if (remainingRestoreDelay(8000, started, now) !== expected)
+        throw new Error('Restore pacing counted elapsed launch time incorrectly');
+}
 
 
 const original = {

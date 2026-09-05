@@ -11,6 +11,7 @@ import Clutter from 'gi://Clutter';
 
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
+import * as Animation from 'resource:///org/gnome/shell/ui/animation.js';
 
 import * as MoveSession from './moveSession.js';
 import * as RestoreSession from './restoreSession.js';
@@ -25,7 +26,7 @@ import {PrefsUtils} from './utils/prefsUtils.js';
 import * as Log from './utils/log.js';
 import * as Signal from './utils/signal.js';
 import {mayRestoreApplications} from './runtimeSafety.js';
-import {recallActivity} from './recallActivity.js';
+import {recallActivity, restoreActivity} from './recallActivity.js';
 import {WINDOW_RESTORE_INTERVAL_MS} from './restoreSafety.js';
 
 
@@ -66,18 +67,23 @@ class AwsIndicator extends PanelMenu.Button {
             gicon: IconFinder.find('sessionsifu-symbolic.svg'),
             style_class: 'popup-menu-icon'
         });
-        this._savingIcon = new St.Icon({
-            icon_name: 'media-record-symbolic',
-            style_class: 'popup-menu-icon',
-            visible: recallActivity.saving,
-        });
+        // GNOME's native spinner rotates without an extension-owned frame timer.
+        // animate:false removes the one-second fade-in delay, not rotation.
+        this._savingIcon = new Animation.Spinner(14, {animate: false, hideOnStop: true});
+        this._savingIcon.y_align = Clutter.ActorAlign.CENTER;
+        this._activitySpinning = false;
         this._iconBox.add_child(this._mainIcon);
         this._iconBox.add_child(this._savingIcon);
         this.add_child(this._iconBox);
         this._recallActivityChangedId = recallActivity.connect(
             'changed', (_activity, saving) => this._updateRecallActivity(saving));
+        this._restoreActivityChangedId = restoreActivity.connect(
+            'changed', () => this._updateRecallActivity());
+        this._restoreProgressChangedId = this._settings.connect(
+            'changed::restore-progress', () => this._updateRecallActivity());
 
         this._createMenu();
+        this._updateRecallActivity();
 
         this.menu.connect('open-state-changed', this._onOpenStateChanged.bind(this));
 
@@ -398,6 +404,8 @@ class AwsIndicator extends PanelMenu.Button {
     }
 
     _createMenu() {
+        this._restoreStatusItem = new PopupMenu.PopupMenuItem('Restoring session…', {reactive: false});
+        this.menu.addMenuItem(this._restoreStatusItem, this._itemIndex++);
         this._addButtonItems();
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(), this._itemIndex++);
@@ -519,11 +527,27 @@ class AwsIndicator extends PanelMenu.Button {
                 : 'Privacy Recall: Off — Open settings');
     }
 
-    _updateRecallActivity(saving) {
+    _updateRecallActivity() {
         if (this._isDestroyed)
             return;
-        this._savingIcon.visible = saving;
-        this.accessible_name = saving
+        const restoring = restoreActivity.saving;
+        const saving = recallActivity.saving;
+        const busy = restoring || saving;
+        if (busy !== this._activitySpinning) {
+            this._activitySpinning = busy;
+            if (busy)
+                this._savingIcon.play();
+            else
+                this._savingIcon.stop();
+        }
+        const progress = this._settings.get_string('restore-progress') || 'Restoring session…';
+        if (this._restoreStatusItem) {
+            this._restoreStatusItem.visible = restoring;
+            this._restoreStatusItem.label.set_text(progress);
+        }
+        this.accessible_name = restoring
+            ? `SessionSifu — ${progress}`
+            : saving
             ? 'SessionSifu — saving Privacy Recall'
             : 'SessionSifu';
         this._updateRecallItem();
@@ -811,6 +835,15 @@ class AwsIndicator extends PanelMenu.Button {
             recallActivity.disconnect(this._recallActivityChangedId);
             this._recallActivityChangedId = 0;
         }
+        if (this._restoreActivityChangedId) {
+            restoreActivity.disconnect(this._restoreActivityChangedId);
+            this._restoreActivityChangedId = 0;
+        }
+        if (this._restoreProgressChangedId) {
+            this._settings.disconnect(this._restoreProgressChangedId);
+            this._restoreProgressChangedId = 0;
+        }
+        this._savingIcon?.stop();
 
         if (this._windowSettleWaits) {
             for (const [metaWindow, pending] of this._windowSettleWaits) {

@@ -2,7 +2,7 @@
 
 ## Wayland returns to a black screen while restoring a session
 
-SessionSifu 3.5.20 fixes overlapping SessionSifu compositor operations and stale
+SessionSifu 3.5.21 fixes overlapping SessionSifu compositor operations and stale
 window callbacks. Launch requests, layout changes and native Recall captures
 now share one queue across the extension's UI and restoration objects. This
 does not disable automatic restoration or Recall. Earlier releases serialized

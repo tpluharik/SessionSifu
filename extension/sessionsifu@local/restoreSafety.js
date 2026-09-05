@@ -5,6 +5,12 @@ export const MIN_RESTORE_INTERVAL_MS = 1000;
 export const MAX_PREVIOUS_SESSION_WINDOWS = 32;
 export const AUTOMATIC_RESTORE_INTERVAL_MS = 8000;
 export const WINDOW_RESTORE_INTERVAL_MS = 750;
+
+export function remainingRestoreDelay(intervalMs, startedUs, nowUs) {
+    if (!Number.isFinite(startedUs) || !Number.isFinite(nowUs) || nowUs < startedUs)
+        return intervalMs;
+    return Math.max(0, Math.ceil(intervalMs - (nowUs - startedUs) / 1000));
+}
 // Briefly stop a rapid login loop. Longer protection applies only to the
 // application that was in flight when a restore was interrupted.
 export const AUTOMATIC_RESTORE_COOLDOWN_SECONDS = 10 * 60;
