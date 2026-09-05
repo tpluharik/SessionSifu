@@ -1,3 +1,10 @@
+sessionsifu (3.5.19-1~ppa1~resolute1) resolute; urgency=high
+
+  * Restore complete paced application queues with per-application crash holds.
+  * Add readiness deadlines, progress reporting and safe record retention.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Sat, 05 Sep 2026 08:30:00 +0200
+
 sessionsifu (3.5.18-1~ppa1~resolute1) resolute; urgency=high
 
   * Avoid touching windows while their applications are still starting.

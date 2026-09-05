@@ -91,6 +91,18 @@
       cannot immediately repeat the same restore storm.
       </description>
     </key>
+    <key name='restore-active-application' type="s">
+      <default>''</default>
+      <summary>Desktop application currently being restored</summary>
+    </key>
+    <key name='restore-held-applications' type="s">
+      <default>'{}'</default>
+      <summary>Applications held after interrupted restore attempts</summary>
+    </key>
+    <key name='restore-progress' type="s">
+      <default>''</default>
+      <summary>Latest restore progress or recovery result</summary>
+    </key>
     <key name='restore-at-startup-without-asking' type="b">
       <default>false</default>
       <summary>Restore at startup without asking</summary>

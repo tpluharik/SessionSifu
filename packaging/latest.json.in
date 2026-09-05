@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "SessionSifu 3.5.18 prevents repeated GNOME/Wayland restore crashes by waiting for starting applications to settle, bounding automatic login recovery to four applications and two windows each, slowing compositor mutations, and retaining a 24-hour crash marker only when restoration is interrupted."
+  "notes": "SessionSifu 3.5.19 restores complete paced application queues, removes the day-long global retry block, isolates interrupted applications, adds launch readiness deadlines and visible progress, and preserves failed or updated recovery records. Update the GNOME integration and log out/in once to load the fix."
 }

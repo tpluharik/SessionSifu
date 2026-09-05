@@ -1,6 +1,6 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.18.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.19.
 It covers named sessions, rolling automatic history and the optional previous-
 desktop restore on GNOME, KDE Plasma, Windows, macOS and portable Linux.
 
@@ -51,10 +51,14 @@ declares support for their real file type.
 Enable **Restore previous desktop after login** only when you want automatic
 recovery. SessionSifu waits for its startup delay, rejects helper and command-
 only processes, then restores visible desktop applications through the same
-bounded queue used by manual restoration. On GNOME/Wayland, one automatic
-attempt processes at most four applications and two windows per application.
-The remaining records are retained for manual recovery instead of being forced
-through the compositor during login.
+paced queue used by manual restoration. On GNOME/Wayland, the queue continues
+through all eligible application groups, with eight seconds between groups.
+Previous-desktop records are deduplicated and capped at the newest recorded
+window count, with a defensive maximum of 32 records per application. Excess
+and unavailable records remain on disk. A launched application has up to
+30 seconds to become running with a window; timeouts retain its records and
+do not block subsequent applications. Named manual sessions retain their
+selected records rather than using the historical-record pruning rules.
 
 If automatic retry protection is active after a desktop restart, use
 **Restore previous desktop now** in the manager or **Restore Previous Desktop**
@@ -64,9 +68,20 @@ application, selection and compositor safety checks remain active.
 Successfully handled previous-session records are retired after the restore.
 Records that could not be handled remain available for another attempt. This
 prevents old successful entries from accumulating into a large duplicate launch
-burst on a later login. A completed automatic restore clears its crash marker;
-an interrupted Shell leaves the marker active for 24 hours so login cannot
-immediately repeat the same failing batch.
+burst on a later login. A record updated during recovery is not deleted.
+The queue records the application in flight before launching it. After an
+interruption, automatic recovery pauses for ten minutes and holds that specific
+application for 24 hours; other applications remain eligible at the next login.
+Legacy timestamps from before this checkpoint mechanism use only the ten-minute
+pause, so yesterday's marker cannot block today's desktop. Expiry permits the
+next requested restore; it does not launch a retry timer in the background.
+
+The manager's **Restore progress** row updates while the queue runs and reports
+paused, interrupted, failed and finished attempts. The final count includes
+unavailable, deferred and failed records. Queue completion confirms that launch
+requests were processed; it does not prove that an application recovered every
+document or private state. A second restore request cannot overlap the active
+queue. Disabling the integration cancels pending restore work.
 
 ## What can and cannot return
 

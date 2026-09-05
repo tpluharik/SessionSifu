@@ -59,7 +59,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.5.18"
+CURRENT_VERSION = "3.5.19"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -2568,6 +2568,12 @@ class ManagerWindow(Adw.ApplicationWindow):
         restore_now_button.connect("clicked", self._restore_previous_now)
         restore_now_row.add_suffix(restore_now_button)
         behavior_group.add(restore_now_row)
+        self.restore_progress_row = Adw.ActionRow(title="Restore progress")
+        behavior_group.add(self.restore_progress_row)
+        self._restore_progress_changed = self._settings.connect(
+            "changed::restore-progress", self._update_restore_progress
+        )
+        self._update_restore_progress()
 
         self.indicator_switch = Adw.SwitchRow(
             title="Show top-bar icon",
@@ -3309,6 +3315,9 @@ class ManagerWindow(Adw.ApplicationWindow):
         )
 
     def _manager_closed(self, _window) -> bool:
+        if self._restore_progress_changed:
+            self._settings.disconnect(self._restore_progress_changed)
+            self._restore_progress_changed = 0
         if self._capsule_refresh_source:
             GLib.source_remove(self._capsule_refresh_source)
             self._capsule_refresh_source = 0
@@ -3494,7 +3503,12 @@ class ManagerWindow(Adw.ApplicationWindow):
             },)),
         )
         if result and not result.startswith("ERROR:"):
-            self._message("Restoring the previous desktop in a paced queue.")
+            self._message("Restore requested. Follow Restore progress for the result.")
+
+    def _update_restore_progress(self, *_args) -> None:
+        self.restore_progress_row.set_subtitle(
+            self._settings.get_string("restore-progress") or "No restore requested in this installation yet."
+        )
 
     def _toggle_indicator(self, row, _param) -> None:
         if self._settings.get_boolean("recall-enabled") and not row.get_active():

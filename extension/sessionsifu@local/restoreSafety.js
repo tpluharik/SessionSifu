@@ -5,10 +5,10 @@ export const MIN_RESTORE_INTERVAL_MS = 1000;
 export const MAX_PREVIOUS_SESSION_WINDOWS = 32;
 export const AUTOMATIC_RESTORE_INTERVAL_MS = 8000;
 export const WINDOW_RESTORE_INTERVAL_MS = 750;
-// The attempt marker is cleared after a complete automatic restore. If GNOME
-// Shell disappears mid-restore, it remains set and blocks another automatic
-// attempt for a day; manual recovery is still available immediately.
-export const AUTOMATIC_RESTORE_COOLDOWN_SECONDS = 24 * 60 * 60;
+// Briefly stop a rapid login loop. Longer protection applies only to the
+// application that was in flight when a restore was interrupted.
+export const AUTOMATIC_RESTORE_COOLDOWN_SECONDS = 10 * 60;
+export const INTERRUPTED_APPLICATION_COOLDOWN_SECONDS = 24 * 60 * 60;
 export const MAX_AUTOMATIC_RESTORE_APPLICATIONS = 4;
 export const MAX_AUTOMATIC_WINDOWS_PER_APPLICATION = 2;
 
@@ -69,7 +69,7 @@ export function automaticRestoreAttemptAllowed(
     return now - previousAttempt >= cooldownSeconds;
 }
 
-export function automaticRestoreGroups(entries) {
+export function automaticRestoreGroups(entries, completeQueue = false) {
     const byApplication = new Map();
     const rejected = [];
     for (const entry of entries) {
@@ -93,7 +93,8 @@ export function automaticRestoreGroups(entries) {
         // than treating every historical title as a currently open window.
         const savedWindowCount = applicationEntries[0]?.sessionConfig?.windows_count;
         const applicationLimit = Number.isInteger(savedWindowCount) && savedWindowCount > 0
-            ? Math.min(savedWindowCount, MAX_AUTOMATIC_WINDOWS_PER_APPLICATION)
+            ? Math.min(savedWindowCount, completeQueue
+                ? MAX_PREVIOUS_SESSION_WINDOWS : MAX_AUTOMATIC_WINDOWS_PER_APPLICATION)
             : 1;
         if (applicationEntries.length > applicationLimit) {
             discarded.push(...applicationEntries.slice(applicationLimit));
@@ -107,12 +108,30 @@ export function automaticRestoreGroups(entries) {
     });
     groups.sort((left, right) => right.modified - left.modified ||
         left.key.localeCompare(right.key));
-    if (groups.length > MAX_AUTOMATIC_RESTORE_APPLICATIONS) {
+    if (!completeQueue && groups.length > MAX_AUTOMATIC_RESTORE_APPLICATIONS) {
         for (const group of groups.slice(MAX_AUTOMATIC_RESTORE_APPLICATIONS))
             discarded.push(...group.entries);
         groups.length = MAX_AUTOMATIC_RESTORE_APPLICATIONS;
     }
     return {groups, rejected, discarded};
+}
+
+export function interruptedRestoreApplications(raw, activeApplication, previousAttempt, now) {
+    let previous = {};
+    try { previous = JSON.parse(raw); } catch (_error) { /* Ignore invalid state. */ }
+    const held = {};
+    for (const [key, timestamp] of Object.entries(previous ?? {})) {
+        if (automaticRestoreDesktopIdAllowed(key) && Number.isInteger(timestamp) &&
+            timestamp > 0 && timestamp <= now + 60 &&
+            now - timestamp < INTERRUPTED_APPLICATION_COOLDOWN_SECONDS)
+            held[key] = timestamp;
+    }
+    if (automaticRestoreDesktopIdAllowed(activeApplication) &&
+        Number.isInteger(previousAttempt) && previousAttempt > 0 &&
+        previousAttempt <= now + 60 &&
+        now - previousAttempt < INTERRUPTED_APPLICATION_COOLDOWN_SECONDS)
+        held[activeApplication] = previousAttempt;
+    return held;
 }
 
 export function previousSessionIdentity(sessionConfig) {

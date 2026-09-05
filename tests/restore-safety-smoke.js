@@ -12,6 +12,7 @@ import {
     deduplicatePreviousSessionEntries,
     previousSessionIdentity,
     restoreCommandAllowed,
+    interruptedRestoreApplications,
 } from '../extension/sessionsifu@local/restoreSafety.js';
 
 
@@ -45,7 +46,7 @@ if (MIN_RESTORE_INTERVAL_MS < 1000 || WINDOW_RESTORE_INTERVAL_MS < 750 ||
     MAX_AUTOMATIC_RESTORE_APPLICATIONS > 4 ||
     MAX_AUTOMATIC_WINDOWS_PER_APPLICATION > 2)
     throw new Error('Previous-session restore safety limits are too permissive');
-if (AUTOMATIC_RESTORE_COOLDOWN_SECONDS < 24 * 60 * 60 ||
+if (AUTOMATIC_RESTORE_COOLDOWN_SECONDS !== 10 * 60 ||
     !automaticRestoreAttemptAllowed(0, 1000) ||
     automaticRestoreAttemptAllowed(950, 1000) ||
     !automaticRestoreAttemptAllowed(1, 1000, 100))
@@ -81,6 +82,25 @@ automaticEntries.push({
     sessionConfig: {app_name: 'gjs', cmd: ['gjs', 'ding.js']},
 });
 const automaticPlan = automaticRestoreGroups(automaticEntries);
+const completePlan = automaticRestoreGroups(automaticEntries, true);
+if (completePlan.groups.length !== MAX_AUTOMATIC_RESTORE_APPLICATIONS + 2)
+    throw new Error('Complete queue dropped eligible application groups');
+const manyWindows = Array.from({length: 12}, (_, index) => ({
+    modified: index,
+    sessionConfig: {desktop_file_id: 'editor.desktop', windows_count: 12,
+        window_title: `Document ${index}`},
+}));
+if (automaticRestoreGroups(manyWindows, true).groups[0].entries.length !== 12)
+    throw new Error('Complete queue dropped real saved windows');
+if (!automaticRestoreAttemptAllowed(1000, 1000 + 22 * 3600))
+    throw new Error('A previous-day legacy marker blocked recovery');
+const held = interruptedRestoreApplications('{}', 'editor.desktop', 1000, 1500);
+if (held['editor.desktop'] !== 1000 || Object.keys(held).length !== 1)
+    throw new Error('Interrupted application checkpoint was not isolated');
+if (Object.keys(interruptedRestoreApplications(JSON.stringify(held), '', 0, 90000)).length)
+    throw new Error('Application hold did not expire');
+if (Object.keys(interruptedRestoreApplications('invalid', 'gnome-shell.desktop', 1000, 1500)).length)
+    throw new Error('Invalid checkpoint was accepted');
 if (automaticPlan.groups.length !== MAX_AUTOMATIC_RESTORE_APPLICATIONS)
     throw new Error('Automatic restore application cap was not applied');
 if (automaticPlan.groups.some(group =>

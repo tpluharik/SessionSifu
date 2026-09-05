@@ -48,8 +48,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.5.18"
-assert metadata["version"] == 52
+assert metadata["version-name"] == "3.5.19"
+assert metadata["version"] == 53
 autostart_source = (extension / "ui" / "autostart.js").read_text()
 file_utils_source = (extension / "utils" / "fileUtils.js").read_text()
 assert "extensionObject.metadata['version-name']" in file_utils_source
@@ -87,7 +87,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.5.18"' in build_script
+assert 'version="3.5.19"' in build_script
 package_control = (root / "packaging" / "control").read_text()
 assert "python3-pyatspi" in package_control
 assert "gnome-settings-daemon-common" in package_control
@@ -184,7 +184,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.5.18"' in app_source
+assert 'CURRENT_VERSION = "3.5.19"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -372,7 +372,7 @@ assert "MIN_RESTORE_INTERVAL_MS" in source_text
 assert "MAX_PREVIOUS_SESSION_WINDOWS" in source_text
 assert "deduplicatePreviousSessionEntries(sessionEntries)" in source_text
 assert "AUTOMATIC_RESTORE_INTERVAL_MS" in source_text
-assert "automaticRestoreGroups(entries)" in source_text
+assert "automaticRestoreGroups(entries, completeQueue = false)" in source_text
 assert "last-automatic-restore-attempt" in source_text
 assert "automaticRestoreAttemptAllowed" in source_text
 assert "_completeAutomaticRestore" in source_text
@@ -436,7 +436,7 @@ for required in (
     assert required.is_file(), required
 
 roadmap = (root / "ROADMAP.md").read_text()
-assert "## Shipped foundation — 3.5.18" in roadmap
+assert "## Shipped foundation — 3.5.19" in roadmap
 for shipped_feature in ("semantic embedding", "restore journals", "scene grouping", "collections", "JetBrains", "monitor identity", "Ask history", "MCP", "export/import"):
     assert shipped_feature in roadmap
 assert "## Explicit non-goals" in roadmap

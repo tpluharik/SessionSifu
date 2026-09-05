@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.5.18 runtime and release layout. User-facing
+This document describes the 3.5.19 runtime and release layout. User-facing
 steps live in the [session restoration guide](RESTORE_GUIDE.md) and
 [Privacy Recall guide](RECALL_GUIDE.md).
 
@@ -63,13 +63,18 @@ callbacks. A shared runtime safety gate stops launches and window operations as
 soon as GNOME confirms logout, reboot or shutdown; canceling the end-session
 dialog reopens the gate.
 
-Automatic GNOME recovery admits at most four application groups and two saved
-windows per group, with an eight-second inter-application delay. Windows owned
+GNOME recovery processes all eligible groups sequentially, with an eight-second
+inter-application delay and a 30-second readiness deadline. Historical records
+are capped by the latest saved window count (maximum 32 per app). Windows owned
 by an application still in `Shell.AppState.STARTING` are never mutated through
 the immediate existing-window path; the indicator waits for the window's
-shown/title settle callbacks. The automatic-attempt marker is cleared only on a
-complete restore, so a Shell interruption suppresses another automatic attempt
-for 24 hours without disabling reviewed manual restore.
+shown/title settle callbacks. A shared queue owner prevents overlapping restores.
+GSettings records progress and a flushed per-application checkpoint before launch.
+After interruption, the global pause lasts ten minutes; a separate 24-hour hold
+applies only to the in-flight application and can be bypassed manually.
+Successful requests clear their application hold, and normal queue completion
+clears the active checkpoint. Failed and deferred records are retained; cleanup
+checks original bytes to avoid deleting live state rewritten during a wait.
 
 `continuousSaver.js` owns the rolling history timer. It reads the GSettings
 interval, performs an initial save shortly after startup, prevents overlapping

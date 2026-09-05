@@ -2,27 +2,32 @@
 
 ## Wayland returns to a black screen while restoring a session
 
-Upgrade to SessionSifu 3.5.18 or newer. Earlier releases could allow several
+Upgrade to SessionSifu 3.5.19 or newer. Earlier releases could allow several
 newly launched windows to change monitor, geometry, workspace and focus at the
 same time. A crash-recovery directory could also retain older records with
 changing window titles, making one login restore far more windows than were
 actually open. On GNOME/Mutter this could terminate the compositor without an
 application core dump.
 
-Version 3.5.18 also addresses a second failure reproduced on GNOME Shell 50:
+Version 3.5.18 addressed a suspected startup race on GNOME Shell 50:
 an application in the `STARTING` state could already expose a half-mapped
 window, and immediate monitor/geometry/workspace changes could race its active
 StartupNotify transaction. SessionSifu now waits for the normal shown/title
 settle callbacks before touching such a window. Immediate reuse is limited to
 applications that GNOME reports as stably `RUNNING`.
 
-Automatic login recovery is now limited to four applications and two windows
-per application in one attempt, with eight seconds between application groups
-and at least 750 milliseconds between window mutations. Larger layouts remain
-available through the reviewed manual restore workflow. A successful automatic
-restore clears its attempt marker; if GNOME Shell disappears mid-restore, the
-marker remains and blocks another automatic attempt for 24 hours. Manual
-restore stays available during that guard period.
+Version 3.5.19 removes the four-application/two-window whole-attempt limit from
+3.5.18. Both recovery modes process all eligible groups sequentially, keeping
+eight seconds between application groups and at least 750 milliseconds between
+window mutations. Historical records are bounded by their saved window count
+(maximum 32 per app). A 30-second readiness timeout retains slow-app records
+and lets the queue continue. A single queue owner prevents overlapping restores.
+
+An interrupted restore pauses automatic recovery for ten minutes and holds only
+the application in flight for 24 hours. At the next eligible login other apps
+can recover. **Restore Now** bypasses the automatic pause and app hold while
+keeping launch validation and pacing. Legacy markers from yesterday no longer
+block restoration today. There is no automatic background retry at expiry.
 
 If the affected desktop cannot remain open long enough to update, disable the
 extension from a text console, log back in, update SessionSifu, then enable the
@@ -34,9 +39,12 @@ gnome-extensions disable sessionsifu@local
 
 The fix does not delete named sessions or Recall history. After updating, use
 the restore preview to deselect applications that you do not want to relaunch.
-If 3.5.18 reports **Automatic restore paused**, that is evidence that the prior
-attempt did not complete. Inspect the saved selection and use manual restore
-rather than clearing the marker and repeating the same automatic batch.
+Check **Restore progress** in the manager: it reports preparation, application
+or window progress, a paused/interrupted attempt, and the retained/skipped count.
+If it reports **Automatic restore paused**, inspect the saved selection and use
+manual recovery. A finished queue is not proof that an app recovered its own
+tabs or unsaved data. Failed/unavailable records stay available, and a live
+record rewritten while the queue waits is not deleted.
 
 ## The control panel does not open after an in-app update
 

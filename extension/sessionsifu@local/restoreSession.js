@@ -16,12 +16,13 @@ import {mayRestoreApplications} from './runtimeSafety.js';
 import {MAX_WORKSPACE_INDEX} from './windowSafety.js';
 import {
     AUTOMATIC_RESTORE_INTERVAL_MS,
-    MAX_PREVIOUS_SESSION_WINDOWS,
     MIN_RESTORE_INTERVAL_MS,
     automaticRestoreDesktopIdAllowed,
     automaticRestoreAttemptAllowed,
     automaticRestoreGroups,
     deduplicatePreviousSessionEntries,
+    interruptedRestoreApplications,
+    previousSessionIdentity,
     restoreCommandAllowed,
 } from './restoreSafety.js';
 
@@ -111,6 +112,13 @@ export const RestoreSession = class {
     async restoreSessionFromFile(
         session_file_path, selectedApplicationKeys = null, automatic = false
     ) {
+        return this._runRestore(() => this._restoreSessionFromFile(
+            session_file_path, selectedApplicationKeys, automatic), automatic);
+    }
+
+    async _restoreSessionFromFile(
+        session_file_path, selectedApplicationKeys, automatic
+    ) {
         if (!mayRestoreApplications() || this._destroyed)
             return;
 
@@ -128,9 +136,6 @@ export const RestoreSession = class {
             return;
         }
 
-        if (automatic && !this._beginAutomaticRestore())
-            return;
-
         if (selectedApplicationKeys !== null) {
             const selected = selectedApplicationKeys instanceof Set
                 ? selectedApplicationKeys
@@ -141,10 +146,11 @@ export const RestoreSession = class {
 
         if (automatic) {
             const planned = this._automaticRestorePlan(session_config_objects.map(
-                sessionConfig => ({sessionConfig, modified: 0})));
+                sessionConfig => ({sessionConfig, modified: 0})), true);
             session_config_objects = planned.groups.flatMap(group =>
                 group.entries.map(entry => entry.sessionConfig));
             if (planned.rejected.length || planned.discarded.length) {
+                this._retained += planned.rejected.length + planned.discarded.length;
                 this._log.warn(
                     `Skipped ${planned.rejected.length} unsafe and ` +
                     `${planned.discarded.length} excess automatic restore records`);
@@ -152,34 +158,33 @@ export const RestoreSession = class {
         }
 
         if (session_config_objects.length === 0) {
-            if (automatic)
-                this._completeAutomaticRestore();
             return true;
         }
 
-        const interval = automatic
-            ? Math.max(this._restore_session_interval, AUTOMATIC_RESTORE_INTERVAL_MS)
-            : this._restore_session_interval;
+        const interval = Math.max(this._restore_session_interval, AUTOMATIC_RESTORE_INTERVAL_MS);
         for (let index = 0; index < session_config_objects.length; index++) {
             if (!mayRestoreApplications() || this._destroyed)
                 return false;
-            await this._restoreOneSession(session_config_objects[index]);
+            this._progress(`Processing window ${index + 1} of ${session_config_objects.length}…`);
+            const [handled] = await this._restoreQueuedEntry(session_config_objects[index]);
+            if (!handled)
+                this._retained++;
             if (session_config_objects[index + 1] &&
                 !await this._waitBeforeNextRestore(interval))
                 return false;
         }
-        if (automatic)
-            this._completeAutomaticRestore();
         return true;
     }
 
     async restorePreviousSession(removeAfterRestore, automatic = true) {
+        return this._runRestore(() => this._restorePreviousSession(
+            removeAfterRestore, automatic), automatic);
+    }
+
+    async _restorePreviousSession(removeAfterRestore, automatic) {
         try {
             if (!mayRestoreApplications() || this._destroyed)
                 return;
-            if (automatic && !this._beginAutomaticRestore())
-                return;
-
             this._log.info(`Restoring the previous session from ${FileUtils.current_session_path}`);
 
             const ignoringParentFolders = [
@@ -225,16 +230,13 @@ export const RestoreSession = class {
                         // A missing timestamp does not make an otherwise valid
                         // previous-session record unsafe to restore.
                     }
-                    sessionEntries.push({file, sessionConfig, modified});
+                    sessionEntries.push({file, sessionConfig, modified, contents});
                 } catch (error) {
+                    this._retained++;
                     this._log.error(error, `Could not load previous-session state from ${file.get_path()}`);
                 }
             }
             const deduplicated = deduplicatePreviousSessionEntries(sessionEntries);
-            if (removeAfterRestore) {
-                for (const duplicate of deduplicated.duplicates)
-                    FileUtils.removeFile(duplicate.file.get_path());
-            }
             if (deduplicated.duplicates.length) {
                 this._log.warn(
                     `Skipped ${deduplicated.duplicates.length} duplicate previous-session ` +
@@ -242,25 +244,13 @@ export const RestoreSession = class {
             }
 
             const restoreEntries = deduplicated.entries;
-            if (restoreEntries.length > MAX_PREVIOUS_SESSION_WINDOWS) {
-                this._log.warn(
-                    `Restoring only ${MAX_PREVIOUS_SESSION_WINDOWS} of ` +
-                    `${restoreEntries.length} previous-session windows in this login`);
-                restoreEntries.sort((left, right) => right.modified - left.modified);
-                restoreEntries.length = MAX_PREVIOUS_SESSION_WINDOWS;
-            }
-            const planned = this._automaticRestorePlan(restoreEntries);
+            const planned = this._automaticRestorePlan(restoreEntries, automatic);
+            this._retained += planned.rejected.length + planned.discarded.length;
             if (planned.rejected.length || planned.discarded.length) {
                 this._log.warn(
                     `Skipped ${planned.rejected.length} unsafe and ` +
                     `${planned.discarded.length} excess automatic restore records`);
-                if (removeAfterRestore) {
-                    // Unsafe infrastructure records can never become valid user
-                    // applications. Keep bounded excess records, however, so a
-                    // later login can restore them instead of losing user state.
-                    for (const entry of planned.rejected)
-                        FileUtils.removeFile(entry.file.get_path());
-                }
+                // Keep unavailable and deferred records for later recovery.
             }
 
             let completed = true;
@@ -269,14 +259,22 @@ export const RestoreSession = class {
                     return;
 
                 const groupEntries = planned.groups[groupIndex].entries;
+                this._progress(`Processing application ${groupIndex + 1} of ${planned.groups.length}…`);
                 for (let entryIndex = 0; entryIndex < groupEntries.length; entryIndex++) {
                     if (!mayRestoreApplications() || this._destroyed)
                         return;
-                    const {file, sessionConfig} = groupEntries[entryIndex];
-                    const [launched] = await this._restoreOneSession(sessionConfig);
+                    const {file, sessionConfig, contents} = groupEntries[entryIndex];
+                    const [launched] = await this._restoreQueuedEntry(sessionConfig);
+                    if (!launched)
+                        this._retained++;
                     if (removeAfterRestore && launched) {
                         this._log.debug(`Restored one window for ${sessionConfig.app_name}`);
-                        FileUtils.removeFile(file.get_path());
+                        await this._retireSessionEntry({file, contents});
+                        const identity = previousSessionIdentity(sessionConfig);
+                        for (const duplicate of deduplicated.duplicates) {
+                            if (previousSessionIdentity(duplicate.sessionConfig) === identity)
+                                await this._retireSessionEntry(duplicate);
+                        }
                     }
                     if (groupEntries[entryIndex + 1] &&
                         !await this._waitBeforeNextRestore(MIN_RESTORE_INTERVAL_MS)) {
@@ -291,11 +289,97 @@ export const RestoreSession = class {
                     break;
                 }
             }
-            if (automatic && completed && mayRestoreApplications() && !this._destroyed)
-                this._completeAutomaticRestore();
+            return completed && mayRestoreApplications() && !this._destroyed;
         } catch (error) {
             this._log.error(error);
+            throw error;
         }
+    }
+
+    _progress(message) {
+        this._settings.set_string('restore-progress', message);
+    }
+
+    async _retireSessionEntry({file, contents}) {
+        // A live tracker may have saved newer state during the readiness wait.
+        // Retire only the record we actually read, including older duplicates.
+        try {
+            const current = await this._loadSessionContents(file);
+            if (current && current.length === contents.length &&
+                current.every((byte, index) => byte === contents[index]))
+                FileUtils.removeFile(file.get_path());
+        } catch (error) {
+            this._log.warn(`Could not retire a handled restore record: ${error.message}`);
+        }
+    }
+
+    async _runRestore(task, automatic) {
+        if (restoreSessionObject.activeRestorer) {
+            global.notify_error('Restore already in progress', 'Wait for the current queue to finish.');
+            return false;
+        }
+        if (!mayRestoreApplications() || this._destroyed)
+            return false;
+        restoreSessionObject.activeRestorer = this;
+        restoreSessionObject.restoringApps = new Map();
+        this._retained = 0;
+        this._timedOutApps = new Set();
+        try {
+            if (!this._beginAutomaticRestore(automatic))
+                return false;
+            this._progress('Preparing restore queue…');
+            const completed = await task();
+            if (completed) {
+                this._completeAutomaticRestore();
+                this._progress(this._retained
+                    ? `Restore queue finished; ${this._retained} records retained or skipped. Review the saved session before retrying.`
+                    : 'Restore queue finished. Check application windows and documents; applications control their own recovery.');
+            } else {
+                this._progress('Restore interrupted. Remaining records are available for manual recovery.');
+            }
+            return completed;
+        } catch (error) {
+            this._progress('Restore failed. Saved records remain available; see the session log.');
+            this._log.error(error);
+            return false;
+        } finally {
+            if (restoreSessionObject.activeRestorer === this)
+                restoreSessionObject.activeRestorer = null;
+        }
+    }
+
+    async _restoreQueuedEntry(sessionConfig) {
+        const id = sessionConfig.desktop_file_id ?? '';
+        if (this._timedOutApps.has(id))
+            return [false, false];
+        this._settings.set_string('restore-active-application', id.toLowerCase());
+        this._settings.set_int64('last-automatic-restore-attempt', Math.floor(Date.now() / 1000));
+        // Persist the checkpoint before handing work to the compositor.
+        Gio.Settings.sync();
+        const result = await this._restoreOneSession(sessionConfig);
+        if (this._destroyed || !mayRestoreApplications())
+            return [false, false];
+        const app = id ? this._defaultAppSystem.lookup_app(id) : null;
+        if (result[0] && app) {
+            const deadline = GLib.get_monotonic_time() + 30 * 1000000;
+            while (app.get_state() !== Shell.AppState.RUNNING || !app.get_windows().length) {
+                if (GLib.get_monotonic_time() >= deadline) {
+                    this._timedOutApps.add(id);
+                    this._log.warn(`Application did not become ready within 30 seconds: ${id}`);
+                    return [false, result[1]];
+                }
+                if (!await this._waitBeforeNextRestore(1000, true))
+                    return [false, result[1]];
+            }
+            // Let mapped windows settle before issuing another launch request.
+            if (!await this._waitBeforeNextRestore(MIN_RESTORE_INTERVAL_MS, true))
+                return [false, result[1]];
+        }
+        if (result[0]) {
+            delete this._heldApplications[id.toLowerCase()];
+            this._settings.set_string('restore-held-applications', JSON.stringify(this._heldApplications));
+        }
+        return result;
     }
 
     _loadSessionContents(file) {
@@ -311,24 +395,32 @@ export const RestoreSession = class {
         });
     }
 
-    _beginAutomaticRestore() {
+    _beginAutomaticRestore(automatic = true) {
         const now = Math.floor(Date.now() / 1000);
         const previousAttempt = this._settings.get_int64('last-automatic-restore-attempt');
-        if (!automaticRestoreAttemptAllowed(previousAttempt, now)) {
+        this._heldApplications = interruptedRestoreApplications(
+            this._settings.get_string('restore-held-applications'),
+            this._settings.get_string('restore-active-application'), previousAttempt, now);
+        this._settings.set_string('restore-held-applications', JSON.stringify(this._heldApplications));
+        if (automatic && !automaticRestoreAttemptAllowed(previousAttempt, now)) {
             this._log.warn(
                 'Skipping repeated automatic restore to protect the desktop from a crash loop');
             global.notify_error(
                 'Automatic restore paused',
                 'SessionSifu detected a recent restore attempt. Manual restore remains available.');
+            this._progress('Automatic restore paused after a recent interrupted attempt. Use Restore Now for manual recovery.');
             return false;
         }
-        this._settings.set_int64('last-automatic-restore-attempt', now);
+        // The old marker has now been converted to an application hold.
+        // A fresh checkpoint is written only when launch work actually starts.
+        this._completeAutomaticRestore();
         return true;
     }
 
     _completeAutomaticRestore() {
         this._settings.set_int64('last-automatic-restore-attempt', 0);
-        this._log.info('Automatic restore completed; cleared the crash-loop marker');
+        this._settings.set_string('restore-active-application', '');
+        this._log.info('Cleared the active restore checkpoint');
     }
 
     _sessionApplicationKey(sessionConfig) {
@@ -340,7 +432,7 @@ export const RestoreSession = class {
         return `application:${sessionConfig.app_name ?? ''}`;
     }
 
-    _automaticRestorePlan(entries) {
+    _automaticRestorePlan(entries, automatic = false) {
         const availableEntries = [];
         const unavailableEntries = [];
         for (const entry of entries) {
@@ -349,26 +441,27 @@ export const RestoreSession = class {
                 ? this._defaultAppSystem.lookup_app(desktopFileId)
                 : null;
             const appInfo = shellApp?.get_app_info?.();
-            if (!automaticRestoreDesktopIdAllowed(desktopFileId) ||
+            if ((automatic && this._heldApplications[desktopFileId?.toLowerCase()]) ||
+                !automaticRestoreDesktopIdAllowed(desktopFileId) ||
                 !shellApp || !appInfo || appInfo.should_show?.() === false) {
                 unavailableEntries.push(entry);
                 continue;
             }
             availableEntries.push(entry);
         }
-        const planned = automaticRestoreGroups(availableEntries);
+        const planned = automaticRestoreGroups(availableEntries, true);
         planned.rejected.push(...unavailableEntries);
         return planned;
     }
 
-    _waitBeforeNextRestore(minimumIntervalMs = MIN_RESTORE_INTERVAL_MS) {
+    _waitBeforeNextRestore(minimumIntervalMs = MIN_RESTORE_INTERVAL_MS, fixedDelay = false) {
         if (!mayRestoreApplications() || this._destroyed)
             return Promise.resolve(false);
 
         return new Promise(resolve => {
             const sourceId = GLib.timeout_add(
                 GLib.PRIORITY_LOW,
-                Math.max(minimumIntervalMs, this._restore_session_interval),
+                fixedDelay ? minimumIntervalMs : Math.max(minimumIntervalMs, this._restore_session_interval),
                 () => {
                     this._pendingRestoreDelays.delete(sourceId);
                     resolve(mayRestoreApplications() && !this._destroyed);
@@ -540,7 +633,8 @@ export const RestoreSession = class {
                 return [launchFiles(), true];
             this._log.info(`${shellApp.get_name()} is running, skipping`);
             // Delete shellApp from restoringApps to prevent it move the same app when close and open it manually.
-            restoreSessionObject.restoringApps.delete(shellApp);
+            if (shellApp.get_state() === Shell.AppState.RUNNING)
+                restoreSessionObject.restoringApps.delete(shellApp);
             return [true, true];
         }
 
@@ -577,6 +671,17 @@ export const RestoreSession = class {
             }
         }
         return Shell.AppLaunchGpu.DEFAULT;
+    }
+
+    cancel() {
+        this._destroyed = true;
+        for (const [sourceId, resolve] of this._pendingRestoreDelays ?? []) {
+            GLib.Source.remove(sourceId);
+            resolve(false);
+        }
+        this._pendingRestoreDelays?.clear();
+        this._moveSession?.destroy();
+        this._progress('Restore interrupted. Remaining records are available for manual recovery.');
     }
 
     destroy() {

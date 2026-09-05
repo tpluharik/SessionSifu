@@ -4,6 +4,23 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.19
+
+- Restore all eligible application groups in a single paced queue instead of
+  silently ending after four applications or truncating the desktop to 32 records.
+  Preserve historical per-app count validation and compositor safety pacing.
+- Replace the day-long global block with a ten-minute rapid-retry pause and a
+  separate 24-hour automatic hold for the application in flight at interruption.
+  Legacy previous-day timestamps no longer block the next day's recovery.
+- Wait up to 30 seconds for a launched application to expose a running window;
+  retain timed-out records and continue with other apps. Keep STARTING mappings
+  for delayed window placement.
+- Prevent overlapping restore queues, cancel pending work on integration disable,
+  and preserve unavailable records and files updated during restoration.
+- Show restore progress and incomplete/paused results in the control panel.
+- Add behavioral regression coverage for full queues, interruption protection,
+  manual recovery, launch deadlines, overlapping requests and record retention.
+
 ## 3.5.18
 
 - Fixed another GNOME 50/Wayland crash path observed in live Shell logs when

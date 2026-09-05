@@ -161,6 +161,10 @@ const AutostartService = GObject.registerClass(
             this._lastOperationUs = new Map();
 
             this._settings = PrefsUtils.getSettings();
+            if (/^(Preparing restore|Processing application|Processing window)/.test(
+                this._settings.get_string('restore-progress')))
+                this._settings.set_string('restore-progress',
+                    'Previous restore was interrupted. Remaining records are available for manual recovery.');
             this._sessionName = this._settings.get_string(Constants.PREFS_SETTING_AUTORESTORE_SESSIONS);
             this._continuousSaver = new ContinuousSaver.ContinuousSaver(this._settings);
             this._recallRecorder = new RecallRecorder.RecallRecorder(this._settings);
@@ -207,7 +211,6 @@ const AutostartService = GObject.registerClass(
                 return `ERROR: Session '${sessionName}' does not exist`;
 
             Autoclose.autocloseObject.sessionClosedByUser = false;
-            RestoreSession.restoreSessionObject.restoringApps = new Map();
             const restorer = new RestoreSession.RestoreSession();
             restorer.restoreSession(sessionName);
             return `Restoring session '${sessionName}'`;
@@ -238,7 +241,6 @@ const AutostartService = GObject.registerClass(
             if (selected.size === 0)
                 return 'ERROR: Select at least one application';
             Autoclose.autocloseObject.sessionClosedByUser = false;
-            RestoreSession.restoreSessionObject.restoringApps = new Map();
             new RestoreSession.RestoreSession().restoreSession(sessionName, selected);
             return `Restoring selected applications from '${sessionName}'`;
         }
@@ -302,7 +304,6 @@ const AutostartService = GObject.registerClass(
                 return 'ERROR: Automatic snapshot does not exist';
 
             Autoclose.autocloseObject.sessionClosedByUser = false;
-            RestoreSession.restoreSessionObject.restoringApps = new Map();
             const restorer = new RestoreSession.RestoreSession();
             restorer.restoreSessionFromFile(path);
             return `Restoring automatic snapshot '${snapshotName}'`;
@@ -329,7 +330,6 @@ const AutostartService = GObject.registerClass(
             if (selected.size === 0)
                 return 'ERROR: Select at least one application';
             Autoclose.autocloseObject.sessionClosedByUser = false;
-            RestoreSession.restoreSessionObject.restoringApps = new Map();
             new RestoreSession.RestoreSession().restoreSessionFromFile(path, selected);
             return `Restoring selected applications from '${snapshotName}'`;
         }
@@ -479,6 +479,7 @@ const AutostartService = GObject.registerClass(
         }
 
         _disable() {
+            RestoreSession.restoreSessionObject.activeRestorer?.cancel();
             if (this._continuousSaver) {
                 this._continuousSaver.destroy();
                 this._continuousSaver = null;

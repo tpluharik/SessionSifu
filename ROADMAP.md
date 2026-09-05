@@ -1,15 +1,17 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.5.18. It separates shipped
+This roadmap describes the product after version 3.5.19. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
 
-## Shipped foundation — 3.5.18
+## Shipped foundation — 3.5.19
 
 SessionSifu now combines session restoration with an encrypted, opt-in visual
 history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
 
 - named sessions and five-entry rolling automatic session history;
+- complete paced GNOME restore queues, visible progress, launch readiness
+  deadlines and application-specific holds after interrupted recovery;
 - up to 64 separately captured application-window screenshots per Recall
   moment, display overviews, local Czech/English OCR and exact-word highlights;
 - GNOME cross-workspace preview reuse with a bounded memory-only cache, original
@@ -41,7 +43,7 @@ history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
   profiles, without an unsandboxed host-executable fallback.
 
 The session, Recall and retrieval foundations were delivered incrementally
-through 3.5.18. The user-visible workflow and underlying data model remain
+through 3.5.19. The user-visible workflow and underlying data model remain
 consistent across supported editions, while platform adapters report their
 real capabilities instead of implying parity.
 
