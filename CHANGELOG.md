@@ -4,6 +4,19 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.23
+
+- On GNOME, let recognized browsers restore their own tabs and local documents.
+  Do not pass saved PDF/HTML or other files back to browsers, including files in
+  older snapshots. Browser detection uses desktop categories, IDs and executable
+  names, not window titles. Normal editor document reopening is unchanged.
+- Reuse STARTING apps even before they appear in GNOME's running-app list.
+  Reused launches no longer produce misleading additional-launch log messages.
+- Keep browser window placement and saved records; do not alter Firefox profiles,
+  history, tab recovery preferences, or capsule launch behavior.
+- Add behavioral tests for one browser launch, no browser document replay,
+  STARTING reuse, and normal document editor deduplication.
+
 ## 3.5.22
 
 - Suspend native Recall captures throughout restoration, including readiness

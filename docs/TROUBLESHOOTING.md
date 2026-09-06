@@ -1,14 +1,27 @@
 # Troubleshooting
 
+## Firefox appears to restore twice
+
+Update the GNOME integration to 3.5.23, then log out/in once to load it.
+SessionSifu now reuses a browser's STARTING state and does not reopen saved
+documents in recognized browsers. Firefox handles its own tabs; SessionSifu
+handles launching and window layout. Regular editor document recovery remains
+unchanged. Older snapshots do not need to be deleted.
+
+If duplicates remain, check separate desktop autostart entries, other session
+managers, Firefox session-manager add-ons, and custom launcher arguments. Two
+starts on opposite sides of a desktop crash are not proof of a double launch
+within one restoration. See [browser recovery](RESTORE_GUIDE.md#firefox-and-browser-owned-recovery-on-gnome).
+
 ## Wayland returns to a black screen while restoring a session
 
-SessionSifu 3.5.22 additionally suspends native Recall screenshots throughout
+SessionSifu 3.5.23 additionally suspends native Recall screenshots throughout
 restoration, waits briefly after display changes, rejects destroyed window
 actors and validates launch workspace indices. Late shutdown callbacks cannot
 recreate the panel indicator or start another Recall save. Metadata-only Recall
 entries during restoration are expected; screenshots resume afterward.
 
-Versions 3.5.20–3.5.22 address overlapping SessionSifu compositor operations and stale
+Versions 3.5.20–3.5.23 address overlapping SessionSifu compositor operations and stale
 window callbacks. Launch requests, layout changes and native Recall captures
 now share one queue across the extension's UI and restoration objects. This
 does not disable automatic restoration or Recall. Earlier releases serialized

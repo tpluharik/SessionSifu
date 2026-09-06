@@ -38,6 +38,24 @@ if (!OpenFiles.appInfoSupportsDocumentFiles(appInfo([
     throw new Error('A launcher with a document MIME type was rejected');
 if (OpenFiles.appInfoSupportsDocumentFiles(null))
     throw new Error('A missing launcher was accepted for document restoration');
+for (const id of ['firefox.desktop', 'firefox_firefox.desktop',
+    'org.mozilla.firefox.desktop', 'firefox-esr.desktop',
+    'google-chrome.desktop', 'chromium_chromium.desktop', 'com.microsoft.Edge.desktop']) {
+    const browser = {...appInfo(['application/pdf', 'text/html', 'x-scheme-handler/https']),
+        get_id: () => id};
+    if (OpenFiles.appInfoSupportsDocumentFiles(browser))
+        throw new Error(`Browser content would be replayed: ${id}`);
+}
+for (const metadata of [
+    {get_categories: () => 'Network;WebBrowser;'},
+    {get_id: () => 'custom.desktop', get_executable: () => '/snap/bin/firefox'},
+]) {
+    if (!OpenFiles.appInfoRestoresOwnContent(metadata))
+        throw new Error('Browser category/executable fallback was not recognized');
+}
+if (OpenFiles.appInfoRestoresOwnContent({get_id: () => 'knowledge-editor.desktop'}) ||
+    OpenFiles.appInfoRestoresOwnContent({get_executable: () => '/home/firefox/editor'}))
+    throw new Error('Unrelated editor misidentified as browser');
 const thisFileUri = Gio.File.new_for_path(thisFile).get_uri();
 if (OpenFiles.pathFromArgument(thisFileUri) !== thisFile)
     throw new Error('A file URI from the application command line was not decoded');

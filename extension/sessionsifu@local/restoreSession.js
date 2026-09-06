@@ -663,7 +663,9 @@ export const RestoreSession = class {
             if (canLaunchFiles)
                 return [launchFiles(), false];
             this._log.info(`${shellApp.get_name()} is restored, skipping`);
-            return [true, false];
+            // Reusing a previous launch is not another process launch. In
+            // particular, do not log browser-owned recovery as a second start.
+            return [true, true];
         }
 
         if (this._appIsRunning(shellApp)) {
@@ -688,6 +690,10 @@ export const RestoreSession = class {
     }
 
     _appIsRunning(app) {
+        // STARTING may not yet be present in get_running(). Reuse the app's
+        // startup transaction instead of racing desktop/autostart launchers.
+        if (app.get_state() >= Shell.AppState.STARTING)
+            return true;
         // Running apps can be empty even if there are apps running when gnome-shell starting
         const running_apps = this._defaultAppSystem.get_running();
         for (const running_app of running_apps) {

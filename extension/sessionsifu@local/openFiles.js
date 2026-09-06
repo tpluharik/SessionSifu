@@ -10,8 +10,29 @@ export const OPEN_FILE_LIMIT = 32;
 export const OPEN_FD_SCAN_LIMIT = 128;
 export const RECENT_FILE_SCAN_LIMIT = 512;
 
+export function appInfoRestoresOwnContent(appInfo) {
+    if (!appInfo)
+        return false;
+    // Use desktop metadata, never a window title or the user's document path.
+    // Browsers advertise PDF/HTML support too, but replaying those files can
+    // duplicate tabs that their own session recovery has already restored.
+    try {
+        if ((appInfo.get_categories?.() ?? '').split(';').includes('WebBrowser'))
+            return true;
+        const identity = [
+            appInfo.get_id?.() ?? '',
+            String(appInfo.get_executable?.() ?? '').split('/').pop(),
+        ].join('\n').toLowerCase();
+        return /(^|[\n._ -])(firefox|librewolf|waterfox|floorp|zen-browser|chromium|chrome|brave|vivaldi|msedge|microsoft-edge|edge|epiphany|falkon)(?=$|[\n._ -])/.test(identity);
+    } catch (_error) {
+        return false;
+    }
+}
+
 export function appInfoSupportsDocumentFiles(appInfo) {
     try {
+        if (appInfoRestoresOwnContent(appInfo))
+            return false;
         if (!appInfo || (!appInfo.supports_files() && !appInfo.supports_uris()))
             return false;
 

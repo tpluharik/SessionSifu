@@ -13,15 +13,21 @@ const timers = new Map();
 let timerId = 0;
 const context = vm.createContext({
     console, Date, Map, Set, JSON,
-    global: {notify_error() {}, workspace_manager: {n_workspaces: 2}}, logError() {},
+    global: {notify_error() {}, workspace_manager: {n_workspaces: 2},
+        create_app_launch_context: () => ({})}, logError() {},
 });
 const safety = new vm.SourceTextModule(await readFile(new URL('restoreSafety.js', base), 'utf8'), {context});
 await safety.link(() => { throw Error('Unexpected dependency'); });
 await safety.evaluate();
 const stubs = {
-    'gi://Shell': {default: {AppState: {RUNNING: 2}}},
-    'gi://Gio': {default: {Settings: {sync() {}}, FileQueryInfoFlags: {NOFOLLOW_SYMLINKS: 0}}},
+    'gi://Shell': {default: {AppState: {STOPPED: 0, STARTING: 1, RUNNING: 2}}},
+    'gi://Gio': {default: {Settings: {sync() {}}, FileQueryInfoFlags: {NOFOLLOW_SYMLINKS: 0},
+        FileType: {REGULAR: 1}, File: {new_for_path: path => ({path,
+            query_info: () => ({get_file_type: () => 1, get_attribute_boolean: () => true}),
+        })}}},
     'gi://GLib': {default: {get_monotonic_time: () => now, build_filenamev: parts => parts.join('/'),
+        get_home_dir: () => '/synthetic', get_user_name: () => 'test',
+        get_user_runtime_dir: () => null,
         timeout_add: (_priority, delay, callback) => {
             timers.set(++timerId, {delay, callback}); return timerId;
         },
@@ -35,8 +41,7 @@ const stubs = {
         removeFile: path => removed.push(path),
     }, './utils/log.js': {},
     './utils/prefsUtils.js': {PrefsUtils: {}}, './utils/subprocessUtils.js': {},
-    './utils/dateUtils.js': {}, './utils/stringUtils.js': {},
-    './openFiles.js': {appInfoSupportsDocumentFiles: () => false},
+    './utils/dateUtils.js': {get_current_time: () => 0}, './utils/stringUtils.js': {},
     './moveSession.js': {}, './runtimeSafety.js': {mayRestoreApplications: () => safe},
     './compositorOperations.js': {compositorOperations: {run: (operation, mayRun) =>
         Promise.resolve(mayRun() ? operation() : false)}},
@@ -48,8 +53,17 @@ const stubs = {
             index >= 0 && index < count ? index : -1},
 };
 const source = new vm.SourceTextModule(await readFile(new URL('restoreSession.js', base), 'utf8'), {context});
+const openFiles = new vm.SourceTextModule(await readFile(new URL('openFiles.js', base), 'utf8'), {context});
+await openFiles.link(name => {
+    const exports = stubs[name];
+    assert.ok(exports, `Missing open-files stub ${name}`);
+    return new vm.SyntheticModule(Object.keys(exports), function () {
+        for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
+    }, {context});
+});
 await source.link(async name => {
     if (name === './restoreSafety.js') return safety;
+    if (name === './openFiles.js') return openFiles;
     const exports = stubs[name];
     assert.ok(exports, `Missing stub ${name}`);
     return new vm.SyntheticModule(Object.keys(exports), function () {
@@ -235,4 +249,44 @@ assert.equal(launchWorkspace, 1);
 safe = false;
 assert.equal(restorer.launch(launchApp, 0)[0], false);
 assert.equal(launchWorkspace, 1, 'Shutdown must prevent native launch');
+
+// Actual launch + actual browser policy: no replay, including saved documents
+// left in older snapshots. STARTING is reused even with an empty running list.
+safe = true;
+({restorer, state} = make());
+Object.assign(restorer, {_launchedFilesByApp: new Map(), _restoredApps: new Map(),
+    _defaultAppSystem: {get_running: () => []}, _getProperGpuPref: () => 0});
+let browserState = 0;
+let browserLaunches = 0;
+let documentLaunches = 0;
+const browser = {
+    get_id: () => 'firefox_firefox.desktop', get_name: () => 'Firefox',
+    get_state: () => browserState,
+    get_app_info: () => ({get_id: () => 'firefox_firefox.desktop',
+        supports_files: () => true, supports_uris: () => true,
+        get_supported_types: () => ['application/pdf', 'text/html'],
+        launch: () => { documentLaunches++; return true; }}),
+    launch: () => { browserLaunches++; browserState = 1; return true; },
+};
+const documents = ['/synthetic/already-recovered.pdf', '/synthetic/already-recovered.html'];
+assert.equal(restorer.launch(browser, 0, documents)[0], true);
+assert.equal(browserLaunches, 1);
+assert.equal(documentLaunches, 0);
+assert.equal(restorer.launch(browser, 0, documents)[1], true, 'Reuse STARTING browser');
+restorer._restoredApps.set(browser, {});
+browserState = 2;
+assert.equal(restorer.launch(browser, 1, documents)[1], true, 'Reuse previous launch');
+assert.equal(browserLaunches, 1, 'Multiple saved browser windows must launch once');
+assert.equal(documentLaunches, 0, 'Do not reopen tabs recovered by Firefox');
+const reopenedFiles = [];
+const editor = {get_id: () => 'editor.desktop', get_name: () => 'Editor', get_state: () => 2,
+    get_app_info: () => ({get_id: () => 'editor.desktop', supports_files: () => true,
+        supports_uris: () => false, get_supported_types: () => ['text/plain'],
+        launch: files => { reopenedFiles.push(...files.map(file => file.path)); return true; }}),
+};
+assert.equal(restorer.launch(editor, 0, ['/synthetic/first.txt'])[0], true);
+restorer._restoredApps.set(editor, {});
+assert.equal(restorer.launch(editor, 0, ['/synthetic/first.txt', '/synthetic/second.txt'])[0], true);
+assert.deepEqual(reopenedFiles, ['/synthetic/first.txt', '/synthetic/second.txt'],
+    'Document editors must still reopen files once, including additional saved documents');
 console.log('Restore queue regressions passed');

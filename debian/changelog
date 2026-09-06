@@ -1,3 +1,11 @@
+sessionsifu (3.5.23-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Leave GNOME browser content recovery to the browser without replaying files.
+  * Reuse starting applications and clarify reused-launch log messages.
+  * Test browser single-launch and preserve editor document restoration.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Sun, 06 Sep 2026 09:17:08 +0200
+
 sessionsifu (3.5.22-1~ppa1~resolute1) resolute; urgency=medium
 
   * Coordinate Recall with restoration and monitor changes; guard shutdown.

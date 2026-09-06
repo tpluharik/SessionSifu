@@ -1,12 +1,12 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.22.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.23.
 It covers named sessions, rolling automatic history and the optional previous-
 desktop restore on GNOME, KDE Plasma, Windows, macOS and portable Linux.
 
 ## Restore performance and activity indicator
 
-Version 3.5.22 counts time already spent on launch readiness and layout toward
+Version 3.5.23 counts time already spent on launch readiness and layout toward
 the pacing interval instead of adding the entire pause afterward. The eight-
 second pacing floor is unchanged, and time queued behind a screenshot before
 launch does not count toward it. Fixed window-settle delays remain fixed. For
@@ -101,7 +101,7 @@ queue. Disabling the integration cancels pending restore work.
 
 ### GNOME compositor-operation coordination
 
-Version 3.5.22 uses one shared queue for SessionSifu launch requests, window
+Version 3.5.23 uses one shared queue for SessionSifu launch requests, window
 placement and native Recall screenshots, including requests from separate UI
 and restore objects. A screenshot keeps its slot until its native callback
 returns; JavaScript does not pretend a timed-out native operation has ended.
@@ -109,7 +109,7 @@ Privacy and window-lifetime checks run again when queued work actually starts.
 This serializes SessionSifu's own operations, not every application's rendering
 or other GNOME extensions.
 
-In 3.5.22, native Recall capture is also suspended for the **whole restore**,
+Since 3.5.22, native Recall capture is also suspended for the **whole restore**,
 including application readiness waits. Preview caching resumes after 2.5 seconds
 of settling. Metadata recording remains available; snapshots made during this
 period can be metadata-only. Display changes invalidate queued captures and use
@@ -134,7 +134,7 @@ cause. The concurrency and lifecycle defects above are regression-tested, but
 the tests do not prove the hardware-specific shutdown is eliminated. No live
 crash reproduction or kernel configuration changes are part of release testing.
 
-The September 6 recurrence was inspected using the local core dump, without
+The September 6 recurrence was inspected for 3.5.22 using the local core dump, without
 starting a live restore. GNOME Shell 50.1 first logged shutdown, then faulted in
 `g_hash_table_lookup` through `libshell-18` while Mutter was disposing objects
 under `meta_context_destroy`. The journal also reports disposed panel objects
@@ -142,6 +142,27 @@ in Ubuntu AppIndicators and an AMD `dc_stream_release` reference-count warning
 afterward. Neither observation proves SessionSifu initiated the shutdown. The
 3.5.22 regressions test the specific lifecycle and launch-boundary defects above;
 they cannot certify that an upstream Shell/driver teardown fault is fixed.
+
+## Firefox and browser-owned recovery on GNOME
+
+Since 3.5.23, recognized GNOME desktop-launcher browsers own their tab/document
+recovery. SessionSifu starts the browser only when needed, reuses STARTING or
+RUNNING instances, and applies the saved window layout. It does not replay
+saved local files (including PDFs and HTML pages) as additional browser tabs.
+This also applies to old snapshots without changing or deleting their data.
+
+Recognition uses the desktop `WebBrowser` category and known browser desktop
+IDs/executable names, including Firefox native, Snap and Flatpak launchers.
+Ordinary editors still reopen their saved files with per-restore deduplication.
+The policy does not change capsules, portable adapters, or custom command-only
+launchers without a recognized desktop entry.
+
+Enable Firefox's **Settings → General → Startup → Open previous windows and
+tabs** if you want its previous browsing session to return. SessionSifu does not
+change this preference, read or rewrite Firefox's session store, recover private
+tabs, or invent missing tabs if browser recovery is disabled. See
+[Mozilla's session recovery guide](https://support.mozilla.org/en-US/kb/restore-previous-session).
+Explicitly configured desktop launcher arguments remain controlled by that launcher.
 
 ## What can and cannot return
 
