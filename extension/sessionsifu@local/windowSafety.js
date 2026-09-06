@@ -34,13 +34,21 @@ export function isWindowUsable(metaWindow, monitorCount = null) {
             return false;
         const monitor = metaWindow.get_monitor();
         const availableMonitors = monitorCount ?? global.display.get_n_monitors();
-        return Boolean(metaWindow.get_compositor_private()) &&
+        const actor = metaWindow.get_compositor_private();
+        return Boolean(actor) && !actor.is_destroyed?.() &&
             Boolean(metaWindow.get_workspace()) &&
             Number.isInteger(monitor) && monitor >= 0 &&
             Number.isInteger(availableMonitors) && monitor < availableMonitors;
     } catch (_error) {
         return false;
     }
+}
+
+// Launch contexts must refer to a workspace that exists now. Saved workspaces
+// may have disappeared since capture; normal layout restoration recreates them.
+export function launchWorkspaceIndex(index, workspaceCount) {
+    return isValidWorkspaceIndex(index) && Number.isInteger(workspaceCount) &&
+        index < workspaceCount ? index : -1;
 }
 
 export function isWindowCaptureSafe(metaWindow, actor = null, monitorCount = null) {

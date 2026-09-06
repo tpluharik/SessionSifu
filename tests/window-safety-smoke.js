@@ -5,6 +5,7 @@ import {
     isWindowCaptureSafe,
     isWindowRegionUnobscured,
     isWindowUsable,
+    launchWorkspaceIndex,
 } from '../extension/sessionsifu@local/windowSafety.js';
 
 
@@ -36,6 +37,14 @@ if (isWindowUsable(fakeWindow({monitor: 1}), 1))
     throw new Error('A window on a removed monitor was accepted');
 if (isWindowUsable(fakeWindow({actor: null}), 1))
     throw new Error('A window without a compositor actor was accepted');
+if (isWindowUsable(fakeWindow({actor: {is_destroyed: () => true}}), 1))
+    throw new Error('A destroyed compositor actor was accepted for layout');
+for (const index of [-1, 2, 35, 100, null, undefined, NaN, '1']) {
+    if (launchWorkspaceIndex(index, 2) !== -1)
+        throw new Error('Invalid launch workspace did not fall back to current');
+}
+if (launchWorkspaceIndex(1, 2) !== 1 || launchWorkspaceIndex(0, 0) !== -1)
+    throw new Error('Launch workspace bounds are incorrect');
 if (isWindowUsable(fakeWindow({workspace: null}), 1))
     throw new Error('A window without a workspace was accepted');
 if (isWindowUsable(fakeWindow({closing: true}), 1))

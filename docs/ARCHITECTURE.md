@@ -1,8 +1,14 @@
 # Architecture
 
-This document describes the 3.5.21 runtime and release layout. User-facing
+This document describes the 3.5.22 runtime and release layout. User-facing
 steps live in the [session restoration guide](RESTORE_GUIDE.md) and
 [Privacy Recall guide](RECALL_GUIDE.md).
+
+Native Recall requests are inhibited while restore activity is active, then
+resume after a short settle period. Restore/display changes invalidate capture
+generations; shutdown blocks new metadata/capture/UI work. Native callbacks
+retain their resources until completion. Missing launch workspaces fall back
+to the current workspace before the ordinary saved-layout step recreates them.
 
 SessionSifu 3 has a full GNOME runtime, a portable runtime shared by Windows,
 macOS and Linux desktops, and platform-specific distribution layers.

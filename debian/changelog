@@ -1,3 +1,11 @@
+sessionsifu (3.5.22-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Coordinate Recall with restoration and monitor changes; guard shutdown.
+  * Validate compositor actor lifetime and native launch workspace bounds.
+  * Serialize command fallbacks and add lifecycle regression coverage.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Sun, 06 Sep 2026 09:06:07 +0200
+
 sessionsifu (3.5.21-1~ppa1~resolute1) resolute; urgency=medium
 
   * Reduce redundant restore waits without weakening compositor safety pacing.

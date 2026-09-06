@@ -4,6 +4,22 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.22
+
+- Suspend native Recall captures throughout restoration, including readiness
+  waits, and resume workspace preview caching after a 2.5-second settle period.
+  Invalidate pending captures when restoration or display topology changes;
+  preserve native callback ownership of any screenshot already in flight.
+- Reject destroyed compositor actors before layout calls. Use the current
+  workspace for launch contexts when a saved workspace no longer exists;
+  retain normal subsequent workspace recreation and layout restoration.
+- Put command-fallback launches through the shared compositor queue too.
+- Block late Recall saves and panel reconstruction during shutdown/disable.
+- Add behavioral lifecycle and launch-boundary regressions. The September 6
+  core dump confirms a native GNOME Shell teardown segfault; its initiating
+  shutdown and the accompanying AMD driver fault remain unproven. This is
+  targeted safety hardening, not a claimed fix to Mutter or the kernel.
+
 ## 3.5.21
 
 - Count readiness and layout time toward inter-entry restore pacing instead of

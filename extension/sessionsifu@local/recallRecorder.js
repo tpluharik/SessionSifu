@@ -12,7 +12,7 @@ import * as MetaWindowUtils from './utils/metaWindowUtils.js';
 import * as SaveSession from './saveSession.js';
 import * as WorkspaceCache from './recallWorkspaceCache.js';
 import * as UiHelper from './ui/uiHelper.js';
-import {recallActivity} from './recallActivity.js';
+import {recallActivity, restoreActivity} from './recallActivity.js';
 import {compositorOperations} from './compositorOperations.js';
 import {mayRestoreApplications} from './runtimeSafety.js';
 import {isWindowCaptureSafe, isWindowRegionUnobscured} from './windowSafety.js';
@@ -699,6 +699,7 @@ export const RecallRecorder = class {
         this._saving = false;
         this._screenshotSaving = false;
         this._screenshotGeneration = 0;
+        this._captureAfterUs = 0;
         this._workspaceCacheTimeoutId = 0;
         this._workspaceCacheCapturing = false;
         this._workspaceCachePromise = Promise.resolve();
@@ -751,11 +752,25 @@ export const RecallRecorder = class {
             'notify::focus-window', () => this._scheduleWorkspaceCache(1800));
         this._overviewHiddenId = Main.overview.connect(
             'hidden', () => this._scheduleWorkspaceCache());
+        this._restoreChangedId = restoreActivity.connect('changed', () => {
+            // Invalidate work already queued before restoration started. The
+            // native callback retains ownership of an in-flight screenshot.
+            this._screenshotGeneration++;
+            this._captureAfterUs = GLib.get_monotonic_time() + 2500 * 1000;
+            this._scheduleWorkspaceCache(2500);
+        });
+        this._monitorsChangedId = Main.layoutManager.connect('monitors-changed', () => {
+            this._screenshotGeneration++;
+            this._captureAfterUs = GLib.get_monotonic_time() + 2500 * 1000;
+            this._scheduleWorkspaceCache(2500);
+        });
         this._reschedule();
     }
 
     _mayCaptureWorkspace() {
-        if (this._destroyed || !this._settings ||
+        if (this._destroyed || !this._settings || !mayRestoreApplications() ||
+            restoreActivity.saving ||
+            GLib.get_monotonic_time() < (this._captureAfterUs ?? 0) ||
             !this._settings.get_boolean('recall-enabled') ||
             !this._settings.get_boolean('recall-capture-screenshots') ||
             Main.sessionMode.isLocked || Main.overview.visible || Main.modalCount > 0)
@@ -770,8 +785,13 @@ export const RecallRecorder = class {
             GLib.Source.remove(this._workspaceCacheTimeoutId);
             this._workspaceCacheTimeoutId = 0;
         }
-        if (!this._mayCaptureWorkspace())
+        if (this._destroyed || !mayRestoreApplications())
             return;
+        if (!this._mayCaptureWorkspace() &&
+            !(this._captureAfterUs > GLib.get_monotonic_time()))
+            return;
+        delayMs = Math.max(delayMs,
+            Math.ceil((this._captureAfterUs - GLib.get_monotonic_time()) / 1000));
         this._workspaceCacheTimeoutId = GLib.timeout_add(
             GLib.PRIORITY_LOW, delayMs, () => {
                 this._workspaceCacheTimeoutId = 0;
@@ -869,7 +889,8 @@ export const RecallRecorder = class {
     }
 
     async saveNow() {
-        if (this._saving || !this._settings.get_boolean('recall-enabled'))
+        if (this._destroyed || !mayRestoreApplications() || this._saving ||
+            !this._settings?.get_boolean('recall-enabled'))
             return false;
         const pausedUntil = this._settings.get_int64('recall-pause-until');
         if (pausedUntil < 0 || pausedUntil > Math.floor(Date.now() / 1000))
@@ -1030,6 +1051,12 @@ export const RecallRecorder = class {
             global.display.disconnect(this._focusChangedId);
         if (this._overviewHiddenId)
             Main.overview.disconnect(this._overviewHiddenId);
+        if (this._restoreChangedId)
+            restoreActivity.disconnect(this._restoreChangedId);
+        if (this._monitorsChangedId)
+            Main.layoutManager.disconnect(this._monitorsChangedId);
+        this._restoreChangedId = 0;
+        this._monitorsChangedId = 0;
         this._workspaceChangedId = 0;
         this._windowCreatedId = 0;
         this._focusChangedId = 0;

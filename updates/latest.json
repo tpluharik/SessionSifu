@@ -1,11 +1,11 @@
 {
-  "version": "3.5.21",
+  "version": "3.5.22",
   "channel": "stable",
-  "issued_at": "2026-09-05T08:01:38Z",
-  "expires_at": "2026-10-20T08:01:38Z",
+  "issued_at": "2026-09-06T07:08:23Z",
+  "expires_at": "2026-10-21T07:08:23Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.21_all.deb",
-  "sha256": "9a610fa583f92a7094ee762992d5a21933d3cc02b138f90bfb79dfe4fd61893c",
-  "size": 3781944,
-  "notes": "SessionSifu 3.5.21 reduces unnecessary restore waits by counting post-launch readiness and layout time toward existing pacing intervals, while retaining the shared compositor queue and safety delays. A native animated tray spinner remains visible throughout restoration, with progress in the menu. Update the GNOME integration and log out/in once to load the changes."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.22_all.deb",
+  "sha256": "494b701d36bc97aff44daee202b711b025764a5ecae0c7b44d1282c16305b175",
+  "size": 3813548,
+  "notes": "SessionSifu 3.5.22 suspends Recall screenshots during restoration and display changes, rejects destroyed window actors and invalid launch workspace indices, and guards late shutdown callbacks. Command fallback launches now share the compositor queue. Normal restoration and Recall remain available. These safeguards do not establish that the underlying GNOME/AMD teardown crash is resolved. Update the GNOME integration and log out/in once to load the changes."
 }

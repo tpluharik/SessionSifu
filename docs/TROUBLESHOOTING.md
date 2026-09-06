@@ -2,18 +2,27 @@
 
 ## Wayland returns to a black screen while restoring a session
 
-SessionSifu 3.5.21 fixes overlapping SessionSifu compositor operations and stale
+SessionSifu 3.5.22 additionally suspends native Recall screenshots throughout
+restoration, waits briefly after display changes, rejects destroyed window
+actors and validates launch workspace indices. Late shutdown callbacks cannot
+recreate the panel indicator or start another Recall save. Metadata-only Recall
+entries during restoration are expected; screenshots resume afterward.
+
+Versions 3.5.20–3.5.22 address overlapping SessionSifu compositor operations and stale
 window callbacks. Launch requests, layout changes and native Recall captures
 now share one queue across the extension's UI and restoration objects. This
 does not disable automatic restoration or Recall. Earlier releases serialized
 some individual callers but did not coordinate all of them.
 
-The September 5 shutdown is not conclusively attributed to these races. Logs
+The September 5–6 shutdowns are not conclusively attributed to these races. Logs
 show client failures and an AMD driver warning *after* GNOME began shutting
 down; these are not proof of the initiating cause. If it recurs, retain the
 GNOME Shell and kernel journal for the affected boot and note the loaded
 extension version. See [the restoration guide](RESTORE_GUIDE.md#gnome-compositor-operation-coordination)
-for the verified fixes and test limitations.
+for the verified fixes, September 6 native core-dump findings and test limitations.
+Do not repeatedly retry a failing restore: keep the saved records, and report
+the current-boot Shell/kernel errors. Do not publicly upload a full core dump;
+it can contain private application and desktop data.
 
 Version 3.5.18 addressed a suspected startup race on GNOME Shell 50:
 an application in the `STARTING` state could already expose a half-mapped

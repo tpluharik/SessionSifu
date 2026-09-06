@@ -13,7 +13,7 @@ const timers = new Map();
 let timerId = 0;
 const context = vm.createContext({
     console, Date, Map, Set, JSON,
-    global: {notify_error() {}}, logError() {},
+    global: {notify_error() {}, workspace_manager: {n_workspaces: 2}}, logError() {},
 });
 const safety = new vm.SourceTextModule(await readFile(new URL('restoreSafety.js', base), 'utf8'), {context});
 await safety.link(() => { throw Error('Unexpected dependency'); });
@@ -35,14 +35,17 @@ const stubs = {
         removeFile: path => removed.push(path),
     }, './utils/log.js': {},
     './utils/prefsUtils.js': {PrefsUtils: {}}, './utils/subprocessUtils.js': {},
-    './utils/dateUtils.js': {}, './utils/stringUtils.js': {}, './openFiles.js': {},
+    './utils/dateUtils.js': {}, './utils/stringUtils.js': {},
+    './openFiles.js': {appInfoSupportsDocumentFiles: () => false},
     './moveSession.js': {}, './runtimeSafety.js': {mayRestoreApplications: () => safe},
     './compositorOperations.js': {compositorOperations: {run: (operation, mayRun) =>
         Promise.resolve(mayRun() ? operation() : false)}},
     './recallActivity.js': {restoreActivity: {
         begin: () => restoreBusy++, end: () => restoreBusy--,
     }},
-    './windowSafety.js': {MAX_WORKSPACE_INDEX: 32},
+    './windowSafety.js': {MAX_WORKSPACE_INDEX: 32,
+        launchWorkspaceIndex: (index, count) => Number.isInteger(index) &&
+            index >= 0 && index < count ? index : -1},
 };
 const source = new vm.SourceTextModule(await readFile(new URL('restoreSession.js', base), 'utf8'), {context});
 await source.link(async name => {
@@ -216,4 +219,20 @@ assert.ok(moveCancelled);
 assert.equal(restorer._destroyed, true);
 assert.match(state.get('restore-progress'), /interrupted/);
 assert.equal(await restorer._runRestore(async () => true, false), false);
+// Exercise the actual launch boundary, not only the pure index helper.
+({restorer, state} = make());
+restorer._launchedFilesByApp = new Map();
+restorer._restoredApps = new Map();
+restorer._appIsRunning = () => false;
+restorer._getProperGpuPref = () => 0;
+let launchWorkspace;
+const launchApp = {get_app_info: () => ({}),
+    launch: (_timestamp, workspace) => { launchWorkspace = workspace; return true; }};
+assert.equal(restorer.launch(launchApp, 30)[0], true);
+assert.equal(launchWorkspace, -1, 'Missing workspace must not enter native launch');
+assert.equal(restorer.launch(launchApp, 1)[0], true);
+assert.equal(launchWorkspace, 1);
+safe = false;
+assert.equal(restorer.launch(launchApp, 0)[0], false);
+assert.equal(launchWorkspace, 1, 'Shutdown must prevent native launch');
 console.log('Restore queue regressions passed');

@@ -15,7 +15,7 @@ import * as MoveSession from './moveSession.js';
 import {mayRestoreApplications} from './runtimeSafety.js';
 import {compositorOperations} from './compositorOperations.js';
 import {restoreActivity} from './recallActivity.js';
-import {MAX_WORKSPACE_INDEX} from './windowSafety.js';
+import {MAX_WORKSPACE_INDEX, launchWorkspaceIndex} from './windowSafety.js';
 import {
     AUTOMATIC_RESTORE_INTERVAL_MS,
     MIN_RESTORE_INTERVAL_MS,
@@ -598,8 +598,14 @@ export const RestoreSession = class {
                 }
 
                 try {
-                    const [, childPid, normalizedKey] = SubprocessUtils.spawnDirectArgv(cmd);
-                    this._entryStartedAt = GLib.get_monotonic_time();
+                    const spawned = await compositorOperations.run(() => {
+                        const result = SubprocessUtils.spawnDirectArgv(cmd);
+                        this._entryStartedAt = GLib.get_monotonic_time();
+                        return result;
+                    }, () => !this._destroyed && mayRestoreApplications());
+                    if (!spawned)
+                        return [false, false];
+                    const [, childPid, normalizedKey] = spawned;
                     this._log.info(`Launching ${app_name} using a validated argument array`);
                     this._cmdAppIdMap.set(cmdKey, childPid);
                     this._cmdAppIdMap.set(normalizedKey, childPid);
@@ -629,6 +635,10 @@ export const RestoreSession = class {
     }
 
     launch(shellApp, desktopNumber, openFiles = []) {
+        if (this._destroyed || !mayRestoreApplications())
+            return [false, false];
+        desktopNumber = launchWorkspaceIndex(
+            desktopNumber, global.workspace_manager.n_workspaces);
         const appInfo = shellApp.get_app_info();
         const launchedFiles = this._launchedFilesByApp.get(shellApp) ?? new Set();
         this._launchedFilesByApp.set(shellApp, launchedFiles);

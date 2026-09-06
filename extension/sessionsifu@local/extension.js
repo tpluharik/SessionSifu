@@ -18,7 +18,7 @@ import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/ex
 import * as Log from './utils/log.js';
 import * as FileUtils from './utils/fileUtils.js';
 import {prefsUtilsInit, prefsUtilsDestroy} from './utils/prefsUtils.js';
-import {beginShutdown, cancelShutdown} from './runtimeSafety.js';
+import {beginShutdown, cancelShutdown, mayRestoreApplications} from './runtimeSafety.js';
 import {restoreActivity} from './recallActivity.js';
 
 
@@ -82,6 +82,9 @@ export default class SessionSifuExtension extends Extension {
     }
 
     showOrHideIndicator() {
+        // Late activity callbacks must not rebuild panel actors during teardown.
+        if (!mayRestoreApplications())
+            return;
         if (this._settings.get_boolean('show-indicator') ||
             this._settings.get_boolean('recall-enabled') || restoreActivity.saving) {
             if (!_indicator) {

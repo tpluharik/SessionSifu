@@ -1,12 +1,12 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.21.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.22.
 It covers named sessions, rolling automatic history and the optional previous-
 desktop restore on GNOME, KDE Plasma, Windows, macOS and portable Linux.
 
 ## Restore performance and activity indicator
 
-Version 3.5.21 counts time already spent on launch readiness and layout toward
+Version 3.5.22 counts time already spent on launch readiness and layout toward
 the pacing interval instead of adding the entire pause afterward. The eight-
 second pacing floor is unchanged, and time queued behind a screenshot before
 launch does not count toward it. Fixed window-settle delays remain fixed. For
@@ -101,13 +101,26 @@ queue. Disabling the integration cancels pending restore work.
 
 ### GNOME compositor-operation coordination
 
-Version 3.5.21 uses one shared queue for SessionSifu launch requests, window
+Version 3.5.22 uses one shared queue for SessionSifu launch requests, window
 placement and native Recall screenshots, including requests from separate UI
 and restore objects. A screenshot keeps its slot until its native callback
 returns; JavaScript does not pretend a timed-out native operation has ended.
 Privacy and window-lifetime checks run again when queued work actually starts.
 This serializes SessionSifu's own operations, not every application's rendering
 or other GNOME extensions.
+
+In 3.5.22, native Recall capture is also suspended for the **whole restore**,
+including application readiness waits. Preview caching resumes after 2.5 seconds
+of settling. Metadata recording remains available; snapshots made during this
+period can be metadata-only. Display changes invalidate queued captures and use
+the same settling period. Previously, individual calls were serialized but a
+capture could start between launch and the application's first stable window.
+Command-line fallback launches now use the queue as well.
+
+Destroyed window actors are rejected. Missing saved workspaces are not passed
+to native launch contexts: launch uses the current workspace, then the normal
+layout step recreates and moves to the saved workspace. Shutdown guards prevent
+late capture work and activity callbacks from rebuilding panel actors.
 
 New-window callbacks wait for RUNNING state (at most 30 seconds) and cannot
 reuse mappings from an expired restore. A previous-session record is retained
@@ -120,6 +133,15 @@ warning during teardown. Those later errors do not establish the initiating
 cause. The concurrency and lifecycle defects above are regression-tested, but
 the tests do not prove the hardware-specific shutdown is eliminated. No live
 crash reproduction or kernel configuration changes are part of release testing.
+
+The September 6 recurrence was inspected using the local core dump, without
+starting a live restore. GNOME Shell 50.1 first logged shutdown, then faulted in
+`g_hash_table_lookup` through `libshell-18` while Mutter was disposing objects
+under `meta_context_destroy`. The journal also reports disposed panel objects
+in Ubuntu AppIndicators and an AMD `dc_stream_release` reference-count warning
+afterward. Neither observation proves SessionSifu initiated the shutdown. The
+3.5.22 regressions test the specific lifecycle and launch-boundary defects above;
+they cannot certify that an upstream Shell/driver teardown fault is fixed.
 
 ## What can and cannot return
 
