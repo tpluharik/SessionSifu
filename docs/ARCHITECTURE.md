@@ -1,8 +1,15 @@
 # Architecture
 
-This document describes the 3.5.23 runtime and release layout. User-facing
+This document describes the 3.5.24 runtime and release layout. User-facing
 steps live in the [session restoration guide](RESTORE_GUIDE.md) and
 [Privacy Recall guide](RECALL_GUIDE.md).
+
+The 3.5.24 vault-key helper is packaged with both managers and copied by the
+user-local updater. It preserves key identity under process locking. Recall has
+a compact metadata cache and incremental FTS updates separate from full OCR-box
+manifests. Portable UI workers return plain data/QImages; GUI pixmaps stay on the
+GUI thread. Pixel capture and compression use one-image backpressure.
+See [audit implementation and limits](STABILITY_AUDIT.md).
 
 Native Recall requests are inhibited while restore activity is active, then
 resume after a short settle period. Restore/display changes invalidate capture
@@ -252,8 +259,9 @@ hidden state paths are excluded and each window is capped at 32 files.
 ### 3.5 retrieval, restore and transfer layers
 
 Recall decrypts into a bounded LRU record cache and an ephemeral in-memory FTS5
-index. A signature of record names, sizes and modification times invalidates
-the index and removes deleted cache entries when the vault changes. A reentrant
+index. Signatures of record names, sizes and modification times update changed
+FTS rows and remove deleted entries; a separate compressed metadata cache avoids
+full-manifest LRU thrashing during warm queries. A reentrant
 lock serializes index access across short-lived GTK/Qt worker threads. No
 plaintext index or cache is persisted.
 

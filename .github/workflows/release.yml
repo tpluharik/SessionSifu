@@ -24,12 +24,16 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install portable core
-        run: python -m pip install ./portable
+        run: python -m pip install "./portable[gui]"
       - name: Install Linux OCR test runtime
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr
       - name: Run portable tests
         run: python tests/test_portable.py
+      - name: Run audit fault-injection tests
+        run: python tests/test_audit_regressions.py
+      - name: Run offscreen Qt worker and capture tests
+        run: python tests/test_qt_background.py
       - name: Run encrypted Recall engine tests
         if: runner.os == 'Linux'
         run: python tests/test_recall_engine.py

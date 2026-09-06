@@ -1,3 +1,12 @@
+sessionsifu (3.5.24-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Preserve vault keys and recover failed search workers.
+  * Add accurate portable restore outcomes and bounded background UI work.
+  * Index incrementally, bound capture buffering and stage images asynchronously.
+  * Guard native compositor ownership on timeout; extend tests and documentation.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Sun, 06 Sep 2026 21:46:51 +0200
+
 sessionsifu (3.5.23-1~ppa1~resolute1) resolute; urgency=medium
 
   * Leave GNOME browser content recovery to the browser without replaying files.

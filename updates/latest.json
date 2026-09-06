@@ -1,11 +1,11 @@
 {
-  "version": "3.5.23",
+  "version": "3.5.24",
   "channel": "stable",
-  "issued_at": "2026-09-06T07:19:04Z",
-  "expires_at": "2026-10-21T07:19:04Z",
+  "issued_at": "2026-09-06T19:48:29Z",
+  "expires_at": "2026-10-21T19:48:29Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.23_all.deb",
-  "sha256": "a87bc0819247ffced91290a95c777ae1fa1f8dd4236d16bfbc221bb634142617",
-  "size": 3786378,
-  "notes": "SessionSifu 3.5.23 leaves GNOME browser tabs and documents to browser-owned session recovery instead of reopening saved files as duplicate tabs. Starting apps are reused before GNOME's running list catches up. Browser window placement and normal editor file restoration remain available. Firefox settings and profiles are not changed. Update the GNOME integration and log out/in once to load the changes."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.24_all.deb",
+  "sha256": "5b4bc6910956c4a3b41415f5d7b6d761d3dbe12eee4ae888640e4f437a93ac97",
+  "size": 3792154,
+  "notes": "SessionSifu 3.5.24 implements the stability and performance audit: vault-key continuity, resilient search workers, incremental indexing, accurate portable restore outcomes, background image/OCR work and bounded screenshot buffering. GNOME staging is asynchronous and a watchdog preserves native compositor ownership on timeout. Existing restore pacing and browser-owned recovery are unchanged. Update the GNOME integration and log out/in once. See docs/STABILITY_AUDIT.md for recovery guidance and verification limits."
 }

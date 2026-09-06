@@ -9,6 +9,7 @@ FTS index for each search process.
 from __future__ import annotations
 
 import base64
+import logging
 import csv
 import contextlib
 import hashlib
@@ -17,6 +18,7 @@ import json
 import os
 import re
 import sqlite3
+import zlib
 import subprocess
 import sys
 import tempfile
@@ -32,9 +34,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 try:
+    from cryptography.exceptions import InvalidTag
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 except ImportError:  # pragma: no cover - package dependency, exercised by diagnostics
     AESGCM = None
+    class InvalidTag(Exception):
+        pass
 
 try:
     import keyring
@@ -51,6 +56,15 @@ try:
 except ImportError:  # source checkout fallback
     OfflineSemanticSearch = None
 
+
+try:
+    from vault_key import vault_key
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "portable"))
+    try:
+        from sessionsifu_portable.vault_key import vault_key
+    except ImportError:  # Legacy updater omitted support modules; keep Repair reachable.
+        vault_key = None
 
 RECORD_RE = re.compile(r"^recall-\d{8}-\d{6}-\d{3}\.json$")
 VAULT_RE = re.compile(r"^recall-\d{8}-\d{6}-\d{3}\.ssrec$")
@@ -665,6 +679,9 @@ class RecallVault:
         self._search_lock = threading.RLock()
         self._record_cache: OrderedDict[str, tuple[tuple[int, int], dict[str, object], int]] = OrderedDict()
         self._record_cache_bytes = 0
+        self._manifest_cache = OrderedDict()
+        self._manifest_bytes = 0
+        self._authentication_failures = set()
         self._index_signature: tuple[tuple[str, int, int], ...] = ()
         self._index_connection: sqlite3.Connection | None = None
         self._fuzzy_terms: dict[int, dict[str, set[str]]] = {}
@@ -683,44 +700,10 @@ class RecallVault:
             raise RuntimeError("python3-cryptography is required for Privacy Recall")
         if self._test_key:
             return self._test_key
-        fallback = self.root / ".vault-key"
-        if fallback.is_symlink():
-            raise ValueError("Refusing symbolic-link Recall key")
-        # A fallback key may have been created while the desktop credential
-        # service was locked. Keep using it so that service availability cannot
-        # silently make an existing vault undecryptable.
-        if fallback.exists():
-            encoded = fallback.read_text(encoding="ascii").strip()
-            _private(fallback, 0o600)
-            self._key_source = "private fallback key file"
-            key = base64.urlsafe_b64decode(encoded.encode("ascii"))
-            if len(key) != 32:
-                raise ValueError("Recall vault key has an invalid length")
-            return key
-        encoded = None
-        if keyring is not None:
-            with contextlib.suppress(Exception):
-                encoded = keyring.get_password(SERVICE, ACCOUNT)
-            if not encoded:
-                candidate = base64.urlsafe_b64encode(os.urandom(32)).decode("ascii")
-                with contextlib.suppress(Exception):
-                    keyring.set_password(SERVICE, ACCOUNT, candidate)
-                    encoded = keyring.get_password(SERVICE, ACCOUNT)
-            if encoded:
-                self._key_source = "operating-system credential store"
-        if not encoded:
-            # A locked-down fallback keeps the application usable on minimal
-            # desktops without Secret Service.  The UI exposes this degraded
-            # state so users can keep visual/OCR capture disabled.
-            encoded = base64.urlsafe_b64encode(os.urandom(32)).decode("ascii")
-            descriptor = os.open(fallback, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(descriptor, "w", encoding="ascii") as output:
-                output.write(encoded)
-            _private(fallback, 0o600)
-            self._key_source = "private fallback key file"
-        key = base64.urlsafe_b64decode(encoded.encode("ascii"))
-        if len(key) != 32:
-            raise ValueError("Recall vault key has an invalid length")
+        if vault_key is None:
+            raise RuntimeError("Recall key support is missing. Use Download & Repair in Updates.")
+        key, self._key_source = vault_key(
+            self.root, self.vault, keyring, SERVICE, ACCOUNT, encoded_file=True)
         return key
 
     def _encrypt(self, data: bytes, aad: bytes) -> bytes:
@@ -1247,6 +1230,10 @@ class RecallVault:
                 _name, (_signature, _value, size) = self._record_cache.popitem(last=False)
                 self._record_cache_bytes -= size
             return value if value.get("schema") == 3 else None
+        except InvalidTag:
+            self._authentication_failures.add(path.name)
+            logging.getLogger(__name__).warning("Recall record authentication failed; record left intact: %s", path.name)
+            return None
         except (OSError, ValueError, json.JSONDecodeError):
             return None
 
@@ -1259,6 +1246,44 @@ class RecallVault:
                 signature.append((path.name, stat.st_mtime_ns, stat.st_size))
         return tuple(signature)
 
+    def _search_records(self, paths, signature):
+        """Cache compact search fields separately from full OCR-coordinate manifests.
+
+        Compressed plaintext is RAM-only, cleared with all search state on lock.
+        A changed record is decrypted once; warm scans do not thrash the detail LRU.
+        """
+        valid = {item[0]: item[1:] for item in signature}
+        for name in list(self._manifest_cache):
+            if name not in valid or self._manifest_cache[name][0] != valid[name]:
+                self._manifest_bytes -= len(self._manifest_cache.pop(name)[1])
+        records = []
+        for path in paths:
+            stamp = valid.get(path.name)
+            if stamp is None:
+                continue
+            cached = self._manifest_cache.get(path.name)
+            if cached:
+                value = json.loads(zlib.decompress(cached[1]))
+            else:
+                full = self._load(path)
+                if not full:
+                    continue
+                value = {k: v for k, v in full.items()
+                         if k not in {"ocr_boxes", "display_ocr_boxes"}}
+                value["windows"] = [
+                    {k: v for k, v in window.items() if k != "ocr_boxes"}
+                    for window in full.get("windows", []) if isinstance(window, dict)]
+                packed = zlib.compress(json.dumps(value, separators=(",", ":")).encode(), 1)
+                self._manifest_cache[path.name] = (stamp, packed)
+                self._manifest_bytes += len(packed)
+                while self._manifest_bytes > 32 * 1024 * 1024 and len(self._manifest_cache) > 1:
+                    _, (_, removed) = self._manifest_cache.popitem(last=False)
+                    self._manifest_bytes -= len(removed)
+            records.append((path, value))
+        if paths and not records and self._authentication_failures:
+            raise RuntimeError("Recall records could not be authenticated. Preserve the vault and check the original key or damaged records.")
+        return records
+
     def _ensure_search_index(
         self,
         records: list[tuple[Path, dict[str, object]]],
@@ -1268,14 +1293,21 @@ class RecallVault:
             return self._index_connection
         # Every search is serialized by _search_lock, but successive searches
         # may run on different short-lived UI worker threads.
-        connection = sqlite3.connect(":memory:", check_same_thread=False)
+        previous_signatures = {item[0]: item[1:] for item in self._index_signature}
+        next_signatures = {item[0]: item[1:] for item in signature}
+        changed = {name for name, stamp in next_signatures.items()
+                   if previous_signatures.get(name) != stamp}
+        connection = self._index_connection or sqlite3.connect(":memory:", check_same_thread=False)
         connection.execute(
-            "CREATE VIRTUAL TABLE recall_windows USING fts5("
+            "CREATE VIRTUAL TABLE IF NOT EXISTS recall_windows USING fts5("
             "key UNINDEXED, app, title, files, accessible, ocr)"
         )
         connection.execute(
-            "CREATE VIRTUAL TABLE recall_visual USING fts5(name UNINDEXED, ocr)"
+            "CREATE VIRTUAL TABLE IF NOT EXISTS recall_visual USING fts5(name UNINDEXED, ocr)"
         )
+        for name in set(previous_signatures) - set(next_signatures) | changed:
+            connection.execute("DELETE FROM recall_windows WHERE key GLOB ?", (name + "#*",))
+            connection.execute("DELETE FROM recall_visual WHERE name = ?", (name,))
         fuzzy_terms: dict[int, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
         fuzzy_term_count = 0
         fuzzy_reference_count = 0
@@ -1285,17 +1317,18 @@ class RecallVault:
                     continue
                 key = f"{path.name}#{index}"
                 ocr_text = str(window.get("ocr_text", ""))
-                connection.execute(
-                    "INSERT INTO recall_windows VALUES (?, ?, ?, ?, ?, ?)",
-                    (
-                        key,
-                        str(window.get("app", "")),
-                        str(window.get("title", "")),
-                        "\n".join(str(item) for item in window.get("files", [])),
-                        str(window.get("accessible_text", "")),
-                        ocr_text,
-                    ),
-                )
+                if path.name in changed:
+                    connection.execute(
+                        "INSERT INTO recall_windows VALUES (?, ?, ?, ?, ?, ?)",
+                        (
+                            key,
+                            str(window.get("app", "")),
+                            str(window.get("title", "")),
+                            "\n".join(str(item) for item in window.get("files", [])),
+                            str(window.get("accessible_text", "")),
+                            ocr_text,
+                        ),
+                    )
                 # Store unique OCR tokens once.  Query-time fuzzy matching then
                 # compares words of similar lengths instead of rescanning 2 MiB
                 # of raw OCR and repeating the same Levenshtein work per window.
@@ -1312,10 +1345,11 @@ class RecallVault:
                                 continue
                             fuzzy_reference_count += 1
                             references.add(key)
-            connection.execute(
-                "INSERT INTO recall_visual VALUES (?, ?)",
-                (path.name, str(value.get("ocr_text", ""))),
-            )
+            if path.name in changed:
+                connection.execute(
+                    "INSERT INTO recall_visual VALUES (?, ?)",
+                    (path.name, str(value.get("ocr_text", ""))),
+                )
         connection.commit()
         previous = self._index_connection
         self._index_connection = connection
@@ -1323,7 +1357,7 @@ class RecallVault:
         self._fuzzy_terms = {
             length: dict(values) for length, values in fuzzy_terms.items()
         }
-        if previous is not None:
+        if previous is not None and previous is not connection:
             previous.close()
         valid_names = {name for name, _modified, _size in signature}
         for name in list(self._record_cache):
@@ -1342,6 +1376,9 @@ class RecallVault:
             self._fuzzy_terms.clear()
             self._record_cache.clear()
             self._record_cache_bytes = 0
+            self._manifest_cache.clear()
+            self._manifest_bytes = 0
+            self._authentication_failures.clear()
             if self.semantic is not None:
                 self.semantic.clear_cache()
 
@@ -1377,8 +1414,7 @@ class RecallVault:
     def _search_locked(self, query: str = "", *, app: str = "", day: str = "", semantic: bool = False, excluded_apps: tuple[str, ...] = (), limit: int = 100) -> list[dict[str, object]]:
         paths = self._record_paths()
         signature = self._path_signature(paths)
-        records = [(path, self._load(path)) for path in paths]
-        records = [(path, value) for path, value in records if value]
+        records = self._search_records(paths, signature)
         exclusion_tokens = tuple(
             token.strip().casefold() for token in excluded_apps if token.strip()
         )
@@ -1487,6 +1523,21 @@ class RecallVault:
                 }
             output = []
             for path, value, windows, preview_allowed in loaded:
+                if selected_window_keys is not None and not any(
+                    f"{path.name}#{index}" in selected_window_keys for index, _window in windows
+                ) and path.name not in visual_candidates:
+                    continue
+                full = self._load(path)
+                if not full:
+                    continue
+                windows = [(index, window) for index, window in enumerate(full.get("windows", []))
+                           if isinstance(window, dict) and not any(
+                               token in (str(window.get("app", "")) + "\n" + str(window.get("app_id", ""))).casefold()
+                               for token in exclusion_tokens)]
+                preview_allowed = preview_allowed and len(windows) == len(full.get("windows", []))
+                if not windows:
+                    continue
+                value = full
                 common = {
                     "name": path.name,
                     "captured_at": value.get("captured_at"),
@@ -1732,7 +1783,7 @@ class RecallVault:
         image_name = str(images[index])
         if not VAULT_IMAGE_RE.fullmatch(image_name):
             return None
-        with contextlib.suppress(OSError, ValueError):
+        with contextlib.suppress(OSError, ValueError, InvalidTag):
             return self._read_encrypted(self.vault / image_name, MAX_IMAGE_BYTES + 128)
         return None
 

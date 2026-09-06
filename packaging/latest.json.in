@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "SessionSifu 3.5.23 leaves GNOME browser tabs and documents to browser-owned session recovery instead of reopening saved files as duplicate tabs. Starting apps are reused before GNOME's running list catches up. Browser window placement and normal editor file restoration remain available. Firefox settings and profiles are not changed. Update the GNOME integration and log out/in once to load the changes."
+  "notes": "SessionSifu 3.5.24 implements the stability and performance audit: vault-key continuity, resilient search workers, incremental indexing, accurate portable restore outcomes, background image/OCR work and bounded screenshot buffering. GNOME staging is asynchronous and a watchdog preserves native compositor ownership on timeout. Existing restore pacing and browser-owned recovery are unchanged. Update the GNOME integration and log out/in once. See docs/STABILITY_AUDIT.md for recovery guidance and verification limits."
 }

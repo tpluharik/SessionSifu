@@ -1,6 +1,8 @@
 # SessionSifu documentation
 
-This index describes the current 3.5.23 behavior. Start with the main
+- [3.5.24 stability/performance audit and recovery](STABILITY_AUDIT.md)
+
+This index describes the current 3.5.24 behavior. Start with the main
 [README](../README.md) for installation and compatibility.
 
 ## Using SessionSifu

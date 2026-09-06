@@ -1,10 +1,10 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.5.23. It separates shipped
+This roadmap describes the product after version 3.5.24. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
 
-## Shipped foundation — 3.5.23
+## Shipped foundation — 3.5.24
 
 SessionSifu now combines session restoration with an encrypted, opt-in visual
 history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
@@ -43,7 +43,7 @@ history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
   profiles, without an unsandboxed host-executable fallback.
 
 The session, Recall and retrieval foundations were delivered incrementally
-through 3.5.23. The user-visible workflow and underlying data model remain
+through 3.5.24. The user-visible workflow and underlying data model remain
 consistent across supported editions, while platform adapters report their
 real capabilities instead of implying parity.
 
@@ -60,6 +60,14 @@ The cache is an optimization, not a new storage format: no plaintext search
 database or embedding file is written.
 
 ## Next: quality and trust
+
+The 3.5.24 audit fixes are shipped: key continuity, recoverable search-worker
+errors, per-window portable restore results, bounded background UI work,
+incremental FTS updates and compositor watchdog ownership. See the
+[audit notes](docs/STABILITY_AUDIT.md). Next validation priorities are native
+Windows/macOS/KDE delayed launches, multi-monitor peak-memory measurements,
+credential-store lock/unlock on each OS and real Mutter crash-log correlation.
+These are validation work, not claims that a driver/compositor crash is solved.
 
 1. Build a synthetic multilingual OCR benchmark covering mixed scaling, small
    fonts, dark mode and common application chrome; publish regressions without

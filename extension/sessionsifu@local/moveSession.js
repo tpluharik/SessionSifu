@@ -70,8 +70,15 @@ export const MoveSession = class {
 
         this._log.info('Applying saved window layout');
         const session_file = Gio.File.new_for_path(session_file_path);
-        let [success, contents] = session_file.load_contents(null);
-        if (success) {
+        const contents = await new Promise((resolve, reject) => {
+            session_file.load_contents_async(null, (source, result) => {
+                try {
+                    const [ok, bytes] = source.load_contents_finish(result);
+                    resolve(ok ? bytes : null);
+                } catch (error) { reject(error); }
+            });
+        });
+        if (contents && !this._destroyed) {
             let session_config = FileUtils.getJsonObj(contents);
 
             const session_config_objects = session_config.x_session_config_objects;

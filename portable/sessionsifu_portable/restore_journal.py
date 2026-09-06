@@ -49,7 +49,9 @@ class RestoreJournal:
     ) -> None:
         current = self.get(identifier) or {"id": identifier, "started_at": time.time()}
         current.update({
-            "state": "failed" if error else "completed",
+            "state": "failed" if error else ("partial" if any(
+                item.get("state") in {"failed", "deferred", "cancelled"} for item in actions
+            ) else "completed"),
             "finished_at": time.time(),
             "actions": actions[:1024],
             "summary": summary,

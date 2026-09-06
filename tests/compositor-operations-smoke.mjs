@@ -79,3 +79,25 @@ const win = {get_title: () => 'test', get_workspace: () => ({index: () => 0})};
 assert.equal(direct._getOneMatchedSavedWindow(win, [saved]), saved);
 assert.equal(saved.moved, undefined);
 console.log('Compositor serialization and layout regressions passed');
+
+const guarded = new CompositorOperations();
+let watchdog;
+guarded.configureWatchdog(callback => { watchdog = callback; return 1; }, () => {});
+let finishNative;
+const hung = guarded.run(() => new Promise(resolve => { finishNative = resolve; }));
+let ranQueued = false;
+const pending = guarded.run(() => { ranQueued = true; });
+const rejected = Promise.all([
+    assert.rejects(hung, /timed out/),
+    assert.rejects(pending, /timed out/),
+]);
+await Promise.resolve();
+watchdog();
+await rejected;
+await assert.rejects(guarded.run(() => 42), /still pending/);
+assert.equal(ranQueued, false);
+finishNative();
+await guarded._tail;
+assert.equal(ranQueued, false, 'Expired queued work must never run after late native completion');
+assert.equal(await guarded.run(() => 42), 42);
+console.log('Watchdog preserves native ownership and recovers after late completion');

@@ -1,8 +1,20 @@
 # Troubleshooting
 
+## 3.5.24 vault and restore diagnostics
+
+If the Recall key is unavailable, unlock the OS credential store and retry.
+Do not delete the fallback key or key-identity descriptor. Damaged records are
+retained and logged while healthy records remain searchable. Missing support
+modules can be restored with **Download & Repair** in Updates.
+
+Portable restore journals now report partial completion and support unfinished-
+window retries. A GNOME compositor timeout deliberately blocks overlapping native
+operations; retain diagnostics and saved sessions. If its callback never returns,
+use a normal logout/login after saving work. See [audit notes](STABILITY_AUDIT.md).
+
 ## Firefox appears to restore twice
 
-Update the GNOME integration to 3.5.23, then log out/in once to load it.
+Update the GNOME integration to 3.5.24, then log out/in once to load it.
 SessionSifu now reuses a browser's STARTING state and does not reopen saved
 documents in recognized browsers. Firefox handles its own tabs; SessionSifu
 handles launching and window layout. Regular editor document recovery remains
@@ -15,13 +27,13 @@ within one restoration. See [browser recovery](RESTORE_GUIDE.md#firefox-and-brow
 
 ## Wayland returns to a black screen while restoring a session
 
-SessionSifu 3.5.23 additionally suspends native Recall screenshots throughout
+SessionSifu 3.5.24 additionally suspends native Recall screenshots throughout
 restoration, waits briefly after display changes, rejects destroyed window
 actors and validates launch workspace indices. Late shutdown callbacks cannot
 recreate the panel indicator or start another Recall save. Metadata-only Recall
 entries during restoration are expected; screenshots resume afterward.
 
-Versions 3.5.20–3.5.23 address overlapping SessionSifu compositor operations and stale
+Versions 3.5.20–3.5.24 address overlapping SessionSifu compositor operations and stale
 window callbacks. Launch requests, layout changes and native Recall captures
 now share one queue across the extension's UI and restoration objects. This
 does not disable automatic restoration or Recall. Earlier releases serialized

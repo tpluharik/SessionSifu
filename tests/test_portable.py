@@ -63,6 +63,7 @@ class FakeAdapter(PlatformAdapter):
 
     def apply_layout(self, session: SessionSnapshot) -> None:
         self.applied = session
+        return [{"window_id": w.window_id, "state": "completed"} for w in session.windows]
 
 
 class PortableTests(unittest.TestCase):
@@ -347,7 +348,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.5.23")
+        self.assertEqual(VERSION, "3.5.24")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
@@ -366,7 +367,9 @@ class PortableTests(unittest.TestCase):
             path = controller.save_named("Work")
             self.assertTrue(path.is_file())
             result = controller.restore_named("Work")
-            self.assertEqual(result, {"applications": 1, "windows": 1})
+            self.assertEqual(result["applications"], 0)  # Reuse the existing editor.
+            self.assertEqual(result["windows"], 1)
+            self.assertFalse(result["partial"])
             self.assertEqual(adapter.applied.windows[0].title, "Notes")
 
     def test_restore_preview_and_selection_are_application_scoped(self) -> None:
@@ -380,12 +383,13 @@ class PortableTests(unittest.TestCase):
             result = controller.restore_named_selection(
                 "Work", {str(plan[0]["identity"])}
             )
-            self.assertEqual(result, {"applications": 1, "windows": 1})
+            self.assertEqual(result["applications"], 0)
+            self.assertEqual(result["windows"], 1)
             self.assertEqual(
                 controller.restore_named_selection("Work", {"not-selected"}),
-                {"applications": 0, "windows": 0},
+                {"applications": 0, "windows": 0, "actions": [], "partial": False},
             )
-            self.assertEqual(adapter.applied.windows, [])
+            self.assertEqual(len(adapter.applied.windows), 1)  # No new layout call.
 
     def test_history_retains_five(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -779,7 +783,7 @@ class PortableTests(unittest.TestCase):
             controller.save_named("Work")
             api = LocalApi(controller)
             status = api.dispatch({"method": "status"})
-            self.assertEqual(status["version"], "3.5.23")
+            self.assertEqual(status["version"], "3.5.24")
             preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
             self.assertEqual(preview["applications"][0]["application"], "Editor")
             with self.assertRaises(ValueError):
@@ -794,7 +798,8 @@ class PortableTests(unittest.TestCase):
             self.assertEqual(entry["state"], "completed")
             self.assertEqual(entry["source"], "named:Work")
             self.assertTrue(entry["actions"])
-            self.assertEqual(controller.retry_restore(str(entry["id"])), {"applications": 1, "windows": 1})
+            with self.assertRaisesRegex(ValueError, "No confirmed unfinished"):
+                controller.retry_restore(str(entry["id"]))
 
     def test_semantic_search_annotations_scenes_and_ask_are_local(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -840,7 +845,7 @@ class PortableTests(unittest.TestCase):
             controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
             controller.save_named("Work")
             mcp = ReadOnlyMcp(controller)
-            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.23")
+            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.24")
             self.assertTrue(mcp.call("restore_preview", {"name": "Work"}))
             with self.assertRaises(ValueError):
                 mcp.call("restore_execute", {"name": "Work"})

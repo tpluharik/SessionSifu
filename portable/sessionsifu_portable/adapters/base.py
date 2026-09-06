@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import time
+import threading
 import urllib.parse
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, replace
@@ -17,6 +18,9 @@ try:
     import psutil
 except ImportError:  # pragma: no cover - the frozen release always includes psutil
     psutil = None
+
+
+_RESTORE_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,44 +251,70 @@ class PlatformAdapter(ABC):
         return replace(session, windows=windows, monitors=current)
 
     def restore(
-        self,
-        session: SessionSnapshot,
-        settle_seconds: float = 2.0,
-        selected: set[str] | None = None,
+        self, session: SessionSnapshot, settle_seconds: float = 15.0,
+        selected: set[str] | None = None, cancelled=lambda: False,
     ) -> dict[str, object]:
-        launched: set[str] = set()
-        launched_count = 0
-        actions: list[dict[str, object]] = []
+        if not _RESTORE_LOCK.acquire(blocking=False):
+            raise RuntimeError("A restore is already running")
+        try:
+            return self._restore_serial(session, settle_seconds, selected, cancelled)
+        finally:
+            _RESTORE_LOCK.release()
+
+    def _restore_serial(self, session, settle_seconds, selected, cancelled):
+        groups = {}
         for window in session.windows:
             identity = self.restore_identity(window)
-            if not identity or identity in launched:
+            if identity and (selected is None or identity in selected):
+                groups.setdefault(identity, []).append(window)
+        actions = []
+        launched_count = 0
+        restored_windows = 0
+        for identity, windows in groups.items():
+            if cancelled():
+                actions.extend(dict(identity=identity, window_id=w.window_id,
+                                    state="cancelled") for w in windows)
                 continue
-            if selected is not None and identity not in selected:
-                actions.append({"identity": identity, "state": "skipped", "reason": "not-selected"})
-                continue
-            launched.add(identity)
             try:
-                launched_result = self.launch_window(window)
-                if launched_result is not False:
+                current = self.capture_windows(include_files=True)
+                observed = [w for w in current if self.restore_identity(w) == identity]
+                files = list(dict.fromkeys(p for w in windows for p in w.open_files))
+                already_open = {p for w in observed for p in w.open_files}
+                missing_files = [p for p in files if p not in already_open]
+                representative = replace(windows[0], open_files=missing_files)
+                if not observed or missing_files:
+                    if self.launch_window(representative) is False:
+                        raise RuntimeError("Application could not be launched")
                     launched_count += 1
-                    actions.append({"identity": identity, "state": "launched"})
-                else:
-                    actions.append({"identity": identity, "state": "skipped", "reason": "not-launchable"})
-            except (OSError, ValueError, subprocess.SubprocessError) as error:
-                actions.append({"identity": identity, "state": "failed", "error": str(error)[:512]})
-        if launched_count:
-            time.sleep(max(0.0, min(10.0, settle_seconds)))
-        restored = [
-            window for window in session.windows
-            if selected is None or self.restore_identity(window) in selected
-        ]
-        try:
-            self.apply_layout(replace(session, windows=restored))
-            actions.append({"identity": "window-layout", "state": "completed", "windows": len(restored)})
-        except (OSError, ValueError, subprocess.SubprocessError) as error:
-            actions.append({"identity": "window-layout", "state": "failed", "error": str(error)[:512]})
-        restored_windows = len(restored)
-        return {"applications": launched_count, "windows": restored_windows, "actions": actions}
+                    actions.append(dict(identity=identity, state="launch-requested"))
+                    deadline = time.monotonic() + max(0.0, min(30.0, settle_seconds))
+                    while time.monotonic() < deadline and not cancelled():
+                        current = self.capture_windows(include_files=False)
+                        observed = [w for w in current if self.restore_identity(w) == identity]
+                        if len(observed) >= len(windows):
+                            break
+                        time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
+                if cancelled():
+                    actions.extend(dict(identity=identity, window_id=w.window_id,
+                                        state="cancelled") for w in windows)
+                    continue
+                outcomes = self.apply_layout(replace(session, windows=windows))
+                # Legacy/unsupported backends cannot truthfully claim success.
+                outcomes = outcomes if isinstance(outcomes, list) else []
+                by_id = {str(item.get("window_id")): item for item in outcomes}
+                for window in windows:
+                    outcome = by_id.get(str(window.window_id), {
+                        "window_id": window.window_id, "state": "deferred",
+                        "reason": "Window not observed or layout not confirmed",
+                    })
+                    actions.append(dict(outcome, identity=identity))
+                    restored_windows += outcome.get("state") == "completed"
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+                actions.extend(dict(identity=identity, window_id=w.window_id,
+                                    state="failed", error=str(error)[:512]) for w in windows)
+        return {"applications": launched_count, "windows": restored_windows,
+                "actions": actions, "partial": any(
+                    a["state"] in {"failed", "deferred", "cancelled"} for a in actions)}
 
     def diagnostics(self) -> dict[str, object]:
         return {

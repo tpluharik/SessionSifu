@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 from typing import Callable
 
 from . import VERSION
@@ -25,6 +26,7 @@ class SessionController:
         store: SessionStore | None = None,
     ) -> None:
         self.adapter = adapter or select_adapter()
+        self.restore_cancelled = threading.Event()
         self.store = store or SessionStore()
         self.recall_store = RecallStore(self.store.root)
         self.restore_journal = RestoreJournal(self.store.root)
@@ -51,15 +53,12 @@ class SessionController:
         self, session: SessionSnapshot, source: str, selected: set[str] | None = None
     ) -> dict[str, object]:
         plan = self.adapter.plan_restore(session)
-        journal_id = self.restore_journal.begin(source, plan)
+        journal_id = self.restore_journal.begin(source, [p for p in plan if selected is None or p.get("identity") in selected])
         try:
-            result = self.adapter.restore(session, selected=selected)
+            result = self.adapter.restore(session, selected=selected, cancelled=self.restore_cancelled.is_set)
             actions = list(result.get("actions") or [])
             self.restore_journal.finish(journal_id, actions=actions, summary=result)
-            return {
-                "applications": int(result.get("applications") or 0),
-                "windows": int(result.get("windows") or 0),
-            }
+            return result
         except Exception as error:
             self.restore_journal.finish(
                 journal_id, actions=[], summary={}, error=str(error)
@@ -204,14 +203,22 @@ class SessionController:
         if not entry:
             raise ValueError("Restore journal entry is unavailable")
         source = str(entry.get("source") or "")
+        outstanding = {str(a.get("window_id")) for a in entry.get("actions", [])
+                       if a.get("state") in {"failed", "deferred", "cancelled"} and a.get("window_id")}
+        if not outstanding:
+            raise ValueError("No confirmed unfinished windows to retry; review a new restore plan")
+        def retry(session):
+            from dataclasses import replace
+            return self._restore(replace(session, windows=[
+                w for w in session.windows if str(w.window_id) in outstanding]), source)
         if source.startswith("named:"):
-            return self.restore_named(source.removeprefix("named:"))
+            return retry(self.store.load_named(source.removeprefix("named:")))
         if source.startswith("path:"):
             filename = source.removeprefix("path:")
             candidates = [*self.store.list_history(), *self.store.list_named()]
             path = next((candidate for candidate in candidates if candidate.name == filename), None)
             if path:
-                return self.restore_path(path)
+                return retry(self.store.load(path))
         raise ValueError("The source session for this restore is no longer available")
 
     def clear_recall(self) -> int:

@@ -13,6 +13,8 @@ export const CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const MAX_CACHE_FILE_BYTES = 16 * 1024 * 1024;
 const _previews = new Map();
 let _serial = 0;
+let _generation = 0;
+let _cancellable = new Gio.Cancellable();
 
 function _key(windowId) {
     const value = String(windowId ?? '');
@@ -40,20 +42,33 @@ export function capturePath(windowId) {
     ]);
 }
 
-export function storePreview(windowId, sourcePath, context = '') {
+export async function storePreview(windowId, sourcePath, context = '', mayContinue = () => true) {
+    const generation = _generation;
+    const cancellable = _cancellable;
     const key = _key(windowId);
     if (!key)
         return false;
     const source = Gio.File.new_for_path(sourcePath);
-    const info = source.query_info(
-        'standard::type,standard::is-symlink,standard::size,time::modified',
-        Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null);
+    const info = await new Promise((resolve, reject) => {
+        source.query_info_async(
+            'standard::type,standard::is-symlink,standard::size,time::modified',
+            Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, GLib.PRIORITY_DEFAULT,
+            cancellable, (file, result) => {
+                try { resolve(file.query_info_finish(result)); } catch (error) { reject(error); }
+            });
+    });
     if (info.get_file_type() !== Gio.FileType.REGULAR || info.get_is_symlink() ||
         info.get_size() <= 0 || info.get_size() > MAX_CACHE_FILE_BYTES)
         return false;
-    const [ok, bytes] = source.load_contents(null);
-    if (!ok || bytes.length <= 0 || bytes.length > MAX_CACHE_FILE_BYTES)
+    const [ok, bytes] = await new Promise((resolve, reject) => {
+        source.load_contents_async(cancellable, (file, result) => {
+            try { resolve(file.load_contents_finish(result)); } catch (error) { reject(error); }
+        });
+    });
+    if (!ok || generation !== _generation || !mayContinue() || bytes.length <= 0 || bytes.length > MAX_CACHE_FILE_BYTES) {
+        bytes?.fill(0);
         return false;
+    }
     _previews.get(key)?.bytes.fill(0);
     _previews.set(key, {
         bytes,
@@ -65,24 +80,38 @@ export function storePreview(windowId, sourcePath, context = '') {
     return _previews.has(key);
 }
 
-export function restorePreview(
-    windowId, targetPath, maxAgeSeconds = CACHE_MAX_AGE_SECONDS, context = ''
+export async function restorePreview(
+    windowId, targetPath, maxAgeSeconds = CACHE_MAX_AGE_SECONDS, context = '', mayContinue = () => true
 ) {
     const preview = _previews.get(_key(windowId));
-    if (!preview || preview.context !== String(context) ||
+    if (!mayContinue() || !preview || preview.context !== String(context) ||
         GLib.file_test(targetPath, GLib.FileTest.IS_SYMLINK))
         return 0;
     const now = Math.floor(Date.now() / 1000);
     if (!preview.modified || preview.modified > now + 60 ||
         now - preview.modified > maxAgeSeconds)
         return 0;
-    Gio.File.new_for_path(targetPath).replace_contents(
-        preview.bytes, null, false, Gio.FileCreateFlags.REPLACE_DESTINATION, null);
-    GLib.chmod(targetPath, 0o600);
+    const generation = _generation;
+    const target = Gio.File.new_for_path(targetPath);
+    await new Promise((resolve, reject) => {
+        target.replace_contents_bytes_async(
+            new GLib.Bytes(preview.bytes), null, false,
+            Gio.FileCreateFlags.PRIVATE | Gio.FileCreateFlags.REPLACE_DESTINATION,
+            _cancellable, (file, result) => {
+                try { file.replace_contents_finish(result); resolve(); } catch (error) { reject(error); }
+            });
+    });
+    if (generation !== _generation || !mayContinue()) {
+        try { target.delete(null); } catch (_) {}
+        return 0;
+    }
     return preview.modified;
 }
 
 export function clearPreviewCache() {
+    _generation++;
+    _cancellable.cancel();
+    _cancellable = new Gio.Cancellable();
     const removed = _previews.size;
     for (const preview of _previews.values())
         preview.bytes.fill(0);

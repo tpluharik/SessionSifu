@@ -4,6 +4,27 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.24
+
+- Preserve Recall key identity across credential-store outages; serialize key
+  initialization and retain legacy formats. Existing vaults never get a silent
+  replacement key. Keep repair reachable when old updaters omit support modules.
+- Skip individually damaged records without changing ciphertext and complete
+  search workers after unexpected failures.
+- Restore portable application groups serially with readiness checks, running
+  instance reuse, combined document requests and per-window outcomes. Retry only
+  unfinished work; fix KDE partial-batch fallback and macOS window reuse.
+- Move portable restore, OCR reindex, local answers and screenshot/filmstrip
+  loading to bounded workers; support cancellation and discard stale previews.
+- Capture/compress one portable screenshot at a time with byte budgets and
+  backpressure, preserving selected quality and reporting missing images.
+- Update memory-only FTS rows incrementally and cache compact search metadata
+  separately from full OCR coordinates.
+- Make GNOME preview staging and session reads asynchronous. Add a queue
+  watchdog that never releases native ownership before the real callback.
+- Preserve GNOME safety pacing and browser-owned recovery. Add fault-injection
+  and offscreen GUI regressions; document remaining native-platform validation.
+
 ## 3.5.23
 
 - On GNOME, let recognized browsers restore their own tabs and local documents.

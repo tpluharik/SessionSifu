@@ -159,7 +159,8 @@ class WindowsAdapter(PlatformAdapter):
         )
         return True
 
-    def apply_layout(self, session: SessionSnapshot) -> None:
+    def apply_layout(self, session: SessionSnapshot) -> list[dict]:
+        outcomes = []
         session = self.reconciled_session(session)
         available: dict[str, list[WindowSnapshot]] = defaultdict(list)
         for current in self._enumerate(include_files=False):
@@ -174,8 +175,11 @@ class WindowsAdapter(PlatformAdapter):
             hwnd = wintypes.HWND(int(current.window_id))
             x, y, width, height = saved.geometry
             self.user32.ShowWindow(hwnd, 9)  # SW_RESTORE before geometry changes
-            self.user32.MoveWindow(hwnd, x, y, width, height, True)
+            if not self.user32.MoveWindow(hwnd, x, y, width, height, True):
+                continue
             if saved.maximized:
                 self.user32.ShowWindow(hwnd, 3)
             elif saved.minimized:
                 self.user32.ShowWindow(hwnd, 6)
+            outcomes.append({"window_id": saved.window_id, "state": "completed"})
+        return outcomes

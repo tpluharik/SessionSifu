@@ -1,12 +1,22 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.23.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.24.
+
+## Portable restore outcomes
+
+Windows/macOS/KDE/general-Linux application groups restore serially on a worker.
+Existing apps are reused and document requests are combined. Newly launched
+windows get a bounded readiness wait. The result and private journal retain
+per-window completed, deferred, failed or cancelled outcomes; the window count
+is the completed count. Retry targets explicit unfinished window IDs only.
+Cancel stops remaining work, not processes already launched.
+See [audit notes](STABILITY_AUDIT.md) for timing and verification limits.
 It covers named sessions, rolling automatic history and the optional previous-
 desktop restore on GNOME, KDE Plasma, Windows, macOS and portable Linux.
 
 ## Restore performance and activity indicator
 
-Version 3.5.23 counts time already spent on launch readiness and layout toward
+Version 3.5.24 counts time already spent on launch readiness and layout toward
 the pacing interval instead of adding the entire pause afterward. The eight-
 second pacing floor is unchanged, and time queued behind a screenshot before
 launch does not count toward it. Fixed window-settle delays remain fixed. For
@@ -101,7 +111,7 @@ queue. Disabling the integration cancels pending restore work.
 
 ### GNOME compositor-operation coordination
 
-Version 3.5.23 uses one shared queue for SessionSifu launch requests, window
+Version 3.5.24 uses one shared queue for SessionSifu launch requests, window
 placement and native Recall screenshots, including requests from separate UI
 and restore objects. A screenshot keeps its slot until its native callback
 returns; JavaScript does not pretend a timed-out native operation has ended.

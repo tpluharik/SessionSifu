@@ -2,6 +2,7 @@
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import {compositorOperations} from './compositorOperations.js';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
@@ -41,6 +42,12 @@ export default class SessionSifuExtension extends Extension {
     }
 
     enable() {
+        compositorOperations.configureWatchdog(
+            (callback, delay) => GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
+                callback();
+                return GLib.SOURCE_REMOVE;
+            }),
+            source => GLib.Source.remove(source));
         cancelShutdown();
         this._shutdownId = global.connect('shutdown', () => beginShutdown());
         // settings is needed by the initialization of some utils

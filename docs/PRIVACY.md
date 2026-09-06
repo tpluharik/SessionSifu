@@ -1,5 +1,11 @@
 # Privacy and local data
 
+Version 3.5.24 stores a private, nonsecret vault-key fingerprint/backend descriptor
+and serializes initialization. A credential outage never permits replacing a key
+for existing ciphertext. Unlock the original store and retry; do not delete key
+files. Mixed-key histories from older releases need careful manual recovery.
+Search metadata/indexes remain memory-only. See [recovery notes](STABILITY_AUDIT.md).
+
 SessionSifu has no account, cloud service, analytics SDK, advertising channel or
 telemetry upload. Its desktop observations are stored locally. Checking for
 updates and downloading releases contacts GitHub; operating systems and package
@@ -40,7 +46,9 @@ New optional surfaces in 3.4.0 follow the same local-only boundary:
 Named and automatic session JSON remains protected by operating-system access
 controls rather than application encryption. Recall records, OCR and previews
 are AES-256-GCM encrypted in version 3.0. GNOME prefers an OS credential-store
-key and reports a degraded state if it must use a private `0600` fallback key.
+key and reports a degraded state if a new vault must use a private `0600`
+fallback key. An existing vault never gets a replacement key on a credential
+outage; its original key must be made available again.
 Portable builds prefer Windows Credential Locker, macOS Keychain or the
 available Linux Secret Service/KWallet backend. They retain an existing
 owner-private key, and use one as a clearly documented fallback when no usable

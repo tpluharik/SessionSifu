@@ -397,7 +397,7 @@ async function _captureWindowActors(name, excludedApps = [], shouldContinue = ()
             captured++;
             if (shouldContinue()) {
                 try {
-                    WorkspaceCache.storePreview(windowId, previewPath, previewContext);
+                    await WorkspaceCache.storePreview(windowId, previewPath, previewContext, shouldContinue);
                 } catch (error) {
                     Log.Log.getDefault().error(error, 'Could not retain a Recall workspace preview');
                 }
@@ -414,11 +414,11 @@ async function _captureWindowActors(name, excludedApps = [], shouldContinue = ()
             GLib.file_test(_windowScreenshotPath(name, index, true), GLib.FileTest.IS_REGULAR))
             continue;
         try {
-            const modified = WorkspaceCache.restorePreview(
+            const modified = await WorkspaceCache.restorePreview(
                 windowId, _windowScreenshotPath(name, index, true),
                 WorkspaceCache.CACHE_MAX_AGE_SECONDS,
-                String(windowRecords[index].window_title ?? ''));
-            if (!modified)
+                String(windowRecords[index].window_title ?? ''), shouldContinue);
+            if (!modified || !shouldContinue())
                 continue;
             windowRecords[index].recall_preview_source = 'workspace-cache';
             windowRecords[index].recall_preview_captured_at =
@@ -835,7 +835,8 @@ export const RecallRecorder = class {
                     await _captureWindowArea(temporaryPath, metaWindow, actor, previewContext,
                         () => generation === this._screenshotGeneration && this._mayCaptureWorkspace());
                     if (generation === this._screenshotGeneration && this._mayCaptureWorkspace()) {
-                        WorkspaceCache.storePreview(windowId, temporaryPath, previewContext);
+                        await WorkspaceCache.storePreview(windowId, temporaryPath, previewContext,
+                            () => generation === this._screenshotGeneration && this._mayCaptureWorkspace());
                         captured++;
                     }
                 } catch (error) {

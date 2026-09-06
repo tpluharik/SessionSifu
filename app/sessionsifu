@@ -59,7 +59,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.5.23"
+CURRENT_VERSION = "3.5.24"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -143,7 +143,7 @@ def missing_user_payload_modules() -> tuple[str, ...]:
     app_directory = Path(__file__).resolve().parent
     if not (app_directory / "recall_engine.py").is_file():
         return ()
-    support_names = ("semantic.py", "restore_journal.py", "mcp.py", "capsule.py")
+    support_names = ("semantic.py", "restore_journal.py", "mcp.py", "capsule.py", "vault_key.py")
     if all((_portable_module_dir / name).is_file() for name in support_names):
         return ()
     return tuple(
@@ -996,6 +996,7 @@ def install_user_payload(
             "restore_journal.py",
             "mcp.py",
             "capsule.py",
+            "vault_key.py",
         )
     }
     source_desktop = payload_root / "usr/share/applications/org.gnome.SessionSifu.desktop"
@@ -2009,7 +2010,7 @@ class RecallSearchWindow(Adw.ApplicationWindow):
                 )
                 if request["group"] and not request["query"].strip() and not request["app"]:
                     entries = self._vault.group_scenes(entries)
-            except (OSError, RuntimeError, ValueError) as caught:
+            except Exception as caught:  # Never strand the search busy state.
                 entries = []
                 error = str(caught)[:512]
             GLib.idle_add(self._finish_search, request, entries, error)

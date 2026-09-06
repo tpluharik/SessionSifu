@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PySide6.QtCore import (
     QByteArray, QBuffer, QEvent, QIODevice, QObject, QSettings, QSize,
-    QTimer, Qt, QUrl, Signal,
+    QTimer, Qt, QUrl, Signal, Slot,
 )
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QImage, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QProgressDialog,
     QScrollArea,
     QSlider,
     QSplitter,
@@ -252,10 +253,46 @@ class RecallCaptureBridge(QObject):
     completed = Signal(bool, str, bool)
 
 
+class BackgroundWork(QObject):
+    """Bound queued I/O; deliver all completions back on the owning GUI thread."""
+    completed = Signal(object, object, str)
+
+    def __init__(self, parent, workers=1):
+        super().__init__(parent)
+        self.pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="sessionsifu-io")
+        self.slots = threading.BoundedSemaphore(16)
+        self.completed.connect(self._finish)
+        parent.destroyed.connect(lambda: self.pool.shutdown(wait=False, cancel_futures=True))
+
+    def submit(self, operation, finished):
+        if not self.slots.acquire(blocking=False):
+            finished(None, "Background queue is busy. Please retry shortly.")
+            return
+        def worker():
+            result, error = None, ""
+            try:
+                result = operation()
+            except Exception as caught:
+                error = str(caught)[:1024]
+            finally:
+                self.slots.release()
+                try:
+                    self.completed.emit(finished, result, error)
+                except RuntimeError:
+                    pass  # Dialog was destroyed; never touch a deleted widget.
+        self.pool.submit(worker)
+
+    @Slot(object, object, str)
+    def _finish(self, finished, result, error):
+        finished(result, error)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, controller: SessionController) -> None:
         super().__init__()
         self.controller = controller
+        self._background = BackgroundWork(self)
+        self._operation_busy = False
         self.settings = QSettings("SessionSifu", "SessionSifu")
         self.setWindowTitle(f"SessionSifu {VERSION}")
         self.setWindowIcon(QIcon(str(icon_path())))
@@ -604,16 +641,28 @@ class MainWindow(QMainWindow):
         return page
 
     def _perform(self, operation, success: str, silent: bool = False) -> object | None:
-        try:
-            result = operation()
-            self.status.setText(success)
-            self.refresh()
-            return result
-        except Exception as error:
-            self.status.setText(str(error))
-            if not silent:
-                QMessageBox.warning(self, "SessionSifu", str(error))
+        if self._operation_busy:
+            self.status.setText("An operation is already running.")
             return None
+        self._operation_busy = True
+        self.controller.restore_cancelled.clear()
+        progress = QProgressDialog("Working… Cancel stops remaining restore actions.", "Cancel", 0, 0, self)
+        progress.canceled.connect(self.controller.restore_cancelled.set)
+        if not silent:
+            progress.show()
+        def finished(result, error):
+            progress.close()
+            progress.deleteLater()
+            self._operation_busy = False
+            partial = isinstance(result, dict) and result.get("partial")
+            self.refresh()
+            self.status.setText(error or (
+                "Restore partially completed. Review the restore journal for unfinished windows."
+                if partial else success))
+            if error and not silent:
+                QMessageBox.warning(self, "SessionSifu", error)
+        self._background.submit(operation, finished)
+        return None
 
     def save_named(self) -> None:
         name = self.name.text().strip()
@@ -850,7 +899,8 @@ class MainWindow(QMainWindow):
     def delete_named(self) -> None:
         item = self.named.currentItem()
         if item:
-            self._perform(lambda: self.controller.store.delete_named(item.data(Qt.UserRole)), "Session deleted.")
+            name = item.data(Qt.UserRole)
+            self._perform(lambda: self.controller.store.delete_named(name), "Session deleted.")
 
     def restore_latest(self) -> None:
         history = self.controller.history()
@@ -1038,21 +1088,68 @@ class MainWindow(QMainWindow):
                 False, error or "No desktop session was captured.", silent
             )
             return
-        try:
-            display, windows, diagnostics, edge, quality = self._capture_recall_images(session)
-        except Exception as caught:
-            self._recall_capture_bridge.completed.emit(False, str(caught)[:1024], silent)
-            return
+        preview = None
+        window_previews = {}
+        diagnostics = {"expected_windows": min(len(session.windows), 64),
+                       "screenshots_enabled": self.recall_screenshots.isChecked(),
+                       "raw_image_budget_bytes": 128 * 1024 * 1024}
+        exclusions = tuple(str(x).casefold() for x in request.get("excluded_apps", ()))
+        eligible = [i for i, w in enumerate(session.windows[:64]) if not any(
+            token in (w.app_id + "\\n" + w.app_name).casefold()
+            for token in ("sessionsifu", *exclusions))]
+        diagnostics["eligible_windows"] = len(eligible)
+        # No display overview when it might include an excluded application.
+        jobs = iter(([None] if len(eligible) == min(len(session.windows), 64) else []) + eligible)
+        encoded_bytes = 0
+
+        def capture_next():
+            nonlocal preview, encoded_bytes
+            if not self.recall_screenshots.isChecked() or not self.recall_enabled.isChecked():
+                preview = None
+                window_previews.clear()
+                finalize_async()
+                return
+            index = next(jobs, -1)
+            if index == -1:
+                finalize_async()
+                return
+            try:
+                display, windows, _diagnostics, edge, quality = self._capture_recall_images(
+                    session, indices=[] if index is None else [index], with_display=index is None,
+                    allow_fallback=len(eligible) == min(len(session.windows), 64))
+                image = display if index is None else windows.get(index)
+                if image is None or image.isNull():
+                    QTimer.singleShot(0, capture_next)
+                    return
+                if image.sizeInBytes() > 128 * 1024 * 1024:
+                    diagnostics["deferred_reason"] = "Image exceeds decoded-pixel budget"
+                    QTimer.singleShot(0, capture_next)
+                    return
+            except Exception as caught:
+                self._recall_capture_bridge.completed.emit(False, str(caught)[:1024], silent)
+                return
+            def encoded(data, error):
+                nonlocal preview, encoded_bytes
+                if error:
+                    self._recall_capture_bridge.completed.emit(False, error, silent)
+                    return
+                if data and encoded_bytes + len(data) <= 128 * 1024 * 1024:
+                    encoded_bytes += len(data)
+                    if index is None:
+                        preview = data
+                    else:
+                        window_previews[index] = data
+                elif data:
+                    diagnostics["deferred_reason"] = "Compressed capture budget reached"
+                # Backpressure: never hold the next full-resolution image while
+                # this one's compression is still running.
+                QTimer.singleShot(0, capture_next)
+            self._background.submit(
+                lambda: self._jpeg_bytes(image, edge, quality if index is None else max(60, quality - 3)),
+                encoded)
 
         def finalize() -> None:
             try:
-                preview = self._jpeg_bytes(display, edge, quality) if display else None
-                window_previews = {
-                    index: encoded
-                    for index, image in windows.items()
-                    for encoded in [self._jpeg_bytes(image, edge, max(60, quality - 3))]
-                    if encoded
-                }
                 diagnostics["captured_window_images"] = len(window_previews)
                 diagnostics["missing_window_images"] = max(
                     0, int(diagnostics.get("expected_windows", 0)) - len(window_previews)
@@ -1076,9 +1173,13 @@ class MainWindow(QMainWindow):
                 success, message = False, str(caught)[:1024]
             self._recall_capture_bridge.completed.emit(success, message, silent)
 
-        threading.Thread(
-            target=finalize, name="sessionsifu-recall-finalize", daemon=True
-        ).start()
+        def finalize_async():
+            if not self.recall_enabled.isChecked():
+                self._recall_capture_bridge.completed.emit(False, "Capture cancelled: Recall was disabled.", silent)
+                return
+            # Final persistence and OCR remain outside the GUI thread.
+            threading.Thread(target=finalize, name="sessionsifu-recall-finalize", daemon=True).start()
+        capture_next()
 
     def _finish_recall_capture(self, success: bool, message: str, silent: bool) -> None:
         self._recall_saving = False
@@ -1100,12 +1201,39 @@ class MainWindow(QMainWindow):
         self.status.setText("Privacy Recall resumed." if until == 0 else "Privacy Recall capture paused.")
 
     def refresh_recall(self) -> None:
-        self.recall_results.clear()
-        for entry in self.controller.search_recall(
-            self.recall_search.text(),
-            excluded_apps=self._excluded_apps(),
-            semantic=self.recall_related.isChecked(),
-        ):
+        self._recall_list_generation = getattr(self, "_recall_list_generation", 0) + 1
+        generation = self._recall_list_generation
+        query, exclusions = self.recall_search.text(), self._excluded_apps()
+        semantic = self.recall_related.isChecked()
+        def load():
+            entries = self.controller.search_recall(query, excluded_apps=exclusions, semantic=semantic)
+            images = []
+            for index, entry in enumerate(entries):
+                if generation != self._recall_list_generation:
+                    return [], []
+                image = QImage()
+                if index < 24:
+                    images_for_entry = recall_entry_images(entry)
+                    name = recall_highlight_image_name(entry) or (
+                        images_for_entry[0][0] if images_for_entry else "")
+                    data = self.controller.recall_store.preview_bytes(
+                        str(entry.get("name", "")), image_name=name)
+                    if data:
+                        image = QImage.fromData(data).scaled(240, 135, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                images.append(image)
+            return entries, images
+        def finished(result, error):
+            if generation != self._recall_list_generation:
+                return
+            self.recall_results.clear()
+            if error:
+                self.status.setText(f"Recall unavailable: {error}")
+                return
+            self._render_recall_list(*result)
+        self._background.submit(load, finished)
+
+    def _render_recall_list(self, entries, images):
+        for entry, image in zip(entries, images):
             apps = ", ".join(entry.get("apps", [])[:4]) or "Unknown application"
             titles = " · ".join(entry.get("titles", [])[:3])
             label = f"{entry.get('captured_at', '')} — {apps}"
@@ -1113,9 +1241,9 @@ class MainWindow(QMainWindow):
                 label += f" — {titles}"
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, entry)
-            pixmap = recall_result_pixmap(self.controller, entry)
-            if not pixmap.isNull():
-                item.setIcon(QIcon(pixmap.scaled(240, 135, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)))
+            if not image.isNull():
+                pixmap = highlight_recall_pixmap(QPixmap.fromImage(image), entry.get("highlight_boxes", []))
+                item.setIcon(QIcon(pixmap))
             self.recall_results.addItem(item)
 
     def _capture_recall_preview(self) -> bytes | None:
@@ -1174,7 +1302,7 @@ class MainWindow(QMainWindow):
         return preview, window_previews, diagnostics
 
     def _capture_recall_images(
-        self, session
+        self, session, *, indices=None, with_display=True, allow_fallback=True
     ) -> tuple[QImage | None, dict[int, QImage], dict, int, int]:
         """Grab GUI-owned pixels; compression happens later in a worker."""
         if not self.recall_screenshots.isChecked():
@@ -1184,21 +1312,28 @@ class MainWindow(QMainWindow):
                 "missing_window_images": min(len(session.windows), 64),
                 "screenshots_enabled": False,
             }, 960, 68
-        screens = []
-        for screen in QApplication.screens():
-            desktop = screen.grabWindow(0)
-            if not desktop.isNull():
-                screens.append((screen.geometry(), desktop.toImage(), screen))
+        screens = [(screen.geometry(), None, screen) for screen in QApplication.screens()]
         primary = QApplication.primaryScreen()
-        primary_desktop = next(
-            (desktop for _geometry, desktop, screen in screens if screen is primary),
-            screens[0][1] if screens else QImage(),
+        def bounded_screen(screen):
+            geometry = screen.geometry()
+            scale = screen.devicePixelRatio()
+            return geometry.width() * geometry.height() * scale * scale * 4 <= 128 * 1024 * 1024
+        primary_desktop = (
+            primary.grabWindow(0).toImage()
+            if with_display and primary is not None and bounded_screen(primary) else QImage()
         )
         preview_edge, jpeg_quality = recall_preview_profile(
             str(self.recall_preview_quality.currentData() or "storage")
         )
         window_images: dict[int, QImage] = {}
+        raw_bytes = primary_desktop.sizeInBytes()
         for index, window in enumerate(session.windows[:64]):
+            if indices is not None and index not in indices:
+                continue
+            # Bound compatibility callers too; async production capture uses one image.
+            estimated = max(0, window.geometry[2]) * max(0, window.geometry[3]) * 16
+            if raw_bytes + estimated > 128 * 1024 * 1024:
+                continue
             image = QImage()
             native_id = str(window.window_id or "")
             try:
@@ -1212,18 +1347,23 @@ class MainWindow(QMainWindow):
                             )),
                             QApplication.primaryScreen(),
                         )
-                        if screen is not None:
+                        if screen is not None and bounded_screen(screen):
                             image = screen.grabWindow(handle).toImage()
             except (TypeError, ValueError):
                 pass
-            if image.isNull() and not window.minimized:
+            if image.isNull() and not window.minimized and allow_fallback:
                 wx, wy, width, height = window.geometry
                 for geometry, desktop, _screen in screens:
+                    if not bounded_screen(_screen):
+                        continue
                     left = max(wx, geometry.x())
                     top = max(wy, geometry.y())
                     right = min(wx + width, geometry.x() + geometry.width())
                     bottom = min(wy + height, geometry.y() + geometry.height())
                     if right <= left or bottom <= top:
+                        continue
+                    desktop = _screen.grabWindow(0).toImage()
+                    if desktop.isNull():
                         continue
                     scale_x = desktop.width() / max(1, geometry.width())
                     scale_y = desktop.height() / max(1, geometry.height())
@@ -1235,7 +1375,9 @@ class MainWindow(QMainWindow):
                     )
                     break
             if not image.isNull():
-                window_images[index] = image
+                if raw_bytes + image.sizeInBytes() <= 128 * 1024 * 1024:
+                    window_images[index] = image
+                    raw_bytes += image.sizeInBytes()
         expected = min(len(session.windows), 64)
         return (primary_desktop if not primary_desktop.isNull() else None), window_images, {
             "expected_windows": expected,
@@ -1375,6 +1517,10 @@ class RecallSearchDialog(QDialog):
     def __init__(self, controller: SessionController, exclusions_provider) -> None:
         super().__init__()
         self.controller = controller
+        self._background = BackgroundWork(self, workers=2)
+        self._detail_generation = 0
+        self._image_generation = 0
+        self._reindex_busy = False
         self.exclusions_provider = exclusions_provider
         self.setWindowTitle("Search Privacy Recall")
         self.setWindowIcon(QIcon(str(icon_path())))
@@ -1602,7 +1748,7 @@ class RecallSearchDialog(QDialog):
                 )
                 if request["group"] and not request["query"].strip() and not request["app"]:
                     entries = self.controller.recall_store.group_scenes(entries)
-            except (OSError, RuntimeError, ValueError) as caught:
+            except Exception as caught:  # Never strand the search busy state.
                 entries = []
                 error = str(caught)[:512]
             self._search_bridge.completed.emit(request["generation"], entries, error)
@@ -1790,14 +1936,25 @@ class RecallSearchDialog(QDialog):
 
     def reindex_selected(self) -> None:
         record = self.selected_record()
-        if not record:
+        if not record or self._reindex_busy:
             return
-        try:
-            result = self.controller.reindex_recall(record)
-            QMessageBox.information(self, "OCR reindex complete", json.dumps(result, indent=2))
-            self.refresh()
-        except Exception as error:
-            QMessageBox.warning(self, "OCR reindex failed", str(error))
+        self._reindex_busy = True
+        cancelled = threading.Event()
+        progress = QProgressDialog("Reindexing selected images (maximum two minutes)…", "Cancel", 0, 0, self)
+        progress.canceled.connect(cancelled.set)
+        progress.show()
+        def finished(result, error):
+            self._reindex_busy = False
+            progress.close()
+            progress.deleteLater()
+            if error:
+                QMessageBox.warning(self, "OCR reindex failed", error)
+            else:
+                QMessageBox.information(self, "OCR reindex complete", json.dumps(result, indent=2))
+                self.refresh()
+        self._background.submit(
+            lambda: self.controller.recall_store.reindex(record, cancelled=cancelled.is_set),
+            finished)
 
     def show_ocr_diagnostics(self) -> None:
         record = self.selected_record()
@@ -1813,7 +1970,12 @@ class RecallSearchDialog(QDialog):
             question, ok = QInputDialog.getText(self, "Ask local history", "Question:")
             if not ok:
                 return
-        answer = self.controller.ask_recall(question)
+        self._background.submit(lambda: self.controller.ask_recall(question), self._finish_answer)
+
+    def _finish_answer(self, answer, error):
+        if error:
+            QMessageBox.warning(self, "Local history answer", error)
+            return
         citations = "\n".join(
             f"• {item.get('captured_at', '')} · {item.get('application', '')} · {item.get('title', '')}"
             for item in answer.get("citations", [])
@@ -1830,6 +1992,9 @@ class RecallSearchDialog(QDialog):
         self.results.setIconSize(QSize(240, 135) if mode == "visual" else QSize(96, 54))
 
     def show_selected(self, current, _previous=None) -> None:
+        self._detail_generation += 1
+        self._image_generation += 1
+        generation = self._detail_generation
         entry = current.data(Qt.UserRole) if current else {}
         self._detail_entry = entry if isinstance(entry, dict) else {}
         apps = ", ".join(self._detail_entry.get("apps", [])[:4]) or "Unknown application"
@@ -1848,20 +2013,10 @@ class RecallSearchDialog(QDialog):
         self.filmstrip.clear()
         for index, (image_name, label) in enumerate(self._detail_images):
             item = QListWidgetItem(label[:28])
-            # Keep the filmstrip responsive for records with many windows.
-            # Remaining full images are decrypted only when selected.
+            # Decrypt/decode off-thread; construct GUI pixmaps only on completion.
             if index < 12:
-                data = self.controller.recall_store.preview_bytes(
-                    str(self._detail_entry.get("name", "")), image_name=image_name
-                )
-                thumbnail = QPixmap()
-                if data:
-                    thumbnail.loadFromData(data)
-                if not thumbnail.isNull():
-                    item.setIcon(QIcon(thumbnail.scaled(
-                        128, 72, Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )))
+                QTimer.singleShot(0, lambda g=generation, i=index, n=image_name:
+                                  self._queue_detail_image(g, i, n, thumbnail=True))
             self.filmstrip.addItem(item)
         self.filmstrip.blockSignals(False)
         if self._detail_images:
@@ -1874,7 +2029,6 @@ class RecallSearchDialog(QDialog):
                 0,
             )
             self.filmstrip.setCurrentRow(preferred)
-            self.set_image(preferred)
         else:
             self._detail_pixmap = QPixmap()
             self.preview.clear()
@@ -1887,13 +2041,37 @@ class RecallSearchDialog(QDialog):
         if not 0 <= position < len(self._detail_images):
             return
         self._detail_position = position
+        self._image_generation += 1
+        self.preview.clear()
+        self.preview_state.setText("Loading encrypted screenshot…")
+        self._queue_detail_image(self._detail_generation, position,
+                                 self._detail_images[position][0], thumbnail=False)
+
+    def _queue_detail_image(self, generation, position, image_name, *, thumbnail):
+        record = str(self._detail_entry.get("name", ""))
+        image_generation = self._image_generation
+        def load():
+            if generation != self._detail_generation:
+                return None
+            data = self.controller.recall_store.preview_bytes(record, image_name=image_name)
+            image = QImage.fromData(data) if data else QImage()
+            return image.scaled(128, 72, Qt.KeepAspectRatio, Qt.SmoothTransformation) if thumbnail else image
+        def finished(image, error):
+            if generation != self._detail_generation:
+                return
+            if thumbnail:
+                item = self.filmstrip.item(position)
+                if item is not None and image is not None and not image.isNull():
+                    item.setIcon(QIcon(QPixmap.fromImage(image)))
+            elif image_generation == self._image_generation:
+                if error:
+                    self.preview_state.setText(error)
+                else:
+                    self._display_image(position, QPixmap.fromImage(image) if image is not None else QPixmap())
+        self._background.submit(load, finished)
+
+    def _display_image(self, position, pixmap):
         image_name, label = self._detail_images[position]
-        data = self.controller.recall_store.preview_bytes(
-            str(self._detail_entry.get("name", "")), image_name=image_name
-        )
-        pixmap = QPixmap()
-        if data:
-            pixmap.loadFromData(data)
         highlighted_image = recall_highlight_image_name(self._detail_entry)
         boxes = (
             self._detail_entry.get("highlight_boxes", [])

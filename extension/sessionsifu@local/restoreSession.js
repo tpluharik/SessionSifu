@@ -126,8 +126,8 @@ export const RestoreSession = class {
             return;
 
         const session_file = Gio.File.new_for_path(session_file_path);
-        let [success, contents] = session_file.load_contents(null);
-        if (!success) {
+        const contents = await this._loadSessionContents(session_file);
+        if (!contents || this._destroyed || !mayRestoreApplications()) {
             return;
         }
 

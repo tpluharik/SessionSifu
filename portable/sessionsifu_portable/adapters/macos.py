@@ -55,6 +55,7 @@ function run(argv) {
     const identity = bundle || name;
     if (identity && !processById[identity]) processById[identity] = process;
   });
+  const outcomes = [];
   payload.windows.forEach(function (saved) {
     const process = processById[saved.app_id];
     if (!process) return;
@@ -68,20 +69,26 @@ function run(argv) {
       });
     }
     const candidates = windowCache[saved.app_id];
-    let selected = null;
+    let selected = null, chosen = -1;
     for (let w = 0; w < candidates.length; w++) {
       if (candidates[w].title === saved.title) {
-        selected = candidates[w].window;
+        selected = candidates[w].window; chosen = w;
         break;
       }
     }
-    if (!selected && candidates.length) selected = candidates[0].window;
+    if (!selected && candidates.length) { selected = candidates[0].window; chosen = 0; }
     if (selected) {
-      try { selected.position = [saved.geometry[0], saved.geometry[1]]; } catch (_) {}
-      try { selected.size = [saved.geometry[2], saved.geometry[3]]; } catch (_) {}
+      candidates.splice(chosen, 1);
+      try {
+        selected.position = [saved.geometry[0], saved.geometry[1]];
+        selected.size = [saved.geometry[2], saved.geometry[3]];
+        outcomes.push({window_id: saved.window_id, state: 'completed'});
+      } catch (_) {
+        outcomes.push({window_id: saved.window_id, state: 'failed', reason: 'Accessibility layout failed'});
+      }
     }
   });
-  return 'ok';
+  return JSON.stringify(outcomes);
 }
 """
 
@@ -168,7 +175,8 @@ class MacOSAdapter(PlatformAdapter):
         subprocess.Popen([*command, *files], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
 
-    def apply_layout(self, session: SessionSnapshot) -> None:
+    def apply_layout(self, session: SessionSnapshot) -> list[dict]:
         session = self.reconciled_session(session)
         payload = json.dumps({"windows": [window.to_dict() for window in session.windows]})
-        self._jxa(RESTORE_SCRIPT, payload)
+        result = json.loads(self._jxa(RESTORE_SCRIPT, payload))
+        return result if isinstance(result, list) else []

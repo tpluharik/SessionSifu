@@ -112,10 +112,11 @@ class LinuxAdapter(PlatformAdapter):
                 ))
         return monitors or super().capture_monitors(windows)
 
-    def apply_layout(self, session: SessionSnapshot) -> None:
+    def apply_layout(self, session: SessionSnapshot) -> list[dict]:
         session = self.reconciled_session(session)
         if not shutil.which("wmctrl"):
-            return
+            return []
+        outcomes = []
         available: dict[str, list[WindowSnapshot]] = defaultdict(list)
         for current in self.capture_windows(include_files=False):
             available[current.app_id].append(current)
@@ -127,9 +128,11 @@ class LinuxAdapter(PlatformAdapter):
             current = next((item for item in choices if item.title == saved.title), choices[0])
             used.add(current.window_id)
             x, y, width, height = saved.geometry
-            _run(["wmctrl", "-ir", current.window_id, "-e", f"0,{x},{y},{width},{height}"])
+            subprocess.run(["wmctrl", "-ir", current.window_id, "-e", f"0,{x},{y},{width},{height}"], check=True, timeout=8, capture_output=True)
             if saved.workspace.lstrip("-").isdigit() and int(saved.workspace) >= 0:
-                _run(["wmctrl", "-ir", current.window_id, "-t", saved.workspace])
+                subprocess.run(["wmctrl", "-ir", current.window_id, "-t", saved.workspace], check=True, timeout=8, capture_output=True)
+            outcomes.append({"window_id": saved.window_id, "state": "completed"})
+        return outcomes
 
 
 class GnomeAdapter(LinuxAdapter):
@@ -272,8 +275,7 @@ class KDEAdapter(LinuxAdapter):
     def apply_layout(self, session: SessionSnapshot) -> None:
         session = self.reconciled_session(session)
         if not self.kdotool:
-            super().apply_layout(session)
-            return
+            return super().apply_layout(session)
         payload = [
             {
                 "window_id": str(window.window_id)[:128],
@@ -287,33 +289,39 @@ class KDEAdapter(LinuxAdapter):
         script = (
             "const saved=JSON.parse(" + json.dumps(encoded) + ");"
             "const byId={};workspace.windowList().forEach(function(w){"
-            "byId[String(w.internalId||'')]=w;});let updated=0;"
+            "byId[String(w.internalId||'')]=w;});let updated=0;const ids=[];"
             "saved.forEach(function(s){const w=byId[s.window_id];if(!w)return;"
             "const g=w.frameGeometry;g.x=s.geometry[0];g.y=s.geometry[1];"
             "g.width=s.geometry[2];g.height=s.geometry[3];w.frameGeometry=g;"
             "if(s.workspace){const d=workspace.desktops.find(function(item){"
             "return String(item.x11DesktopNumber)===String(s.workspace);});"
-            "if(d)w.desktops=[d];}updated++;});"
-            "output_result(JSON.stringify({updated:updated}));"
+            "if(d)w.desktops=[d];}updated++;ids.push(s.window_id);});"
+            "output_result(JSON.stringify({updated:updated,ids:ids}));"
         )
         result = self._kwin_json(script)
-        if isinstance(result, dict) and int(result.get("updated") or 0) > 0:
-            return
+        applied = set(result.get("ids", [])) if isinstance(result, dict) else set()
+        outcomes = [{"window_id": wid, "state": "completed"} for wid in applied]
+        if len(applied) == len(session.windows):
+            return outcomes
         available: dict[str, list[WindowSnapshot]] = defaultdict(list)
         for current in self.capture_windows(include_files=False):
             available[current.app_id].append(current)
-        used: set[str] = set()
+        used: set[str] = set(applied)
         for saved in session.windows:
+            if saved.window_id in applied:
+                continue
             choices = [item for item in available.get(saved.app_id, []) if item.window_id not in used]
             if not choices:
                 continue
             current = next((item for item in choices if item.title == saved.title), choices[0])
             used.add(current.window_id)
             x, y, width, height = saved.geometry
-            self._kdo("windowmove", current.window_id, str(x), str(y))
-            self._kdo("windowsize", current.window_id, str(width), str(height))
+            subprocess.run([self.kdotool, "windowmove", current.window_id, str(x), str(y)], check=True, timeout=8, capture_output=True)
+            subprocess.run([self.kdotool, "windowsize", current.window_id, str(width), str(height)], check=True, timeout=8, capture_output=True)
             if saved.workspace:
-                self._kdo("set_desktop_for_window", current.window_id, saved.workspace)
+                subprocess.run([self.kdotool, "set_desktop_for_window", current.window_id, saved.workspace], check=True, timeout=8, capture_output=True)
+            outcomes.append({"window_id": saved.window_id, "state": "completed"})
+        return outcomes
 
     def diagnostics(self) -> dict[str, object]:
         details = super().diagnostics()

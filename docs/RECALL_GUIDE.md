@@ -1,5 +1,13 @@
 # Privacy Recall workflow
 
+Version 3.5.24 uses incremental memory-only search indexing and separate compact
+metadata caching. Portable full images and filmstrips load on workers; each
+screenshot is compressed before grabbing the next at the selected quality.
+Missing/oversized images remain visible in completeness diagnostics. Selected
+OCR reindexing supports cancellation between images and reports deferred work.
+Unlock an unavailable credential store rather than deleting key files.
+See [audit and recovery notes](STABILITY_AUDIT.md).
+
 Privacy Recall is SessionSifu's optional local visual timeline. It helps find a
 previous application window by time, application, title, opted-in document path
 or text recognized in that window's screenshot. It is disabled by default.
@@ -131,8 +139,8 @@ customizable search shortcut (`Ctrl+Alt+Space` by default).
 - **Open** asks the recorded application to reopen that window's validated file
   or observable URL when the platform and application support it.
 
-Search reuses a bounded ephemeral in-memory index until the encrypted vault
-changes. Queries run outside the interface thread, and stale results from rapid
+Search incrementally updates an ephemeral in-memory index when encrypted
+records change. Queries run outside the interface thread, and stale results from rapid
 typing are discarded. Queries, decrypted text, vector caches and rendered
 highlights are not written to a persistent search database.
 

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import logging
+from cryptography.exceptions import InvalidTag
 import csv
 import contextlib
 import hashlib
@@ -11,6 +13,7 @@ import json
 import os
 import re
 import sqlite3
+import zlib
 import subprocess
 import sys
 import tempfile
@@ -36,6 +39,8 @@ except ImportError:  # pragma: no cover - source checkout fallback
 
 from .model import SessionSnapshot, WindowSnapshot
 from .semantic import OfflineSemanticSearch
+
+from .vault_key import vault_key
 
 RECALL_SCHEMA = 3
 RECALL_MAX_ENTRIES = 500
@@ -240,6 +245,9 @@ class RecallStore:
         self._search_lock = threading.RLock()
         self._record_cache: OrderedDict[str, tuple[tuple[int, int], dict, int]] = OrderedDict()
         self._record_cache_bytes = 0
+        self._manifest_cache = OrderedDict()
+        self._manifest_bytes = 0
+        self._authentication_failures = set()
         self._index_signature: tuple[tuple[str, int, int], ...] = ()
         self._index_connection: sqlite3.Connection | None = None
         self._storage_cache: tuple[int, int] | None = None
@@ -259,35 +267,8 @@ class RecallStore:
             if len(key) != 32:
                 raise ValueError("Invalid test Recall key")
             return key
-        key_path = self.recall_dir / ".vault-key"
-        if key_path.is_symlink():
-            raise ValueError("Refusing a symbolic-link Recall key")
-        # Keep existing file-backed vaults decryptable after this upgrade.
-        if key_path.exists():
-            _private_mode(key_path, 0o600)
-            key = key_path.read_bytes()
-            if len(key) != 32:
-                raise ValueError("Invalid Recall vault key")
-            return key
-        if keyring is not None:
-            try:
-                encoded = keyring.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT)
-                if encoded:
-                    key = base64.urlsafe_b64decode(encoded.encode("ascii"))
-                    if len(key) == 32:
-                        return key
-                candidate = os.urandom(32)
-                encoded = base64.urlsafe_b64encode(candidate).decode("ascii")
-                keyring.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, encoded)
-                if keyring.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT) == encoded:
-                    return candidate
-            except (ValueError, RuntimeError, keyring.errors.KeyringError):
-                pass
-        key = os.urandom(32)
-        descriptor = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, "wb") as output:
-            output.write(key)
-        _private_mode(key_path, 0o600)
+        key, _backend = vault_key(self.recall_dir, self.vault_dir, keyring,
+                                  KEYRING_SERVICE, KEYRING_ACCOUNT, encoded_file=False)
         return key
 
     def _encrypt(self, data: bytes, name: str) -> bytes:
@@ -723,6 +704,10 @@ class RecallStore:
                 _name, (_signature, _payload, size) = self._record_cache.popitem(last=False)
                 self._record_cache_bytes -= size
             return payload
+        except InvalidTag:
+            self._authentication_failures.add(path.name)
+            logging.getLogger(__name__).warning("Recall record authentication failed; record left intact: %s", path.name)
+            return None
         except (OSError, ValueError, json.JSONDecodeError):
             return None
 
@@ -735,6 +720,44 @@ class RecallStore:
                 signature.append((path.name, stat.st_mtime_ns, stat.st_size))
         return tuple(signature)
 
+    def _search_records(self, paths, signature):
+        """Cache compact search fields separately from full OCR-coordinate manifests.
+
+        Compressed plaintext is RAM-only, cleared with all search state on lock.
+        A changed record is decrypted once; warm scans do not thrash the detail LRU.
+        """
+        valid = {item[0]: item[1:] for item in signature}
+        for name in list(self._manifest_cache):
+            if name not in valid or self._manifest_cache[name][0] != valid[name]:
+                self._manifest_bytes -= len(self._manifest_cache.pop(name)[1])
+        records = []
+        for path in paths:
+            stamp = valid.get(path.name)
+            if stamp is None:
+                continue
+            cached = self._manifest_cache.get(path.name)
+            if cached:
+                value = json.loads(zlib.decompress(cached[1]))
+            else:
+                full = self._load(path)
+                if not full:
+                    continue
+                value = {k: v for k, v in full.items()
+                         if k not in {"ocr_boxes", "display_ocr_boxes"}}
+                value["windows"] = [
+                    {k: v for k, v in window.items() if k != "ocr_boxes"}
+                    for window in full.get("windows", []) if isinstance(window, dict)]
+                packed = zlib.compress(json.dumps(value, separators=(",", ":")).encode(), 1)
+                self._manifest_cache[path.name] = (stamp, packed)
+                self._manifest_bytes += len(packed)
+                while self._manifest_bytes > 32 * 1024 * 1024 and len(self._manifest_cache) > 1:
+                    _, (_, removed) = self._manifest_cache.popitem(last=False)
+                    self._manifest_bytes -= len(removed)
+            records.append((path, value))
+        if paths and not records and self._authentication_failures:
+            raise RuntimeError("Recall records could not be authenticated. Preserve the vault and check the original key or damaged records.")
+        return records
+
     def _ensure_search_index(
         self, records: list[tuple[Path, dict]],
         signature: tuple[tuple[str, int, int], ...],
@@ -743,15 +766,24 @@ class RecallStore:
             return self._index_connection
         # The RLock serializes use; disabling the owner-thread check lets the
         # cached in-memory index survive successive UI worker threads.
-        connection = sqlite3.connect(":memory:", check_same_thread=False)
+        previous_signatures = {item[0]: item[1:] for item in self._index_signature}
+        next_signatures = {item[0]: item[1:] for item in signature}
+        changed = {name for name, stamp in next_signatures.items()
+                   if previous_signatures.get(name) != stamp}
+        connection = self._index_connection or sqlite3.connect(":memory:", check_same_thread=False)
         connection.execute(
-            "CREATE VIRTUAL TABLE recall_windows USING fts5("
+            "CREATE VIRTUAL TABLE IF NOT EXISTS recall_windows USING fts5("
             "key UNINDEXED, app, title, files, accessible, ocr)"
         )
         connection.execute(
-            "CREATE VIRTUAL TABLE recall_visual USING fts5(name UNINDEXED, ocr)"
+            "CREATE VIRTUAL TABLE IF NOT EXISTS recall_visual USING fts5(name UNINDEXED, ocr)"
         )
+        for name in set(previous_signatures) - set(next_signatures) | changed:
+            connection.execute("DELETE FROM recall_windows WHERE key GLOB ?", (name + "#*",))
+            connection.execute("DELETE FROM recall_visual WHERE name = ?", (name,))
         for path, payload in records:
+            if path.name not in changed:
+                continue
             annotations = dict(payload.get("annotations") or {})
             for index, window in enumerate(payload.get("windows", [])[:512]):
                 if not isinstance(window, dict):
@@ -779,7 +811,7 @@ class RecallStore:
         previous = self._index_connection
         self._index_connection = connection
         self._index_signature = signature
-        if previous is not None:
+        if previous is not None and previous is not connection:
             previous.close()
         valid_names = {name for name, _modified, _size in signature}
         for name in list(self._record_cache):
@@ -796,6 +828,9 @@ class RecallStore:
             self._index_signature = ()
             self._record_cache.clear()
             self._record_cache_bytes = 0
+            self._manifest_cache.clear()
+            self._manifest_bytes = 0
+            self._authentication_failures.clear()
             self.semantic.clear_cache()
 
     def prune(self, retention_hours: int, quota_mb: int = 512) -> None:
@@ -882,8 +917,7 @@ class RecallStore:
         exclusions = self._exclusions(excluded_apps)
         paths = self._paths()
         signature = self._path_signature(paths)
-        records = [(path, self._load(path)) for path in paths]
-        records = [(path, payload) for path, payload in records if payload]
+        records = self._search_records(paths, signature)
         connection = self._ensure_search_index(records, signature)
         try:
             path_validity: dict[str, bool] = {}
@@ -980,6 +1014,21 @@ class RecallStore:
 
             results = []
             for path, payload, windows, preview_allowed in loaded:
+                if selected_window_keys is not None and not any(
+                    f"{path.name}#{index}" in selected_window_keys for index, _window in windows
+                ) and path.name not in visual_candidates:
+                    continue
+                full = self._load(path)
+                if not full:
+                    continue
+                windows = [(index, window) for index, window in enumerate(full.get("windows", []))
+                           if isinstance(window, dict) and not any(
+                               token in (str(window.get("app_name", "")) + "\n" + str(window.get("app_id", ""))).casefold()
+                               for token in exclusions)]
+                preview_allowed = preview_allowed and len(windows) == len(full.get("windows", []))
+                if not windows:
+                    continue
+                payload = full
                 common = {
                     "name": path.name,
                     "captured_at": str(payload.get("captured_at") or "")[:128],
@@ -1166,7 +1215,7 @@ class RecallStore:
         name = image_name or str(payload.get("image") or "")
         if name not in allowed:
             return None
-        with contextlib.suppress(OSError, ValueError):
+        with contextlib.suppress(OSError, ValueError, InvalidTag):
             return self._decrypt((self.vault_dir / name).read_bytes(), name)
         return None
 
@@ -1219,7 +1268,7 @@ class RecallStore:
             "semantic": self.semantic.diagnostics(),
         }
 
-    def reindex(self, record: str) -> dict[str, object]:
+    def reindex(self, record: str, *, cancelled=lambda: False, timeout=120.0) -> dict[str, object]:
         """Re-run OCR only for a selected encrypted local record."""
         if not RECORD_RE.fullmatch(record):
             raise ValueError("Invalid Recall record")
@@ -1228,6 +1277,8 @@ class RecallStore:
         if not payload:
             raise ValueError("Recall record is unavailable")
         indexed = 0
+        deadline = time.monotonic() + max(1.0, min(120.0, timeout))
+        deferred = 0
         display_name = str(payload.get("image") or "")
         if display_name:
             preview = self.preview_bytes(record, image_name=display_name)
@@ -1236,6 +1287,9 @@ class RecallStore:
                 payload.update({"ocr_text": text, "ocr_boxes": boxes, "ocr_diagnostics": diagnostics})
                 indexed += 1
         for window in payload.get("windows", [])[:MAX_WINDOW_PREVIEWS]:
+            if cancelled() or time.monotonic() >= deadline:
+                deferred += bool(isinstance(window, dict) and window.get("image"))
+                continue
             if not isinstance(window, dict):
                 continue
             image_name = str(window.get("image") or "")
@@ -1251,7 +1305,8 @@ class RecallStore:
         if len(contents) > MAX_RECALL_BYTES:
             raise ValueError("Reindexed Recall record exceeds the safety limit")
         self._write_encrypted(path, contents)
-        return {"record": record, "images_indexed": indexed, **self.ocr_diagnostics(record)}
+        return {"record": record, "images_indexed": indexed, "images_deferred": deferred,
+                "cancelled": cancelled(), **self.ocr_diagnostics(record)}
 
     def ask(self, question: str, *, limit: int = 8) -> dict[str, object]:
         """Answer locally with extractive text and explicit snapshot citations."""

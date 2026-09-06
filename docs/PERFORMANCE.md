@@ -1,5 +1,22 @@
 # Recall search performance
 
+## 3.5.24 audit follow-up
+
+The earlier full-record LRU could thrash above capacity. Search now maintains a
+separate 32 MiB compressed memory-only metadata cache, updates only changed/
+deleted FTS rows, and loads full OCR-box manifests for candidate results.
+Coordinate data and image quality are unchanged. See [audit notes](STABILITY_AUDIT.md).
+
+Portable capture applies backpressure between GUI pixel grabs and worker
+compression instead of collecting 64 raw windows. Full images and filmstrip
+thumbnails load asynchronously with stale-selection checks. Restore, selected
+OCR reindex and local answers use bounded workers. GNOME staging uses async I/O.
+
+Historical timings below are not new release benchmarks. Synthetic regressions
+verify that a warm query decrypts at most its selected full manifest and adding
+one record indexes that record only, even with a small test-only detail LRU.
+Native multi-monitor peak RSS and latency remain hardware-validation work.
+
 SessionSifu 3.5.4 removes repeated vault-wide work from both Recall capture and
 interactive search. The optimization does not create a persistent plaintext
 database and does not move compositor APIs onto worker threads.
