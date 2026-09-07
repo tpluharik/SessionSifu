@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.5.24 runtime and release layout. User-facing
+This document describes the 3.5.25 runtime and release layout. User-facing
 steps live in the [session restoration guide](RESTORE_GUIDE.md) and
 [Privacy Recall guide](RECALL_GUIDE.md).
 
@@ -432,3 +432,20 @@ Workflow permissions are read-only except for the tag publisher. Action
 references are pinned to reviewed full commit SHAs and direct Python build
 inputs are exact-version pinned. Fully hashed per-platform transitive locks,
 SBOMs and provenance attestations remain roadmap work.
+
+## Provisional Wayland session protocol
+
+`portable/sessionsifu_portable/experimental_wayland.py` is a fail-closed
+capability boundary, not a second compositor controller. The runtime requires
+an explicit environment feature flag, a Wayland session, a successful bounded
+`wayland-info` probe and the exact `xx_session_manager_v1` registry name.
+Diagnostics expose each gate and a human-readable reason without capturing
+window content.
+
+Portable session records may contain a validated `session_protocol` object
+with a protocol name, protocol version, capability booleans, a client-claim
+boolean and a bounded list of managed window IDs. Unknown, malformed or
+unclaimed metadata delegates nothing. If a compatible client has claimed a
+window, the legacy Linux layout adapter returns a `delegated` outcome and never
+also sends `wmctrl` placement commands for that window. This invariant is the
+compatibility firewall while the upstream protocol remains unstable.

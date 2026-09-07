@@ -1,6 +1,6 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.24.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.25.
 
 ## Portable restore outcomes
 
@@ -185,6 +185,40 @@ Application-private memory is outside this boundary. Browser tabs, unsaved
 editor buffers, terminal jobs, virtual desktops not exposed by the operating
 system and protected application content return only when the application has
 its own recovery feature or a supported SessionSifu deep-return adapter.
+
+## Experimental Wayland session-management readiness
+
+The portable Linux edition contains a deliberately limited readiness layer for
+the provisional `xx_session_manager_v1` Wayland protocol. It is disabled by
+default and is not advertised as normal restore support. Enable it only for
+development testing by starting SessionSifu with:
+
+```text
+sessionsifu-portable --experimental-wayland-session-management --diagnostics
+```
+
+The equivalent environment flag is
+`SESSIONSIFU_EXPERIMENTAL_WAYLAND_SESSION_MANAGEMENT=1`; it applies only to
+that process and its children.
+
+The GNOME settings schema also reserves the hidden
+`experimental-wayland-session-management` switch for integration testing. A
+normal installation leaves both controls off.
+
+When enabled, SessionSifu checks that the current session is Wayland, that a
+bounded registry probe is available and that the compositor advertises the
+exact protocol. Failure at any step keeps the established adapter active. A
+session file records the protocol name and version, whether it was advertised,
+and only the identifiers explicitly claimed by a cooperating application.
+Those claimed windows are excluded from legacy geometry placement so the two
+mechanisms cannot race each other.
+
+This does **not** make arbitrary applications protocol-aware. A participating
+application must opt in before mapping its own window and must restore its own
+state. SessionSifu does not inject objects into another process, rewrite Mutter
+or KWin, infer ownership from titles, or turn this prototype on automatically.
+Because the protocol is experimental and may change incompatibly, unsupported
+versions fail closed and ordinary GNOME/KDE restoration remains unchanged.
 
 ## Verify a restore
 

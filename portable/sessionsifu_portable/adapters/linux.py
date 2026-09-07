@@ -8,11 +8,18 @@ import re
 import shutil
 import subprocess
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
 
 from .base import AdapterCapabilities, PlatformAdapter, cached_process_snapshot
 from ..model import MonitorSnapshot, SessionSnapshot, WindowSnapshot
 from ..content import enrich_linux_session
+from ..experimental_wayland import (
+    PROTOCOL_NAME,
+    PROTOCOL_VERSION,
+    detect_wayland_session_management,
+    managed_window_ids,
+)
 
 
 KWIN_CAPTURE_SCRIPT = r"""
@@ -55,6 +62,26 @@ class LinuxAdapter(PlatformAdapter):
         monitors=bool(shutil.which("xrandr") or shutil.which("kscreen-doctor")),
         native_wayland=False,
     )
+
+    def __init__(self) -> None:
+        self.wayland_session = detect_wayland_session_management()
+        self.capabilities = replace(
+            type(self).capabilities,
+            experimental_wayland_session_management=self.wayland_session.usable,
+        )
+
+    def capture(self, include_files: bool = True) -> SessionSnapshot:
+        session = super().capture(include_files=include_files)
+        session.session_protocol = {
+            "protocol": PROTOCOL_NAME,
+            "version": PROTOCOL_VERSION,
+            "feature_enabled": self.wayland_session.feature_enabled,
+            "compositor_advertises": self.wayland_session.compositor_advertises,
+            # Only a cooperating application may set this true and provide IDs.
+            "client_claimed": False,
+            "managed_window_ids": [],
+        }
+        return session
 
     def capture_windows(self, include_files: bool = True) -> list[WindowSnapshot]:
         if not shutil.which("wmctrl"):
@@ -114,14 +141,25 @@ class LinuxAdapter(PlatformAdapter):
 
     def apply_layout(self, session: SessionSnapshot) -> list[dict]:
         session = self.reconciled_session(session)
+        delegated = managed_window_ids(session.session_protocol, self.wayland_session)
+        outcomes = [
+            {
+                "window_id": saved.window_id,
+                "state": "delegated",
+                "reason": "Layout is owned by the cooperating Wayland session client",
+            }
+            for saved in session.windows
+            if saved.window_id in delegated
+        ]
         if not shutil.which("wmctrl"):
-            return []
-        outcomes = []
+            return outcomes
         available: dict[str, list[WindowSnapshot]] = defaultdict(list)
         for current in self.capture_windows(include_files=False):
             available[current.app_id].append(current)
         used: set[str] = set()
         for saved in session.windows:
+            if saved.window_id in delegated:
+                continue
             choices = [item for item in available.get(saved.app_id, []) if item.window_id not in used]
             if not choices:
                 continue
@@ -133,6 +171,11 @@ class LinuxAdapter(PlatformAdapter):
                 subprocess.run(["wmctrl", "-ir", current.window_id, "-t", saved.workspace], check=True, timeout=8, capture_output=True)
             outcomes.append({"window_id": saved.window_id, "state": "completed"})
         return outcomes
+
+    def diagnostics(self) -> dict[str, object]:
+        details = super().diagnostics()
+        details["experimental_wayland_session_management"] = self.wayland_session.to_dict()
+        return details
 
 
 class GnomeAdapter(LinuxAdapter):
@@ -157,6 +200,7 @@ class KDEAdapter(LinuxAdapter):
     desktop = "KDE Plasma"
 
     def __init__(self) -> None:
+        self.wayland_session = detect_wayland_session_management()
         self.kdotool = shutil.which("kdotool")
         self.capabilities = AdapterCapabilities(
             applications=True,
@@ -165,6 +209,7 @@ class KDEAdapter(LinuxAdapter):
             workspaces=bool(self.kdotool or shutil.which("wmctrl")),
             monitors=bool(shutil.which("kscreen-doctor") or shutil.which("xrandr")),
             native_wayland=bool(self.kdotool),
+            experimental_wayland_session_management=self.wayland_session.usable,
         )
 
     def _kdo(self, *arguments: str) -> str:

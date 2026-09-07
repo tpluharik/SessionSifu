@@ -31,6 +31,7 @@ class AdapterCapabilities:
     workspaces: bool = False
     monitors: bool = False
     native_wayland: bool = False
+    experimental_wayland_session_management: bool = False
 
 
 def process_details(pid: int, include_command: bool = True) -> tuple[str, list[str]]:
@@ -308,7 +309,7 @@ class PlatformAdapter(ABC):
                         "reason": "Window not observed or layout not confirmed",
                     })
                     actions.append(dict(outcome, identity=identity))
-                    restored_windows += outcome.get("state") == "completed"
+                    restored_windows += outcome.get("state") in {"completed", "delegated"}
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
                 actions.extend(dict(identity=identity, window_id=w.window_id,
                                     state="failed", error=str(error)[:512]) for w in windows)

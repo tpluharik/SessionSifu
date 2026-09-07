@@ -118,6 +118,7 @@ class SessionSnapshot:
     sessionsifu_version: str = VERSION
     capabilities: dict[str, bool] = field(default_factory=dict)
     capture_diagnostics: dict[str, int | str | bool] = field(default_factory=dict)
+    session_protocol: dict[str, object] = field(default_factory=dict)
     monitors: list[MonitorSnapshot] = field(default_factory=list)
 
     @classmethod
@@ -145,6 +146,7 @@ class SessionSnapshot:
                 str(key): val for key, val in dict(value.get("capture_diagnostics") or {}).items()
                 if isinstance(val, (bool, int, str))
             },
+            session_protocol=_session_protocol(value.get("session_protocol")),
             monitors=[
                 MonitorSnapshot.from_dict(item)
                 for item in list(value.get("monitors") or [])[:32]
@@ -161,6 +163,34 @@ class SessionSnapshot:
             "desktop": self.desktop,
             "capabilities": self.capabilities,
             "capture_diagnostics": self.capture_diagnostics,
+            "session_protocol": self.session_protocol,
             "monitors": [monitor.to_dict() for monitor in self.monitors],
             "windows": [window.to_dict() for window in self.windows],
         }
+
+
+def _session_protocol(value: Any) -> dict[str, object]:
+    """Validate the optional, forward-compatible cooperative protocol marker."""
+    if not isinstance(value, dict):
+        return {}
+    protocol = _text(value.get("protocol"), 128)
+    if not protocol:
+        return {}
+    try:
+        version = max(0, min(65_535, int(value.get("version") or 0)))
+    except (TypeError, ValueError):
+        version = 0
+    raw_ids = value.get("managed_window_ids")
+    managed_ids = (
+        [_text(item, 256) for item in raw_ids[:MAX_WINDOWS] if _text(item, 256)]
+        if isinstance(raw_ids, list)
+        else []
+    )
+    return {
+        "protocol": protocol,
+        "version": version,
+        "feature_enabled": bool(value.get("feature_enabled")),
+        "compositor_advertises": bool(value.get("compositor_advertises")),
+        "client_claimed": bool(value.get("client_claimed")),
+        "managed_window_ids": managed_ids,
+    }

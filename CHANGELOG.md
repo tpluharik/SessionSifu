@@ -4,6 +4,23 @@ All notable SessionSifu changes are documented here.
 
 ## Unreleased
 
+## 3.5.25
+
+- Add disabled-by-default readiness for the provisional
+  `xx_session_manager_v1` Wayland session-management protocol to portable Linux
+  adapters. Runtime discovery requires an explicit feature flag, a Wayland
+  session, a bounded registry probe and a compatible advertised version.
+- Store validated, bounded and versioned protocol metadata in portable session
+  records. Only windows explicitly claimed by a cooperating application may be
+  delegated to the protocol.
+- Make protocol delegation and legacy geometry restoration mutually exclusive,
+  preventing `wmctrl` from also moving a delegated window. Unsupported,
+  malformed or unavailable protocol states fail closed to the established
+  GNOME/KDE adapter behavior.
+- Add capability diagnostics, a per-run command-line feature flag, regression
+  tests and explicit protocol limitations to the roadmap, restore guide and
+  architecture documentation.
+
 ## 3.5.24
 
 - Preserve Recall key identity across credential-store outages; serialize key

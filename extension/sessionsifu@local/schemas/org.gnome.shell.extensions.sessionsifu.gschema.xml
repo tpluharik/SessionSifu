@@ -187,6 +187,16 @@
       </description>
     </key>
 
+    <key name="experimental-wayland-session-management" type="b">
+      <default>false</default>
+      <summary>Enable experimental cooperative Wayland session detection</summary>
+      <description>
+        Hidden compatibility flag for development builds. It must never replace
+        the stable restore path unless the compositor advertises the matching
+        protocol and an application explicitly claims its own unmapped windows.
+      </description>
+    </key>
+
     <key name="recall-interval" type="i">
       <default>300</default>
       <range min="60" max="3600"/>

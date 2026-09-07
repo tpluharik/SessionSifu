@@ -31,6 +31,11 @@ from sessionsifu_portable.adapters.linux import GnomeAdapter, KDEAdapter, LinuxA
 from sessionsifu_portable.adapters.macos import MacOSAdapter  # noqa: E402
 from sessionsifu_portable.adapters.windows import WindowsAdapter  # noqa: E402
 from sessionsifu_portable.api import LocalApi  # noqa: E402
+from sessionsifu_portable.__main__ import parser as portable_parser  # noqa: E402
+from sessionsifu_portable.experimental_wayland import (  # noqa: E402
+    FEATURE_ENV, PROTOCOL_NAME, WaylandSessionStatus,
+    detect_wayland_session_management, managed_window_ids,
+)
 from sessionsifu_portable import SCHEMA_VERSION, VERSION  # noqa: E402
 
 
@@ -344,12 +349,105 @@ class PortableTests(unittest.TestCase):
 
     def test_model_round_trip_and_bounds(self) -> None:
         session = FakeAdapter().capture()
+        session.session_protocol = {
+            "protocol": PROTOCOL_NAME,
+            "version": 1,
+            "feature_enabled": True,
+            "compositor_advertises": True,
+            "client_claimed": True,
+            "managed_window_ids": ["1"],
+        }
         restored = SessionSnapshot.from_dict(json.loads(json.dumps(session.to_dict())))
         self.assertEqual(restored.platform, "test")
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
-        self.assertEqual(VERSION, "3.5.24")
+        self.assertEqual(restored.session_protocol["managed_window_ids"], ["1"])
+        self.assertEqual(VERSION, "3.5.25")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
+
+    def test_experimental_wayland_detection_is_opt_in_and_fail_closed(self) -> None:
+        advertised = f"interface: '{PROTOCOL_NAME}', version: 1"
+        disabled = detect_wayland_session_management(
+            environment={"XDG_SESSION_TYPE": "wayland"},
+            executable="wayland-info",
+            probe=lambda _tool: advertised,
+        )
+        self.assertFalse(disabled.usable)
+        self.assertFalse(disabled.feature_enabled)
+
+        enabled = detect_wayland_session_management(
+            environment={"XDG_SESSION_TYPE": "wayland", FEATURE_ENV: "true"},
+            executable="wayland-info",
+            probe=lambda _tool: advertised,
+        )
+        self.assertTrue(enabled.usable)
+        self.assertTrue(enabled.compositor_advertises)
+        self.assertEqual(enabled.compositor_version, 1)
+
+        missing = detect_wayland_session_management(
+            environment={"XDG_SESSION_TYPE": "wayland", FEATURE_ENV: "1"},
+            executable="wayland-info",
+            probe=lambda _tool: "wl_compositor",
+        )
+        self.assertFalse(missing.usable)
+        self.assertIn("does not advertise", missing.reason)
+
+        failed = detect_wayland_session_management(
+            environment={"XDG_SESSION_TYPE": "wayland", FEATURE_ENV: "1"},
+            executable="wayland-info",
+            probe=mock.Mock(side_effect=subprocess.TimeoutExpired("wayland-info", 3)),
+        )
+        self.assertFalse(failed.usable)
+        self.assertIn("probe failed", failed.reason)
+
+        arguments = portable_parser().parse_args(
+            ["--experimental-wayland-session-management", "--diagnostics"]
+        )
+        self.assertTrue(arguments.experimental_wayland_session_management)
+        self.assertTrue(arguments.diagnostics)
+
+    def test_experimental_wayland_delegation_requires_client_claim(self) -> None:
+        status = WaylandSessionStatus(
+            feature_enabled=True, wayland_session=True, probe_available=True,
+            compositor_advertises=True, usable=True,
+        )
+        metadata = {
+            "protocol": PROTOCOL_NAME, "version": 1,
+            "client_claimed": True, "managed_window_ids": ["one", "two"],
+        }
+        self.assertEqual(managed_window_ids(metadata, status), {"one", "two"})
+        self.assertEqual(managed_window_ids({**metadata, "client_claimed": False}, status), set())
+        self.assertEqual(managed_window_ids({**metadata, "version": 2}, status), set())
+        self.assertEqual(managed_window_ids(metadata, WaylandSessionStatus()), set())
+
+    def test_linux_layout_never_moves_protocol_delegated_windows(self) -> None:
+        adapter = LinuxAdapter()
+        adapter.wayland_session = WaylandSessionStatus(
+            feature_enabled=True, wayland_session=True, probe_available=True,
+            compositor_advertises=True, usable=True,
+        )
+        session = SessionSnapshot(
+            platform="linux", desktop="Linux", windows=[
+                WindowSnapshot(window_id="owned", app_id="org.example.App")
+            ],
+            session_protocol={
+                "protocol": PROTOCOL_NAME, "version": 1,
+                "client_claimed": True, "managed_window_ids": ["owned"],
+            },
+        )
+        with mock.patch(
+            "sessionsifu_portable.adapters.linux.shutil.which",
+            return_value="/usr/bin/wmctrl",
+        ), mock.patch.object(
+            adapter, "capture_monitors", return_value=[]
+        ), mock.patch.object(
+            adapter, "capture_windows", return_value=[]
+        ), mock.patch(
+            "sessionsifu_portable.adapters.linux.subprocess.run"
+        ) as legacy_move:
+            outcomes = adapter.apply_layout(session)
+        self.assertEqual(outcomes[0]["state"], "delegated")
+        legacy_move.assert_not_called()
 
     def test_future_and_invalid_schemas_are_rejected(self) -> None:
         session = FakeAdapter().capture().to_dict()
@@ -783,7 +881,7 @@ class PortableTests(unittest.TestCase):
             controller.save_named("Work")
             api = LocalApi(controller)
             status = api.dispatch({"method": "status"})
-            self.assertEqual(status["version"], "3.5.24")
+            self.assertEqual(status["version"], "3.5.25")
             preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
             self.assertEqual(preview["applications"][0]["application"], "Editor")
             with self.assertRaises(ValueError):
@@ -845,7 +943,7 @@ class PortableTests(unittest.TestCase):
             controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
             controller.save_named("Work")
             mcp = ReadOnlyMcp(controller)
-            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.24")
+            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.25")
             self.assertTrue(mcp.call("restore_preview", {"name": "Work"}))
             with self.assertRaises(ValueError):
                 mcp.call("restore_execute", {"name": "Work"})

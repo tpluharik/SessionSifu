@@ -5,10 +5,12 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import os
 from pathlib import Path
 
 from . import VERSION
 from .controller import SessionController
+from .experimental_wayland import FEATURE_ENV
 
 
 def parser() -> argparse.ArgumentParser:
@@ -22,6 +24,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--history", action="store_true", help="list rolling snapshots")
     result.add_argument("--restore-file", type=Path, help="restore a SessionSifu JSON file")
     result.add_argument("--diagnostics", action="store_true", help="print adapter capabilities")
+    result.add_argument(
+        "--experimental-wayland-session-management",
+        action="store_true",
+        help="enable provisional cooperative Wayland session detection for this run",
+    )
     result.add_argument("--capsule-create", metavar="NAME", help="create an encrypted workspace capsule")
     result.add_argument(
         "--capsule-backend",
@@ -57,6 +64,8 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = parser().parse_args()
+    if args.experimental_wayland_session_management:
+        os.environ[FEATURE_ENV] = "1"
     controller = SessionController()
     handled = False
     if args.local_api_stdio:

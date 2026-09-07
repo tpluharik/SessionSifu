@@ -1,11 +1,11 @@
 {
-  "version": "3.5.24",
+  "version": "3.5.25",
   "channel": "stable",
-  "issued_at": "2026-09-06T19:48:29Z",
-  "expires_at": "2026-10-21T19:48:29Z",
+  "issued_at": "2026-09-07T20:05:51Z",
+  "expires_at": "2026-10-22T20:05:51Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.24_all.deb",
-  "sha256": "5b4bc6910956c4a3b41415f5d7b6d761d3dbe12eee4ae888640e4f437a93ac97",
-  "size": 3792154,
-  "notes": "SessionSifu 3.5.24 implements the stability and performance audit: vault-key continuity, resilient search workers, incremental indexing, accurate portable restore outcomes, background image/OCR work and bounded screenshot buffering. GNOME staging is asynchronous and a watchdog preserves native compositor ownership on timeout. Existing restore pacing and browser-owned recovery are unchanged. Update the GNOME integration and log out/in once. See docs/STABILITY_AUDIT.md for recovery guidance and verification limits."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.25_all.deb",
+  "sha256": "7f02e02d9a9eb03e88ac2e605de730f87599d9da136604ef23d507a6e54008de",
+  "size": 3793012,
+  "notes": "SessionSifu 3.5.25 adds disabled-by-default readiness for the provisional Wayland session-management protocol in portable Linux builds. Activation requires an explicit per-run flag, a Wayland session and successful bounded compositor-registry detection. Only cooperating applications may claim windows; claimed windows are never also moved by the legacy geometry backend. Unsupported states fail closed, and normal GNOME/KDE restoration is unchanged. See docs/RESTORE_GUIDE.md for scope and limitations."
 }

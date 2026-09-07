@@ -1,10 +1,10 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.5.24. It separates shipped
+This roadmap describes the product after version 3.5.25. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
 
-## Shipped foundation — 3.5.24
+## Shipped foundation — 3.5.25
 
 SessionSifu now combines session restoration with an encrypted, opt-in visual
 history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
@@ -43,7 +43,7 @@ history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
   profiles, without an unsandboxed host-executable fallback.
 
 The session, Recall and retrieval foundations were delivered incrementally
-through 3.5.24. The user-visible workflow and underlying data model remain
+through 3.5.25. The user-visible workflow and underlying data model remain
 consistent across supported editions, while platform adapters report their
 real capabilities instead of implying parity.
 
@@ -183,8 +183,13 @@ line additionally supports listing, deleting and `.wsb` export for automation.
 
 ## Other planned work
 
-- Adopt a standard Wayland session-management protocol when it is implemented
-  dependably across compositors and toolkits.
+- The first experimental Wayland session-management readiness layer is now
+  present behind an off-by-default feature flag. It performs bounded runtime
+  registry detection, stores versioned protocol metadata and prevents the
+  legacy geometry backend from also moving a window explicitly claimed by a
+  cooperating client. The protocol is still unstable and cannot be attached to
+  arbitrary existing third-party windows, so production restore remains on the
+  proven GNOME/KDE adapters until compositor and toolkit support is dependable.
 - Evaluate an optional local visual embedding model separately from text
   embeddings; it must preserve the same exclusion and deletion semantics.
 - Add a preview/diff step before importing a transfer archive and before retrying
