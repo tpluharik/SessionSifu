@@ -118,6 +118,7 @@ class QtTests(unittest.TestCase):
                 self._background = BackgroundWork(self)
                 self.recall_screenshots = Toggle()
                 self.recall_enabled = Toggle()
+                self._power_policy = {"on_battery": False}
                 self._recall_capture_bridge = RecallCaptureBridge(self)
                 self.controller = Mock()
                 self.encoding = False
@@ -140,7 +141,7 @@ class QtTests(unittest.TestCase):
             WindowSnapshot(window_id=str(i), app_id="editor") for i in range(16)])
         request = dict(retention_hours=24, excluded_apps=(), excluded_websites=(),
                        include_file_paths=False, ocr_enabled=False, sensitive_filter=True,
-                       quota_mb=512, silent=True)
+                       quota_mb=512, silent=True, screenshots_allowed=True)
         harness._prepare_recall_visuals(request, session, "")
         until(lambda: bool(completed))
         self.assertTrue(completed[0][0])
