@@ -42,6 +42,15 @@ export function capturePath(windowId) {
     ]);
 }
 
+export function isFresh(windowId, context = '', maxAgeSeconds = 60) {
+    const preview = _previews.get(_key(windowId));
+    if (!preview || preview.context !== String(context))
+        return false;
+    const now = Math.floor(Date.now() / 1000);
+    return preview.modified > 0 && preview.modified <= now + 60 &&
+        now - preview.modified <= Math.max(1, maxAgeSeconds);
+}
+
 export async function storePreview(windowId, sourcePath, context = '', mayContinue = () => true) {
     const generation = _generation;
     const cancellable = _cancellable;

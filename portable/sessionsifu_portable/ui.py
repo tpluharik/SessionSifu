@@ -10,6 +10,11 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+try:
+    import psutil
+except ImportError:  # pragma: no cover - release bundles include psutil
+    psutil = None
+
 from PySide6.QtCore import (
     QByteArray, QBuffer, QEvent, QIODevice, QObject, QSettings, QSize,
     QTimer, Qt, QUrl, Signal, Slot,
@@ -51,6 +56,43 @@ from .shortcut import DEFAULT_SHORTCUT, normalize_shortcut
 
 INTERVALS = [30, 60, 300, 600, 900, 1800]
 RECALL_INTERVALS = [60, 300, 900, 1800]
+
+
+def battery_policy() -> dict[str, object]:
+    """Return a fail-open, low-wakeup capture policy for portable builds."""
+    battery = None
+    try:
+        battery = psutil.sensors_battery() if psutil is not None else None
+    except (AttributeError, NotImplementedError, OSError):
+        pass
+    on_battery = bool(battery is not None and not battery.power_plugged)
+    try:
+        percentage = float(battery.percent) if battery is not None else 100.0
+    except (TypeError, ValueError):
+        percentage = 100.0
+    power_saver = False
+    if sys.platform.startswith("linux"):
+        try:
+            platform_profile = Path("/sys/firmware/acpi/platform_profile").read_text(
+                encoding="utf-8"
+            ).strip().casefold()
+            power_saver = platform_profile in {"low-power", "quiet", "cool"}
+        except OSError:
+            pass
+    critical = on_battery and percentage <= 10
+    low = on_battery and percentage <= 20
+    return {
+        "on_battery": on_battery,
+        "percentage": percentage,
+        "power_saver": power_saver,
+        "critical": critical,
+        "screenshots": not critical and not low and not power_saver,
+        "ocr": not on_battery and not power_saver,
+        "snapshot_minimum": 900 if on_battery or power_saver else 0,
+        "recall_minimum": 1800 if low else 900 if on_battery or power_saver else 0,
+        "preview_edge": 720 if on_battery or power_saver else 0,
+        "preview_quality": 58 if on_battery or power_saver else 0,
+    }
 RECALL_RETENTION_HOURS = [1, 6, 24, 72, 168]
 RECALL_QUOTA_MB = [128, 512, 1024, 2048, 4096]
 RECALL_PREVIEW_PROFILES = {
@@ -299,6 +341,9 @@ class MainWindow(QMainWindow):
         self.resize(760, 560)
         self._recall_state_callback = None
         self._recall_saving = False
+        self._deferred_ocr_cancel = threading.Event()
+        self._deferred_ocr_running = False
+        self._power_policy = battery_policy()
         self._recall_capture_bridge = RecallCaptureBridge(self)
         self._recall_capture_bridge.prepared.connect(self._prepare_recall_visuals)
         self._recall_capture_bridge.completed.connect(self._finish_recall_capture)
@@ -330,7 +375,7 @@ class MainWindow(QMainWindow):
         for seconds in INTERVALS:
             label = f"{seconds} seconds" if seconds < 60 else f"{seconds // 60} minute(s)"
             self.interval.addItem(label, seconds)
-        selected = int(self.settings.value("snapshot_interval", 300))
+        selected = int(self.settings.value("snapshot_interval", 600))
         self.interval.setCurrentIndex(max(0, self.interval.findData(selected)))
         self.interval.currentIndexChanged.connect(self.update_interval)
         form.addRow("Automatic snapshot interval", self.interval)
@@ -458,6 +503,7 @@ class MainWindow(QMainWindow):
         self.recall_ocr = QCheckBox("Index preview text with local OCR")
         self.recall_ocr.setChecked(self.settings.value("recall_ocr", False, type=bool))
         self.recall_ocr.toggled.connect(self.recall_settings_changed)
+        self.recall_ocr.toggled.connect(self._ocr_setting_changed)
         recall_layout.addWidget(self.recall_ocr)
 
         self.recall_related = QCheckBox("Enable local related-match ranking")
@@ -612,15 +658,26 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
 
         self.timer = QTimer(self)
+        self.timer.setTimerType(Qt.TimerType.VeryCoarseTimer)
         self.timer.timeout.connect(lambda: self.save_history(silent=True))
         self.update_interval()
         self.recall_timer = QTimer(self)
+        self.recall_timer.setTimerType(Qt.TimerType.VeryCoarseTimer)
         self.recall_timer.timeout.connect(lambda: self.save_recall(silent=True))
         self.update_recall_timer()
         self.capsule_running_timer = QTimer(self)
-        self.capsule_running_timer.setInterval(2000)
+        self.capsule_running_timer.setTimerType(Qt.TimerType.CoarseTimer)
+        self.capsule_running_timer.setInterval(10000)
         self.capsule_running_timer.timeout.connect(self.refresh_running_capsules)
-        self.capsule_running_timer.start()
+        self.tabs.currentChanged.connect(self.update_capsule_timer)
+        self._capsule_running_signature = None
+        self.update_capsule_timer()
+        self.power_timer = QTimer(self)
+        self.power_timer.setTimerType(Qt.TimerType.VeryCoarseTimer)
+        self.power_timer.setInterval(60000)
+        self.power_timer.timeout.connect(self.update_power_policy)
+        self.power_timer.start()
+        QTimer.singleShot(0, self._resume_deferred_ocr)
         self.refresh_capsule_application_catalog()
         self.refresh()
 
@@ -672,7 +729,10 @@ class MainWindow(QMainWindow):
         self._perform(lambda: self.controller.save_named(name), f"Saved session “{name}”.")
 
     def save_history(self, silent: bool = False) -> None:
-        self._perform(self.controller.save_history, "Saved an automatic snapshot.", silent=silent)
+        self._perform(
+            lambda: self.controller.save_history(skip_unchanged=silent),
+            "Saved an automatic snapshot.", silent=silent,
+        )
 
     def create_capsule(self) -> None:
         values = self._capsule_values()
@@ -827,8 +887,15 @@ class MainWindow(QMainWindow):
         self.capsule_name.setFocus()
 
     def refresh_running_capsules(self) -> None:
-        self.capsule_running_items.clear()
         running = self.controller.capsules.list_running()
+        signature = tuple(
+            (item.get("application"), item.get("capsule"), item.get("backend"), item.get("pid"))
+            for item in running
+        )
+        if signature == self._capsule_running_signature:
+            return
+        self._capsule_running_signature = signature
+        self.capsule_running_items.clear()
         if not running:
             self.capsule_running_items.addItem(
                 "No capsule applications launched from this window are running."
@@ -928,7 +995,54 @@ class MainWindow(QMainWindow):
     def update_interval(self) -> None:
         seconds = int(self.interval.currentData())
         self.settings.setValue("snapshot_interval", seconds)
-        self.timer.start(seconds * 1000)
+        effective = max(seconds, int(self._power_policy.get("snapshot_minimum", 0)))
+        self.timer.start(effective * 1000)
+
+    def update_power_policy(self) -> None:
+        policy = battery_policy()
+        if policy == self._power_policy:
+            return
+        resume_ocr = not self._power_policy.get("ocr") and policy.get("ocr")
+        if not policy.get("ocr"):
+            self._deferred_ocr_cancel.set()
+        self._power_policy = policy
+        self.update_interval()
+        self.update_recall_timer()
+        if resume_ocr:
+            self._resume_deferred_ocr()
+
+    def _resume_deferred_ocr(self) -> None:
+        if (not self._power_policy.get("ocr") or not self.recall_enabled.isChecked()
+                or not self.recall_ocr.isChecked() or self._deferred_ocr_running):
+            return
+        self._deferred_ocr_cancel.clear()
+        self._deferred_ocr_running = True
+
+        def finished(result, _error):
+            self._deferred_ocr_running = False
+            if isinstance(result, dict) and result.get("images_indexed"):
+                self.refresh_recall()
+
+        self._background.submit(
+            lambda: self.controller.reindex_deferred_recall(
+                cancelled=self._deferred_ocr_cancel.is_set
+            ),
+            finished,
+        )
+
+    def _ocr_setting_changed(self, enabled: bool) -> None:
+        if enabled:
+            self._resume_deferred_ocr()
+        else:
+            self._deferred_ocr_cancel.set()
+
+    def update_capsule_timer(self, *_args) -> None:
+        visible = self.isVisible() and self.tabs.currentIndex() == self._capsule_tab_index
+        if visible:
+            self.refresh_running_capsules()
+            self.capsule_running_timer.start()
+        else:
+            self.capsule_running_timer.stop()
 
     def _excluded_apps(self) -> list[str]:
         return [
@@ -1009,6 +1123,8 @@ class MainWindow(QMainWindow):
         )
         if self._recall_state_callback is not None:
             self._notify_recall_state()
+        if enabled:
+            self._resume_deferred_ocr()
 
     def update_recall_timer(self, *_args) -> None:
         seconds = int(self.recall_interval.currentData())
@@ -1029,7 +1145,8 @@ class MainWindow(QMainWindow):
         self.recall_shortcut.setEnabled(True)
         self.recall_shortcut_value.setEnabled(self.recall_shortcut.isChecked())
         if enabled:
-            self.recall_timer.start(seconds * 1000)
+            effective = max(seconds, int(self._power_policy.get("recall_minimum", 0)))
+            self.recall_timer.start(effective * 1000)
         else:
             self.recall_timer.stop()
 
@@ -1037,6 +1154,11 @@ class MainWindow(QMainWindow):
         if not self.recall_enabled.isChecked():
             if not silent:
                 self.status.setText("Enable Privacy Recall before capturing activity metadata.")
+            return
+        self._power_policy = battery_policy()
+        if self._power_policy.get("critical"):
+            if not silent:
+                self.status.setText("Privacy Recall is paused while battery charge is critical.")
             return
         paused_until = int(self.settings.value("recall_pause_until", 0))
         if paused_until < 0 or paused_until > int(time.time()):
@@ -1059,7 +1181,9 @@ class MainWindow(QMainWindow):
                 if value.strip()
             ),
             "include_file_paths": self.recall_files.isChecked(),
-            "ocr_enabled": self.recall_ocr.isChecked(),
+            "ocr_enabled": self.recall_ocr.isChecked() and bool(self._power_policy.get("ocr")),
+            "ocr_deferred_power": self.recall_ocr.isChecked() and not bool(self._power_policy.get("ocr")),
+            "screenshots_allowed": bool(self._power_policy.get("screenshots")),
             "sensitive_filter": self.recall_sensitive.isChecked(),
             "quota_mb": int(self.recall_quota.currentData()),
             "silent": bool(silent),
@@ -1091,7 +1215,8 @@ class MainWindow(QMainWindow):
         preview = None
         window_previews = {}
         diagnostics = {"expected_windows": min(len(session.windows), 64),
-                       "screenshots_enabled": self.recall_screenshots.isChecked(),
+                       "screenshots_enabled": self.recall_screenshots.isChecked() and bool(request.get("screenshots_allowed")),
+                       "ocr_deferred_power": bool(request.get("ocr_deferred_power")),
                        "raw_image_budget_bytes": 128 * 1024 * 1024}
         exclusions = tuple(str(x).casefold() for x in request.get("excluded_apps", ()))
         eligible = [i for i, w in enumerate(session.windows[:64]) if not any(
@@ -1104,7 +1229,8 @@ class MainWindow(QMainWindow):
 
         def capture_next():
             nonlocal preview, encoded_bytes
-            if not self.recall_screenshots.isChecked() or not self.recall_enabled.isChecked():
+            if (not self.recall_screenshots.isChecked() or not request.get("screenshots_allowed")
+                    or not self.recall_enabled.isChecked()):
                 preview = None
                 window_previews.clear()
                 finalize_async()
@@ -1117,6 +1243,9 @@ class MainWindow(QMainWindow):
                 display, windows, _diagnostics, edge, quality = self._capture_recall_images(
                     session, indices=[] if index is None else [index], with_display=index is None,
                     allow_fallback=len(eligible) == min(len(session.windows), 64))
+                if self._power_policy.get("on_battery"):
+                    edge = int(self._power_policy.get("preview_edge") or edge)
+                    quality = int(self._power_policy.get("preview_quality") or quality)
                 image = display if index is None else windows.get(index)
                 if image is None or image.isNull():
                     QTimer.singleShot(0, capture_next)
@@ -1165,6 +1294,7 @@ class MainWindow(QMainWindow):
                     preview=preview,
                     window_previews=window_previews,
                     ocr_enabled=bool(request["ocr_enabled"]),
+                    ocr_deferred=bool(request.get("ocr_deferred_power")),
                     sensitive_filter=bool(request["sensitive_filter"]),
                     quota_mb=int(request["quota_mb"]),
                 )
@@ -1502,6 +1632,14 @@ class MainWindow(QMainWindow):
             event.ignore()
         else:
             event.accept()
+
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt API
+        super().showEvent(event)
+        self.update_capsule_timer()
+
+    def hideEvent(self, event) -> None:  # noqa: N802 - Qt API
+        self.capsule_running_timer.stop()
+        super().hideEvent(event)
 
 
 class RecallSearchBridge(QObject):
@@ -2315,6 +2453,7 @@ def run_gui(
     )
     tray.show()
     app.aboutToQuit.connect(native_hotkey.stop)
+    app.aboutToQuit.connect(window._deferred_ocr_cancel.set)
     if open_recall_search:
         show_recall_search()
     else:

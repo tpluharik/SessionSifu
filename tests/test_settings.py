@@ -58,7 +58,7 @@ settings = module.settings()
 assert settings.get_boolean("show-indicator") is True
 assert settings.get_int("autostart-delay") >= 0
 assert settings.get_boolean("continuous-save-enabled") is True
-assert settings.get_int("continuous-save-interval") == 300
+assert settings.get_int("continuous-save-interval") == 600
 assert settings.get_boolean("recall-enabled") is False
 assert settings.get_int("recall-interval") == 300
 assert settings.get_int("recall-retention-hours") == 24

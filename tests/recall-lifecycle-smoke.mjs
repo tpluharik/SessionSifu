@@ -22,7 +22,7 @@ const activity = Object.assign(signals(), {saving: false});
 const overview = Object.assign(signals(), {visible: false});
 const layoutManager = signals();
 const workspace = signals();
-const display = signals();
+const display = Object.assign(signals(), {get_focus_window: () => null});
 const settings = Object.assign(signals(), {
     get_boolean: () => true, get_int64: () => 0, get_int: () => 60,
 });
@@ -48,6 +48,12 @@ const stubs = {
     './windowSafety.js': {isWindowCaptureSafe() {}, isWindowRegionUnobscured() {}},
     './recallPrivacy.js': {recallExclusions() {}, screenshotBlockingExclusions() {}, screenshotCaptureMode() {}},
     './recallWorkspaceCache.js': {clearPreviewCache() {}},
+    './powerPolicy.js': {policy: interval => ({
+        critical: false, screenshots: true, ocr: false,
+        recallInterval: interval, workspacePassSeconds: 0, windowFreshSeconds: 60,
+        previewQuality: null,
+    }), watch: () => () => {}},
+    './utils/metaWindowUtils.js': {getStableWindowId: () => ''},
     './utils/log.js': {Log: class {}},
 };
 await source.link(name => {

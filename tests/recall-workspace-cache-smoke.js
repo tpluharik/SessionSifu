@@ -44,6 +44,8 @@ try {
     write(source, 'workspace-1-window-pixels');
     if (!(await Cache.storePreview(42, source)))
         throw new Error('Could not cache a visible workspace preview');
+    if (!Cache.isFresh('42', '', 60))
+        throw new Error('A fresh workspace preview was not recognized');
     if (!(await Cache.restorePreview('42', restored)) || read(restored) !== read(source))
         throw new Error('A later workspace did not recover the same window preview');
     if (await Cache.restorePreview('never-seen', `${root}/missing.png`))

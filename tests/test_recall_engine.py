@@ -206,6 +206,40 @@ class RecallEngineTests(unittest.TestCase):
             self.assertEqual(result, {"saved": False, "reason": "screen unchanged"})
             self.assertEqual(len(calls), 1)
 
+    def test_unchanged_individual_window_reuses_ocr(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            vault = RecallVault(root, test_key=b"i" * 32)
+            calls: list[str] = []
+            vault._ocr = lambda path: (calls.append(path.name) or (f"text {path.name}", []))
+            first = self.capture(root)
+            (root / f"{first.stem}-window-0.jpg").write_bytes(b"same-window")
+            (root / f"{first.stem}-display-0.jpg").write_bytes(b"old-display")
+            self.assertTrue(vault.finalize(first, RecallPolicy(ocr=True))["saved"])
+            second = self.capture(root)
+            second_target = root / "recall-20260822-120002-123.json"
+            second.replace(second_target)
+            (root / f"{second_target.stem}-window-0.jpg").write_bytes(b"same-window")
+            (root / f"{second_target.stem}-display-0.jpg").write_bytes(b"new-display")
+            self.assertTrue(vault.finalize(second_target, RecallPolicy(ocr=True))["saved"])
+            self.assertEqual(sum("window-0" in name for name in calls), 1)
+            newest = vault._load(vault._record_paths()[0])
+            self.assertEqual(newest["ocr_diagnostics"]["images_reused"], 1)
+
+    def test_power_deferred_ocr_resumes_with_budgeted_reindex(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            vault = RecallVault(root, test_key=b"p" * 32)
+            vault._ocr = lambda _path: ("deferred text", [])
+            capture = self.capture(root)
+            (root / f"{capture.stem}-window-0.jpg").write_bytes(b"deferred-window")
+            result = vault.finalize(capture, RecallPolicy(ocr_deferred=True))
+            record = vault._load(vault.vault / result["record"])
+            self.assertEqual(record["ocr_diagnostics"]["state"], "deferred-power")
+            resumed = vault.reindex_deferred()
+            self.assertEqual(resumed["images_indexed"], 1)
+            self.assertEqual(resumed["state"], "completed")
+
     def test_workspace_cache_provenance_survives_encryption_and_search(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

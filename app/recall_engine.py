@@ -656,6 +656,7 @@ def _safe_json(path: Path, maximum: int) -> dict:
 @dataclass(frozen=True)
 class RecallPolicy:
     ocr: bool = False
+    ocr_deferred: bool = False
     semantic: bool = False
     sensitive_filter: bool = True
     excluded_websites: tuple[str, ...] = ()
@@ -936,15 +937,65 @@ class RecallVault:
             )
             return {"saved": False, "reason": "screen unchanged"}
 
+        previous_ocr_by_hash: dict[str, tuple[str, list[dict[str, object]]]] = {}
+        if previous:
+            previous_hashes = list(previous.get("image_hashes") or [])
+            for previous_window in list(previous.get("windows") or [])[:512]:
+                if not isinstance(previous_window, dict):
+                    continue
+                image_index = int(previous_window.get("image_index", -1))
+                if 0 <= image_index < len(previous_hashes):
+                    previous_ocr_by_hash[str(previous_hashes[image_index])] = (
+                        str(previous_window.get("ocr_text") or ""),
+                        list(previous_window.get("ocr_boxes") or []),
+                    )
+            previous_displays = [
+                item for item in list(previous.get("displays") or [])[:8]
+                if isinstance(item, dict)
+            ]
+            for previous_display in previous_displays:
+                image_index = int(previous_display.get("image_index", -1))
+                display_index = int(previous_display.get("index", -1))
+                # Records intentionally keep display OCR as one bounded field.
+                # Reusing it is therefore safe only for a single-display record.
+                if (len(previous_displays) == 1 and
+                        0 <= image_index < len(previous_hashes) and display_index >= 0):
+                    previous_ocr_by_hash[str(previous_hashes[image_index])] = (
+                        str(previous.get("ocr_text") or ""),
+                        list(dict(previous.get("display_ocr_boxes") or {}).get(
+                            str(display_index), [])),
+                    )
+
+        reused_ocr = 0
+        images_to_ocr = []
         if policy.ocr and valid_images:
+            for image, digest in zip(valid_images, image_hashes):
+                reused = previous_ocr_by_hash.get(digest)
+                match = IMAGE_RE.fullmatch(image.name)
+                if reused is None or match is None:
+                    images_to_ocr.append(image)
+                    continue
+                text, boxes = reused
+                if match.group(1) == "window":
+                    index = int(match.group(2))
+                    window_ocr[index] = text[:MAX_WINDOW_OCR_BYTES]
+                    window_ocr_boxes[index] = boxes
+                else:
+                    display_ocr_parts.append(text)
+                    display_index = int(match.group(2))
+                    display_ocr_boxes[display_index] = boxes
+                reused_ocr += 1
             # Tesseract runs outside GNOME Shell and is capped at two workers to
             # avoid CPU/memory spikes when many windows are visible.
-            with ThreadPoolExecutor(
-                max_workers=min(2, len(valid_images)),
-                thread_name_prefix="sessionsifu-ocr",
-            ) as executor:
-                ocr_results = list(executor.map(self._ocr, valid_images))
-            for image, ocr_result in zip(valid_images, ocr_results):
+            if images_to_ocr:
+                with ThreadPoolExecutor(
+                    max_workers=min(2, len(images_to_ocr)),
+                    thread_name_prefix="sessionsifu-ocr",
+                ) as executor:
+                    ocr_results = list(executor.map(self._ocr, images_to_ocr))
+            else:
+                ocr_results = []
+            for image, ocr_result in zip(images_to_ocr, ocr_results):
                 # Preserve compatibility with third-party text-only callbacks.
                 if isinstance(ocr_result, tuple):
                     text, boxes = ocr_result
@@ -960,7 +1011,8 @@ class RecallVault:
                 else:
                     display_ocr_parts.append(text)
                     if match:
-                        display_ocr_boxes[int(match.group(2))] = boxes
+                        display_index = int(match.group(2))
+                        display_ocr_boxes[display_index] = boxes
         targets.extend(
             Path(value).as_uri()
             for value in files
@@ -1110,9 +1162,13 @@ class RecallVault:
             "scene_id": scene_id,
             "annotations": {"bookmarked": False, "collection": "", "note": ""},
             "ocr_diagnostics": {
-                "state": "completed" if policy.ocr else "disabled",
+                "state": (
+                    "completed" if policy.ocr else
+                    "deferred-power" if policy.ocr_deferred else "disabled"
+                ),
                 "engine": "tesseract",
-                "images_indexed": len(valid_images) if policy.ocr else 0,
+                "images_indexed": len(images_to_ocr) if policy.ocr else 0,
+                "images_reused": reused_ocr,
                 "recognized_characters": len("\n".join(display_ocr_parts)) + sum(len(value) for value in window_ocr.values()),
             },
             "capture_diagnostics": {
@@ -1825,7 +1881,7 @@ class RecallVault:
                 grouped.append(item)
         return grouped
 
-    def reindex(self, record_name: str) -> dict[str, object]:
+    def reindex(self, record_name: str, *, timeout: float = 120.0) -> dict[str, object]:
         if not VAULT_RE.fullmatch(record_name):
             raise ValueError("Invalid Recall record")
         path = self.vault / record_name
@@ -1833,6 +1889,8 @@ class RecallVault:
         if not value:
             raise ValueError("Recall record is unavailable")
         indexed = 0
+        deferred = 0
+        deadline = time.monotonic() + max(1.0, min(120.0, timeout))
         display_boxes: dict[str, list] = {}
         display_text: list[str] = []
         windows_by_image = {
@@ -1844,6 +1902,9 @@ class RecallVault:
             for display in value.get("displays", []) if isinstance(display, dict)
         }
         for index, image_name in enumerate(value.get("images", [])[:72]):
+            if time.monotonic() >= deadline:
+                deferred = len(value.get("images", [])[:72]) - index
+                break
             raw = self.preview_bytes(record_name, index)
             if raw is None:
                 continue
@@ -1866,7 +1927,9 @@ class RecallVault:
         value["ocr_text"] = "\n".join(display_text)[:MAX_OCR_BYTES]
         value["display_ocr_boxes"] = display_boxes
         value["ocr_diagnostics"] = {
-            "state": "completed", "engine": "tesseract", "images_indexed": indexed,
+            "state": "completed" if not deferred else "partial",
+            "engine": "tesseract", "images_indexed": indexed,
+            "images_deferred": deferred,
             "recognized_characters": len(str(value.get("ocr_text") or "")) + sum(
                 len(str(window.get("ocr_text") or "")) for window in value.get("windows", []) if isinstance(window, dict)
             ),
@@ -1877,6 +1940,14 @@ class RecallVault:
             raise ValueError("Reindexed Recall record exceeds the safety limit")
         self._atomic_encrypted(path, payload)
         return {"record": record_name, **dict(value["ocr_diagnostics"])}
+
+    def reindex_deferred(self) -> dict[str, object]:
+        """Finish at most one power-deferred record under the normal OCR budget."""
+        for path in self._record_paths():
+            value = self._load(path)
+            if value and dict(value.get("ocr_diagnostics") or {}).get("state") == "deferred-power":
+                return self.reindex(path.name)
+        return {"images_indexed": 0, "images_deferred": 0}
 
     def ask(self, question: str, limit: int = 8) -> dict[str, object]:
         question = question.strip()[:256]

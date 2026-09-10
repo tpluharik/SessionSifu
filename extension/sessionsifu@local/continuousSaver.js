@@ -5,6 +5,7 @@ import GLib from 'gi://GLib';
 
 import * as FileUtils from './utils/fileUtils.js';
 import * as Log from './utils/log.js';
+import * as PowerPolicy from './powerPolicy.js';
 import * as SaveSession from './saveSession.js';
 
 
@@ -63,6 +64,8 @@ export const ContinuousSaver = class {
         this._initialTimeoutId = 0;
         this._periodicTimeoutId = 0;
         this._saving = false;
+        this._saver = new SaveSession.SaveSession(false);
+        this._stopPowerWatch = PowerPolicy.watch(() => this._reschedule());
         this._settingsIds = [
             this._settings.connect('changed::continuous-save-enabled', () => this._reschedule()),
             this._settings.connect('changed::continuous-save-interval', () => this._reschedule()),
@@ -84,10 +87,12 @@ export const ContinuousSaver = class {
         if (!this._settings.get_boolean('continuous-save-enabled'))
             return;
 
-        const interval = Math.max(30, this._settings.get_int('continuous-save-interval'));
+        const configured = Math.max(30, this._settings.get_int('continuous-save-interval'));
+        const energy = PowerPolicy.policy(configured);
+        const interval = energy.snapshotInterval;
         this._initialTimeoutId = GLib.timeout_add_seconds(
             GLib.PRIORITY_LOW,
-            Math.min(30, interval),
+            energy.onBattery ? interval : Math.min(30, interval),
             () => {
                 this._initialTimeoutId = 0;
                 this.saveNow();
@@ -108,8 +113,8 @@ export const ContinuousSaver = class {
         this._saving = true;
         try {
             const name = snapshotName();
-            const saver = new SaveSession.SaveSession(false);
-            const saved = await saver.saveSessionAsync(name, FileUtils.history_path, false);
+            const saved = await this._saver.saveSessionAsync(
+                name, FileUtils.history_path, false, !force);
             if (!saved)
                 return false;
             this._prune();
@@ -136,6 +141,10 @@ export const ContinuousSaver = class {
 
     destroy() {
         this._removeTimers();
+        this._stopPowerWatch?.();
+        this._stopPowerWatch = null;
+        this._saver?.destroy();
+        this._saver = null;
         for (const id of this._settingsIds)
             this._settings.disconnect(id);
         this._settingsIds = [];

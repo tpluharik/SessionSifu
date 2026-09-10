@@ -2,7 +2,18 @@
 
 All notable SessionSifu changes are documented here.
 
-## Unreleased
+## 3.5.26
+
+- Add an adaptive power policy for GNOME and portable builds. Automatic
+  snapshots and Recall slow down on battery, visual capture stops on low-power
+  states, critical charge pauses Recall, and power-deferred OCR resumes in one
+  bounded background job after AC power returns.
+- Rate-limit GNOME workspace preview caching, capture only focus-affected
+  windows, reuse fresh cache entries before compositor work, and reuse encrypted
+  OCR metadata for individually unchanged images.
+- Skip unchanged rolling session snapshots, use coarse portable timers, and
+  avoid capsule polling or UI reconstruction while the relevant view is hidden
+  or unchanged.
 
 ## 3.5.25
 

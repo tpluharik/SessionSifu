@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "SessionSifu 3.5.25 adds disabled-by-default readiness for the provisional Wayland session-management protocol in portable Linux builds. Activation requires an explicit per-run flag, a Wayland session and successful bounded compositor-registry detection. Only cooperating applications may claim windows; claimed windows are never also moved by the legacy geometry backend. Unsupported states fail closed, and normal GNOME/KDE restoration is unchanged. See docs/RESTORE_GUIDE.md for scope and limitations."
+  "notes": "SessionSifu 3.5.26 reduces battery and electricity use with adaptive capture intervals, low-power Recall and OCR limits, focused GNOME preview caching, encrypted OCR reuse, automatic snapshot deduplication and quieter portable UI polling. Deferred OCR resumes in one bounded job when AC power returns."
 }

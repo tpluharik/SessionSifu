@@ -1,11 +1,11 @@
 {
-  "version": "3.5.25",
+  "version": "3.5.26",
   "channel": "stable",
-  "issued_at": "2026-09-07T20:05:51Z",
-  "expires_at": "2026-10-22T20:05:51Z",
+  "issued_at": "2026-09-10T08:57:27Z",
+  "expires_at": "2026-10-25T08:57:27Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.25_all.deb",
-  "sha256": "7f02e02d9a9eb03e88ac2e605de730f87599d9da136604ef23d507a6e54008de",
-  "size": 3793012,
-  "notes": "SessionSifu 3.5.25 adds disabled-by-default readiness for the provisional Wayland session-management protocol in portable Linux builds. Activation requires an explicit per-run flag, a Wayland session and successful bounded compositor-registry detection. Only cooperating applications may claim windows; claimed windows are never also moved by the legacy geometry backend. Unsupported states fail closed, and normal GNOME/KDE restoration is unchanged. See docs/RESTORE_GUIDE.md for scope and limitations."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.26_all.deb",
+  "sha256": "c6f93638910f9d141ea7ef154e4c8c49a4f45d0261cb64a6b66a48157218fd1e",
+  "size": 3806032,
+  "notes": "SessionSifu 3.5.26 reduces battery and electricity use with adaptive capture intervals, low-power Recall and OCR limits, focused GNOME preview caching, encrypted OCR reuse, automatic snapshot deduplication and quieter portable UI polling. Deferred OCR resumes in one bounded job when AC power returns."
 }

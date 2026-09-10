@@ -59,7 +59,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.5.25"
+CURRENT_VERSION = "3.5.26"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -153,9 +153,11 @@ def missing_user_payload_modules() -> tuple[str, ...]:
     )
 
 
-def recall_policy(config: Gio.Settings) -> RecallPolicy:
+def recall_policy(config: Gio.Settings, *, defer_ocr: bool = False) -> RecallPolicy:
+    configured_ocr = config.get_boolean("recall-ocr-enabled")
     return RecallPolicy(
-        ocr=config.get_boolean("recall-ocr-enabled"),
+        ocr=configured_ocr and not defer_ocr,
+        ocr_deferred=configured_ocr and defer_ocr,
         semantic=config.get_boolean("recall-semantic-search-enabled"),
         sensitive_filter=config.get_boolean("recall-sensitive-filter"),
         excluded_websites=tuple(config.get_strv("recall-excluded-websites")),
@@ -3068,11 +3070,12 @@ class ManagerWindow(Adw.ApplicationWindow):
         content.append(update_group)
         self._available_update: dict | None = None
         self._installed_update: Path | None = None
+        self._capsule_running_signature: tuple | None = None
 
         self._refresh_capsule_application_catalog()
         self.refresh()
         self._capsule_refresh_source = GLib.timeout_add_seconds(
-            2, self._refresh_capsule_running
+            10, self._refresh_capsule_running
         )
         self.connect("close-request", self._manager_closed)
 
@@ -3283,10 +3286,17 @@ class ManagerWindow(Adw.ApplicationWindow):
         self._refresh_capsule_running()
 
     def _refresh_capsule_running(self) -> bool:
+        running = self._capsules.list_running()
+        signature = tuple(
+            (item.get("application"), item.get("capsule"), item.get("boundary"), item.get("pid"))
+            for item in running
+        )
+        if signature == self._capsule_running_signature:
+            return GLib.SOURCE_CONTINUE
+        self._capsule_running_signature = signature
         for row in self._capsule_running_rows:
             self.capsule_running_group.remove(row)
         self._capsule_running_rows.clear()
-        running = self._capsules.list_running()
         if not running:
             row = Adw.ActionRow(
                 title="No capsule applications are running",
@@ -4309,6 +4319,7 @@ def main() -> int:
     parser.add_argument("--export-archive", type=Path, help="export encrypted sessions and Recall history")
     parser.add_argument("--import-archive", type=Path, help="import an encrypted SessionSifu archive")
     parser.add_argument("--recall-reindex", metavar="RECORD", help="re-run OCR for one Recall record")
+    parser.add_argument("--recall-reindex-deferred", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--recall-ask", metavar="QUESTION", help="ask local Recall history with citations")
     parser.add_argument("--capsule-create", metavar="NAME", help="create an encrypted workspace capsule")
     parser.add_argument(
@@ -4334,6 +4345,7 @@ def main() -> int:
         help="serve the opt-in read-only Model Context Protocol adapter",
     )
     parser.add_argument("--finalize-recall", metavar="CAPTURE", help=argparse.SUPPRESS)
+    parser.add_argument("--defer-ocr", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--compress-recall-preview",
         nargs=2,
@@ -4360,7 +4372,8 @@ def main() -> int:
         return mcp_stdio()
     if args.finalize_recall:
         try:
-            result = recall_vault().finalize(Path(args.finalize_recall), recall_policy(settings()))
+            result = recall_vault().finalize(
+                Path(args.finalize_recall), recall_policy(settings(), defer_ocr=args.defer_ocr))
             print(json.dumps(result, separators=(",", ":")))
             return 0
         except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
@@ -4368,6 +4381,9 @@ def main() -> int:
             return 1
     if args.recall_reindex:
         print(json.dumps(recall_vault().reindex(args.recall_reindex), indent=2))
+        return 0
+    if args.recall_reindex_deferred:
+        print(json.dumps(recall_vault().reindex_deferred(), indent=2))
         return 0
     if args.recall_ask:
         print(json.dumps(recall_vault().ask(args.recall_ask), indent=2))

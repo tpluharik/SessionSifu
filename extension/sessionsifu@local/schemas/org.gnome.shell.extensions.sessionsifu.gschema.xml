@@ -171,7 +171,7 @@
     </key>
 
     <key name="continuous-save-interval" type="i">
-      <default>300</default>
+      <default>600</default>
       <range min="30" max="3600"/>
       <summary>Automatic snapshot interval in seconds</summary>
       <description>Time between complete rolling desktop snapshots.</description>

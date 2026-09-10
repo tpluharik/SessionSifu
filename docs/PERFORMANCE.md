@@ -17,6 +17,24 @@ verify that a warm query decrypts at most its selected full manifest and adding
 one record indexes that record only, even with a small test-only detail LRU.
 Native multi-monitor peak RSS and latency remain hardware-validation work.
 
+## Adaptive energy policy
+
+Automatic desktop snapshots now skip unchanged state and recurring capture runs
+no more often than every 15 minutes on battery. Privacy Recall keeps the configured five-minute
+cadence on AC power, but uses at least 15 minutes on battery and 30 minutes below
+20 percent. Below 10 percent it pauses new Recall moments. OCR is deferred while
+on battery; screenshot previews are withheld below 20 percent or while GNOME's
+power-saver profile is active. Battery previews use the bounded storage profile.
+After AC power returns, one newest power-deferred OCR moment resumes in a bounded
+background job; a return to battery cancels the remaining images safely.
+
+GNOME focus changes now queue only the previous/current window rather than a
+whole-workspace capture. Cache passes are globally limited to 30 seconds on AC
+and two minutes in an energy-saving state, with per-window freshness limits of
+60 seconds and five minutes respectively. Periodic captures reuse a fresh cache
+image before requesting another compositor render. Portable timers are coarse,
+and capsule status polling runs only while its page is visible.
+
 SessionSifu 3.5.4 removes repeated vault-wide work from both Recall capture and
 interactive search. The optimization does not create a persistent plaintext
 database and does not move compositor APIs onto worker threads.

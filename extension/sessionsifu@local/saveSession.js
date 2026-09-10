@@ -21,6 +21,18 @@ import * as StringUtils from './utils/stringUtils.js';
 import { shellVersion } from './constants.js';
 import * as OpenFiles from './openFiles.js';
 
+function _stableSessionState(sessionConfig) {
+    const payload = JSON.parse(JSON.stringify(sessionConfig));
+    delete payload.session_name;
+    delete payload.session_create_time;
+    for (const window of payload.x_session_config_objects ?? []) {
+        // Sampled utilization must not turn an unchanged desktop into a new snapshot.
+        delete window.cpu_percent;
+        delete window.memory_percent;
+    }
+    return JSON.stringify(payload);
+}
+
 function ensurePrivateConfigRoot() {
     if (GLib.file_test(FileUtils.config_path_base, GLib.FileTest.IS_SYMLINK))
         throw new Error('Refusing symbolic-link SessionSifu storage');
@@ -46,6 +58,7 @@ export const SaveSession = class {
         this._settings = PrefsUtils.getSettings();
 
         this._sourceIds = [];
+        this._lastAutomaticState = null;
     }
 
     async saveSummaryAsync(cancellable) {
@@ -74,7 +87,7 @@ export const SaveSession = class {
         }
     }
 
-    async saveSessionAsync(sessionName, baseDir = null, backup = true) {
+    async saveSessionAsync(sessionName, baseDir = null, backup = true, skipUnchanged = false) {
         try {
             this._openFileResolver.reset();
             this._log.debug(`Generating session ${sessionName}`);
@@ -83,11 +96,20 @@ export const SaveSession = class {
 
             sessionConfig.x_session_config_objects = sessionConfig.sort();
 
+            const stableState = _stableSessionState(sessionConfig);
+            if (skipUnchanged && stableState === this._lastAutomaticState) {
+                this._log.debug('Automatic snapshot skipped because the desktop is unchanged');
+                return true;
+            }
+
             if (backup) {
                 await this.backupExistingSessionIfNecessary(sessionName, baseDir);
             }
 
-            return await this._saveSessionConfigAsync(sessionConfig, baseDir);
+            const saved = await this._saveSessionConfigAsync(sessionConfig, baseDir);
+            if (saved)
+                this._lastAutomaticState = stableState;
+            return saved;
 
             // TODO saved Notification
         } catch (error) {

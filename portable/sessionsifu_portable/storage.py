@@ -59,7 +59,24 @@ class SessionStore:
     def save_named(self, name: str, session: SessionSnapshot) -> Path:
         return self._write(self.named_dir / f"{self.validate_name(name)}.json", session)
 
-    def save_history(self, session: SessionSnapshot) -> Path:
+    def save_history(self, session: SessionSnapshot, *, skip_unchanged: bool = False) -> Path:
+        previous_paths = self.list_history()
+        if skip_unchanged and previous_paths:
+            try:
+                current = session.to_dict()
+                current.pop("captured_at", None)
+                current.pop("capture_diagnostics", None)
+                for window in current.get("windows", []):
+                    window.pop("pid", None)
+                previous = self.load(previous_paths[0]).to_dict()
+                previous.pop("captured_at", None)
+                previous.pop("capture_diagnostics", None)
+                for window in previous.get("windows", []):
+                    window.pop("pid", None)
+                if previous == current:
+                    return previous_paths[0]
+            except (OSError, ValueError, json.JSONDecodeError):
+                pass
         stamp = datetime.now(timezone.utc).strftime("auto-%Y%m%d-%H%M%S-%f")
         path = self.history_dir / f"{stamp}.json"
         collision = 0

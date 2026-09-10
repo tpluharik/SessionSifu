@@ -2,7 +2,7 @@
 
 - [3.5.24 stability/performance audit and recovery](STABILITY_AUDIT.md)
 
-This index describes the current 3.5.25 behavior. Start with the main
+This index describes the current 3.5.26 behavior. Start with the main
 [README](../README.md) for installation and compatibility.
 
 ## Using SessionSifu

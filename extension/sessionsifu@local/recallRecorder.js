@@ -9,6 +9,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as FileUtils from './utils/fileUtils.js';
 import * as Log from './utils/log.js';
 import * as MetaWindowUtils from './utils/metaWindowUtils.js';
+import * as PowerPolicy from './powerPolicy.js';
 import * as SaveSession from './saveSession.js';
 import * as WorkspaceCache from './recallWorkspaceCache.js';
 import * as UiHelper from './ui/uiHelper.js';
@@ -341,7 +342,19 @@ function _stableWindowKey(value) {
     return String(value ?? '');
 }
 
-async function _captureWindowActors(name, excludedApps = [], shouldContinue = () => true) {
+function _windowId(metaWindow) {
+    try {
+        return metaWindow
+            ? _stableWindowKey(MetaWindowUtils.getStableWindowId(metaWindow))
+            : '';
+    } catch (_error) {
+        return '';
+    }
+}
+
+async function _captureWindowActors(
+    name, excludedApps = [], shouldContinue = () => true, cacheMaxAgeSeconds = 300
+) {
     const path = GLib.build_filenamev([FileUtils.recall_path, name]);
     const file = Gio.File.new_for_path(path);
     const [ok, contents] = file.load_contents(null);
@@ -356,6 +369,29 @@ async function _captureWindowActors(name, excludedApps = [], shouldContinue = ()
             .filter(([windowId]) => windowId));
     if (!windowIndexes.size)
         return {expected: 0, matched: 0, captured: 0, cached: 0, available: 0};
+    let cached = 0;
+    const cachedIndexes = new Set();
+    // A recent cache entry is already the freshest safe view of windows that
+    // may now be hidden. Reuse it before asking Mutter to repaint the same area.
+    for (const [windowId, index] of windowIndexes) {
+        if (!shouldContinue())
+            break;
+        try {
+            const modified = await WorkspaceCache.restorePreview(
+                windowId, _windowScreenshotPath(name, index, true), cacheMaxAgeSeconds,
+                String(windowRecords[index].window_title ?? ''), shouldContinue);
+            if (modified) {
+                windowRecords[index].recall_preview_source = 'workspace-cache';
+                windowRecords[index].recall_preview_captured_at =
+                    new Date(modified * 1000).toISOString();
+                cachedIndexes.add(index);
+                cached++;
+            }
+        } catch (error) {
+            Log.Log.getDefault().error(error, 'Could not reuse a Recall workspace preview');
+        }
+        await _yieldToShell();
+    }
     const jobs = [];
     const scheduledIndexes = new Set();
     const exclusions = screenshotBlockingExclusions(excludedApps);
@@ -370,13 +406,12 @@ async function _captureWindowActors(name, excludedApps = [], shouldContinue = ()
         const windowId = _stableWindowKey(
             MetaWindowUtils.getStableWindowId(metaWindow));
         const index = windowIndexes.get(windowId);
-        if (index === undefined || scheduledIndexes.has(index))
+        if (index === undefined || cachedIndexes.has(index) || scheduledIndexes.has(index))
             continue;
         scheduledIndexes.add(index);
         jobs.push([index, windowId, metaWindow, actor]);
     }
     let captured = 0;
-    let cached = 0;
     const startedUs = GLib.get_monotonic_time();
     // Never repaint Meta.WindowActor objects directly. That code runs inside
     // Mutter and concurrent/off-workspace paints can take down the Wayland
@@ -410,13 +445,14 @@ async function _captureWindowActors(name, excludedApps = [], shouldContinue = ()
     for (const [windowId, index] of windowIndexes) {
         if (!shouldContinue())
             break;
-        if (scheduledIndexes.has(index) &&
+        if (cachedIndexes.has(index) || (scheduledIndexes.has(index) &&
             GLib.file_test(_windowScreenshotPath(name, index, true), GLib.FileTest.IS_REGULAR))
+        )
             continue;
         try {
             const modified = await WorkspaceCache.restorePreview(
                 windowId, _windowScreenshotPath(name, index, true),
-                WorkspaceCache.CACHE_MAX_AGE_SECONDS,
+                cacheMaxAgeSeconds,
                 String(windowRecords[index].window_title ?? ''), shouldContinue);
             if (!modified || !shouldContinue())
                 continue;
@@ -483,13 +519,14 @@ function _compressScreenshot(
     });
 }
 
-function _finalizeCapture(name) {
+function _finalizeCapture(name, deferOcr = false) {
     recallActivity.begin();
     try {
         const path = GLib.build_filenamev([FileUtils.recall_path, name]);
-        const process = Gio.Subprocess.new([
-            FileUtils.getManagerExecutable(), '--finalize-recall', path,
-        ], Gio.SubprocessFlags.STDERR_PIPE);
+        const command = [FileUtils.getManagerExecutable(), '--finalize-recall', path];
+        if (deferOcr)
+            command.push('--defer-ocr');
+        const process = Gio.Subprocess.new(command, Gio.SubprocessFlags.STDERR_PIPE);
         process.communicate_utf8_async(null, null, (source, result) => {
             try {
                 const [, , stderr] = source.communicate_utf8_finish(result);
@@ -704,7 +741,26 @@ export const RecallRecorder = class {
         this._workspaceCacheCapturing = false;
         this._workspaceCachePromise = Promise.resolve();
         this._lastPruneUs = 0;
+        this._lastWorkspaceCacheUs = 0;
+        this._workspaceCacheTargets = new Set();
+        this._workspaceCacheFullPending = false;
+        this._focusedWindowId = _windowId(global.display.get_focus_window());
         this._destroyed = false;
+        this._deferredOcrProcess = null;
+        this._ocrAllowed = PowerPolicy.policy(
+            this._settings.get_int('recall-interval')).ocr;
+        this._stopPowerWatch = PowerPolicy.watch(() => {
+            const allowed = PowerPolicy.policy(
+                this._settings.get_int('recall-interval')).ocr;
+            const resumeOcr = !this._ocrAllowed && allowed;
+            if (this._ocrAllowed && !allowed)
+                this._deferredOcrProcess?.force_exit();
+            this._ocrAllowed = allowed;
+            this._screenshotGeneration++;
+            this._reschedule();
+            if (resumeOcr)
+                this._resumeDeferredOcr();
+        });
         this._settingsIds = [
             this._settings.connect('changed::recall-enabled', () => {
                 this._screenshotGeneration++;
@@ -713,6 +769,10 @@ export const RecallRecorder = class {
                 this._reschedule();
             }),
             this._settings.connect('changed::recall-interval', () => this._reschedule()),
+            this._settings.connect('changed::recall-ocr-enabled', () => {
+                if (this._settings.get_boolean('recall-ocr-enabled') && this._ocrAllowed)
+                    this._resumeDeferredOcr();
+            }),
             this._settings.connect('changed::recall-pause-until', () => {
                 this._screenshotGeneration++;
                 this._reschedule();
@@ -745,13 +805,19 @@ export const RecallRecorder = class {
         // Never reuse a previous login's cache after Mutter IDs can change.
         WorkspaceCache.clearPreviewCache();
         this._workspaceChangedId = global.workspace_manager.connect(
-            'active-workspace-changed', () => this._scheduleWorkspaceCache());
+            'active-workspace-changed', () => this._scheduleWorkspaceCache(1200, null));
         this._windowCreatedId = global.display.connect(
-            'window-created', () => this._scheduleWorkspaceCache(2500));
+            'window-created', (_display, window) => this._scheduleWorkspaceCache(
+                2500, [_windowId(window)]));
         this._focusChangedId = global.display.connect(
-            'notify::focus-window', () => this._scheduleWorkspaceCache(1800));
+            'notify::focus-window', () => {
+                const current = _windowId(global.display.get_focus_window());
+                const targets = [this._focusedWindowId, current].filter(value => value);
+                this._focusedWindowId = current;
+                this._scheduleWorkspaceCache(1800, targets);
+            });
         this._overviewHiddenId = Main.overview.connect(
-            'hidden', () => this._scheduleWorkspaceCache());
+            'hidden', () => this._scheduleWorkspaceCache(1200, null));
         this._restoreChangedId = restoreActivity.connect('changed', () => {
             // Invalidate work already queued before restoration started. The
             // native callback retains ownership of an in-flight screenshot.
@@ -765,14 +831,45 @@ export const RecallRecorder = class {
             this._scheduleWorkspaceCache(2500);
         });
         this._reschedule();
+        if (this._ocrAllowed)
+            this._resumeDeferredOcr();
+    }
+
+    _resumeDeferredOcr() {
+        if (this._destroyed || this._deferredOcrProcess ||
+            !this._settings?.get_boolean('recall-enabled') ||
+            !this._settings.get_boolean('recall-ocr-enabled'))
+            return;
+        try {
+            const process = Gio.Subprocess.new([
+                FileUtils.getManagerExecutable(), '--recall-reindex-deferred',
+            ], Gio.SubprocessFlags.STDERR_PIPE);
+            this._deferredOcrProcess = process;
+            process.communicate_utf8_async(null, null, (source, result) => {
+                try {
+                    const [, , stderr] = source.communicate_utf8_finish(result);
+                    if (!source.get_successful() && stderr?.trim())
+                        this._log.warn(`Deferred Recall OCR did not complete: ${stderr.trim()}`);
+                } catch (error) {
+                    this._log.error(error, 'Could not finish deferred Recall OCR');
+                } finally {
+                    if (this._deferredOcrProcess === process)
+                        this._deferredOcrProcess = null;
+                }
+            });
+        } catch (error) {
+            this._deferredOcrProcess = null;
+            this._log.error(error, 'Could not start deferred Recall OCR');
+        }
     }
 
     _mayCaptureWorkspace() {
+        const energy = PowerPolicy.policy(this._settings?.get_int('recall-interval') ?? 300);
         if (this._destroyed || !this._settings || !mayRestoreApplications() ||
             restoreActivity.saving ||
             GLib.get_monotonic_time() < (this._captureAfterUs ?? 0) ||
             !this._settings.get_boolean('recall-enabled') ||
-            !this._settings.get_boolean('recall-capture-screenshots') ||
+            !this._settings.get_boolean('recall-capture-screenshots') || !energy.screenshots ||
             Main.sessionMode.isLocked || Main.overview.visible || Main.modalCount > 0)
             return false;
         const pausedUntil = this._settings.get_int64('recall-pause-until');
@@ -780,7 +877,13 @@ export const RecallRecorder = class {
             (pausedUntil > 0 && pausedUntil <= Math.floor(Date.now() / 1000));
     }
 
-    _scheduleWorkspaceCache(delayMs = 1200) {
+    _scheduleWorkspaceCache(delayMs = 1200, windowIds = null) {
+        if (windowIds === null)
+            this._workspaceCacheFullPending = true;
+        else
+            for (const windowId of windowIds)
+                if (windowId)
+                    this._workspaceCacheTargets.add(String(windowId));
         if (this._workspaceCacheTimeoutId) {
             GLib.Source.remove(this._workspaceCacheTimeoutId);
             this._workspaceCacheTimeoutId = 0;
@@ -792,20 +895,28 @@ export const RecallRecorder = class {
             return;
         delayMs = Math.max(delayMs,
             Math.ceil((this._captureAfterUs - GLib.get_monotonic_time()) / 1000));
+        const energy = PowerPolicy.policy(this._settings.get_int('recall-interval'));
+        const nextPassUs = this._lastWorkspaceCacheUs + energy.workspacePassSeconds * 1000 * 1000;
+        delayMs = Math.max(delayMs,
+            Math.ceil((nextPassUs - GLib.get_monotonic_time()) / 1000));
         this._workspaceCacheTimeoutId = GLib.timeout_add(
             GLib.PRIORITY_LOW, delayMs, () => {
                 this._workspaceCacheTimeoutId = 0;
                 if (this._screenshotSaving || this._workspaceCacheCapturing) {
-                    this._scheduleWorkspaceCache(2000);
+                    this._scheduleWorkspaceCache(2000, []);
                     return GLib.SOURCE_REMOVE;
                 }
-                this._workspaceCachePromise = this._captureVisibleWorkspaceCache().catch(
+                const targets = this._workspaceCacheFullPending
+                    ? null : new Set(this._workspaceCacheTargets);
+                this._workspaceCacheFullPending = false;
+                this._workspaceCacheTargets.clear();
+                this._workspaceCachePromise = this._captureVisibleWorkspaceCache(targets).catch(
                     error => this._log.error(error, 'Could not refresh Recall workspace previews'));
                 return GLib.SOURCE_REMOVE;
             });
     }
 
-    async _captureVisibleWorkspaceCache() {
+    async _captureVisibleWorkspaceCache(targetWindowIds = null) {
         if (!this._mayCaptureWorkspace())
             return;
         this._workspaceCacheCapturing = true;
@@ -813,6 +924,8 @@ export const RecallRecorder = class {
         const exclusions = recallExclusions(this._settings.get_strv('recall-excluded-apps'));
         const tracker = Shell.WindowTracker.get_default();
         const startedUs = GLib.get_monotonic_time();
+        this._lastWorkspaceCacheUs = startedUs;
+        const energy = PowerPolicy.policy(this._settings.get_int('recall-interval'));
         let captured = 0;
         recallActivity.begin();
         try {
@@ -825,13 +938,18 @@ export const RecallRecorder = class {
                 if (!_isWindowPreviewSafe(metaWindow, actor) || UiHelper.ignoreWindows(metaWindow) ||
                     _windowMatchesExclusions(metaWindow, exclusions, tracker))
                     continue;
-                const windowId = _stableWindowKey(MetaWindowUtils.getStableWindowId(metaWindow));
+                const windowId = _windowId(metaWindow);
+                if (!windowId || (targetWindowIds && !targetWindowIds.has(windowId)))
+                    continue;
+                const previewContext = String(metaWindow.get_title() ?? '');
+                if (WorkspaceCache.isFresh(
+                    windowId, previewContext, energy.windowFreshSeconds))
+                    continue;
                 let temporaryPath;
                 try {
                     temporaryPath = WorkspaceCache.capturePath(windowId);
                     if (!temporaryPath)
                         continue;
-                    const previewContext = String(metaWindow.get_title() ?? '');
                     await _captureWindowArea(temporaryPath, metaWindow, actor, previewContext,
                         () => generation === this._screenshotGeneration && this._mayCaptureWorkspace());
                     if (generation === this._screenshotGeneration && this._mayCaptureWorkspace()) {
@@ -870,11 +988,13 @@ export const RecallRecorder = class {
         const pausedUntil = this._settings.get_int64('recall-pause-until');
         if (pausedUntil < 0 || pausedUntil > Math.floor(Date.now() / 1000))
             return;
-        const interval = Math.max(60, this._settings.get_int('recall-interval'));
+        const configured = Math.max(60, this._settings.get_int('recall-interval'));
+        const energy = PowerPolicy.policy(configured);
+        const interval = energy.recallInterval;
         this._scheduleWorkspaceCache();
         this._initialTimeoutId = GLib.timeout_add_seconds(
             GLib.PRIORITY_LOW,
-            Math.min(60, interval),
+            energy.onBattery ? interval : Math.min(60, interval),
             () => {
                 this._initialTimeoutId = 0;
                 this.saveNow();
@@ -890,8 +1010,10 @@ export const RecallRecorder = class {
     }
 
     async saveNow() {
+        const energy = PowerPolicy.policy(this._settings?.get_int('recall-interval') ?? 300);
         if (this._destroyed || !mayRestoreApplications() || this._saving ||
-            !this._settings?.get_boolean('recall-enabled'))
+            this._deferredOcrProcess ||
+            !this._settings?.get_boolean('recall-enabled') || energy.critical)
             return false;
         const pausedUntil = this._settings.get_int64('recall-pause-until');
         if (pausedUntil < 0 || pausedUntil > Math.floor(Date.now() / 1000))
@@ -917,7 +1039,7 @@ export const RecallRecorder = class {
             this._log.debug(
                 `Recall metadata saved in ${Math.round((GLib.get_monotonic_time() - startedUs) / 1000)} ms`);
             let finalizeWithScreenshot = false;
-            if (this._settings.get_boolean('recall-capture-screenshots')) {
+            if (this._settings.get_boolean('recall-capture-screenshots') && energy.screenshots) {
                 const screenshotGeneration = this._screenshotGeneration;
                 const screenshotExclusions = this._settings.get_strv('recall-excluded-apps');
                 if (Main.sessionMode.isLocked) {
@@ -943,7 +1065,7 @@ export const RecallRecorder = class {
                 }
             }
             if (!finalizeWithScreenshot)
-                _finalizeCapture(name);
+                _finalizeCapture(name, !energy.ocr);
             this._prune();
             return true;
         } catch (error) {
@@ -969,7 +1091,9 @@ export const RecallRecorder = class {
             if (!displays.length)
                 throw new Error('No active displays are available for Recall preview capture');
             const rawPath = _rawScreenshotPath(name);
-            const windowCapture = await _captureWindowActors(name, exclusions, shouldContinue);
+            const energy = PowerPolicy.policy(this._settings.get_int('recall-interval'));
+            const windowCapture = await _captureWindowActors(
+                name, exclusions, shouldContinue, Math.max(60, energy.recallInterval));
             const captureSummary =
                 `Prepared ${windowCapture.available} of ${windowCapture.expected} ` +
                 `saved Recall window previews (${windowCapture.captured} live, ` +
@@ -993,7 +1117,7 @@ export const RecallRecorder = class {
                     () => shouldContinue() && !_excludedApplicationVisible(exclusions));
             await _compressScreenshot(
                 rawPath, name, displays,
-                this._settings.get_string('recall-preview-quality'),
+                energy.previewQuality ?? this._settings.get_string('recall-preview-quality'),
                 windowOnly);
             if (this._destroyed || screenshotGeneration !== this._screenshotGeneration ||
                 Main.sessionMode.isLocked)
@@ -1012,7 +1136,8 @@ export const RecallRecorder = class {
             this._log.error(error, 'Could not capture Recall screenshot preview');
         } finally {
             if (!this._destroyed)
-                _finalizeCapture(name);
+                _finalizeCapture(
+                    name, !PowerPolicy.policy(this._settings.get_int('recall-interval')).ocr);
             this._screenshotSaving = false;
             recallActivity.end();
         }
@@ -1042,6 +1167,10 @@ export const RecallRecorder = class {
 
     destroy() {
         this._destroyed = true;
+        this._deferredOcrProcess?.force_exit();
+        this._deferredOcrProcess = null;
+        this._stopPowerWatch?.();
+        this._stopPowerWatch = null;
         this._screenshotGeneration++;
         this._removeTimers();
         if (this._workspaceChangedId)

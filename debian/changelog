@@ -1,3 +1,12 @@
+sessionsifu (3.5.26-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Add adaptive battery and power-saver policies across supported desktops.
+  * Reduce automatic snapshot, Recall capture, preview and OCR activity.
+  * Resume deferred OCR safely after AC power returns.
+  * Skip unchanged automatic snapshots and unnecessary hidden-view refreshes.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Thu, 10 Sep 2026 10:56:41 +0200
+
 sessionsifu (3.5.25-1~ppa1~resolute1) resolute; urgency=medium
 
   * Add opt-in, fail-closed experimental Wayland session protocol detection.

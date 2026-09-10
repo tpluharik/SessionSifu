@@ -362,7 +362,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
         self.assertEqual(restored.session_protocol["managed_window_ids"], ["1"])
-        self.assertEqual(VERSION, "3.5.25")
+        self.assertEqual(VERSION, "3.5.26")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_experimental_wayland_detection_is_opt_in_and_fail_closed(self) -> None:
@@ -495,8 +495,18 @@ class PortableTests(unittest.TestCase):
             session = FakeAdapter().capture()
             for index in range(HISTORY_LIMIT + 3):
                 session.captured_at = str(index)
+                session.windows[0].title = f"state-{index}"
                 store.save_history(session)
             self.assertEqual(len(store.list_history()), HISTORY_LIMIT)
+
+    def test_unchanged_history_is_not_rewritten(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = SessionStore(Path(directory))
+            session = FakeAdapter().capture()
+            first = store.save_history(session)
+            session.captured_at = "later"
+            self.assertEqual(store.save_history(session, skip_unchanged=True), first)
+            self.assertEqual(store.list_history(), [first])
 
     def test_invalid_name_and_external_path_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -661,6 +671,21 @@ class PortableTests(unittest.TestCase):
             newest = store._load(store._paths()[0])
             self.assertTrue(newest["windows"][0]["ocr_diagnostics"]["reused"])
             self.assertTrue(newest["ocr_diagnostics"]["reused"])
+            self.assertTrue(store.search("falcon"))
+
+    def test_portable_power_deferred_ocr_can_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RecallStore(Path(directory))
+            store._ocr_detailed = lambda _preview: (
+                "deferred falcon", [], {"state": "completed", "engine": "test"}
+            )
+            path = store.save(
+                FakeAdapter().capture(), window_previews={0: b"deferred-window"},
+                ocr_deferred=True,
+            )
+            self.assertEqual(store._load(path)["ocr_diagnostics"]["state"], "deferred-power")
+            resumed = store.reindex_deferred()
+            self.assertEqual(resumed["images_indexed"], 1)
             self.assertTrue(store.search("falcon"))
 
     def test_process_snapshot_cache_resolves_each_pid_once(self) -> None:
@@ -881,7 +906,7 @@ class PortableTests(unittest.TestCase):
             controller.save_named("Work")
             api = LocalApi(controller)
             status = api.dispatch({"method": "status"})
-            self.assertEqual(status["version"], "3.5.25")
+            self.assertEqual(status["version"], "3.5.26")
             preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
             self.assertEqual(preview["applications"][0]["application"], "Editor")
             with self.assertRaises(ValueError):
@@ -943,7 +968,7 @@ class PortableTests(unittest.TestCase):
             controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
             controller.save_named("Work")
             mcp = ReadOnlyMcp(controller)
-            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.25")
+            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.26")
             self.assertTrue(mcp.call("restore_preview", {"name": "Work"}))
             with self.assertRaises(ValueError):
                 mcp.call("restore_execute", {"name": "Work"})

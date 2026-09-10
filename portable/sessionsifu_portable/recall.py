@@ -312,6 +312,7 @@ class RecallStore:
         preview: bytes | None = None,
         window_previews: dict[int, bytes] | None = None,
         ocr_enabled: bool = False,
+        ocr_deferred: bool = False,
         sensitive_filter: bool = True,
         quota_mb: int = 512,
     ) -> Path:
@@ -414,7 +415,10 @@ class RecallStore:
         for item in windows:
             raw_text, raw_boxes, diagnostics = item.pop(
                 "_raw_ocr", ("", [], {
-                    "state": "disabled" if not ocr_enabled else "no-preview",
+                    "state": (
+                        "deferred-power" if ocr_deferred else
+                        "disabled" if not ocr_enabled else "no-preview"
+                    ),
                     "engine": "tesseract",
                 })
             )
@@ -433,7 +437,10 @@ class RecallStore:
             ocr_text, ocr_boxes, display_ocr_diagnostics = display_result
         else:
             ocr_text, ocr_boxes, display_ocr_diagnostics = "", [], {
-                "state": "disabled" if not ocr_enabled else "no-display-preview",
+                "state": (
+                    "deferred-power" if ocr_deferred else
+                    "disabled" if not ocr_enabled else "no-display-preview"
+                ),
                 "engine": "tesseract",
             }
         search_text = "\n".join(
@@ -1286,6 +1293,10 @@ class RecallStore:
                 text, boxes, diagnostics = self._ocr_detailed(preview)
                 payload.update({"ocr_text": text, "ocr_boxes": boxes, "ocr_diagnostics": diagnostics})
                 indexed += 1
+        elif dict(payload.get("ocr_diagnostics") or {}).get("state") == "deferred-power":
+            payload["ocr_diagnostics"] = {
+                "state": "no-display-preview", "engine": "tesseract"
+            }
         for window in payload.get("windows", [])[:MAX_WINDOW_PREVIEWS]:
             if cancelled() or time.monotonic() >= deadline:
                 deferred += bool(isinstance(window, dict) and window.get("image"))
@@ -1307,6 +1318,14 @@ class RecallStore:
         self._write_encrypted(path, contents)
         return {"record": record, "images_indexed": indexed, "images_deferred": deferred,
                 "cancelled": cancelled(), **self.ocr_diagnostics(record)}
+
+    def reindex_deferred(self, *, cancelled=lambda: False) -> dict[str, object]:
+        """Finish at most one power-deferred record under the normal OCR budget."""
+        for path in self._paths():
+            payload = self._load(path)
+            if payload and dict(payload.get("ocr_diagnostics") or {}).get("state") == "deferred-power":
+                return self.reindex(path.name, cancelled=cancelled)
+        return {"images_indexed": 0, "images_deferred": 0}
 
     def ask(self, question: str, *, limit: int = 8) -> dict[str, object]:
         """Answer locally with extractive text and explicit snapshot citations."""

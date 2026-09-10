@@ -41,13 +41,13 @@ class SessionController:
             )
         return self.store.save_named(name, session)
 
-    def save_history(self) -> Path:
+    def save_history(self, *, skip_unchanged: bool = False) -> Path:
         session = self.adapter.capture()
         if not session.windows:
             raise RuntimeError(
                 "No restorable windows were visible to this platform backend; history was left unchanged."
             )
-        return self.store.save_history(session)
+        return self.store.save_history(session, skip_unchanged=skip_unchanged)
 
     def _restore(
         self, session: SessionSnapshot, source: str, selected: set[str] | None = None
@@ -141,6 +141,7 @@ class SessionController:
         preview: bytes | None = None,
         window_previews: dict[int, bytes] | None = None,
         ocr_enabled: bool = False,
+        ocr_deferred: bool = False,
         sensitive_filter: bool = True,
         quota_mb: int = 512,
     ) -> Path:
@@ -154,9 +155,13 @@ class SessionController:
             preview=preview,
             window_previews=window_previews,
             ocr_enabled=ocr_enabled,
+            ocr_deferred=ocr_deferred,
             sensitive_filter=sensitive_filter,
             quota_mb=quota_mb,
         )
+
+    def reindex_deferred_recall(self, *, cancelled=lambda: False) -> dict[str, object]:
+        return self.recall_store.reindex_deferred(cancelled=cancelled)
 
     def search_recall(
         self,
