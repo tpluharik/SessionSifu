@@ -41,6 +41,9 @@ history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
   launched applications; and
 - installed-application discovery plus automatic per-application capsule
   profiles, without an unsandboxed host-executable fallback.
+- adaptive battery and power-saver scheduling for automatic snapshots, Recall,
+  screenshots, OCR, GNOME preview caching and portable UI polling, with bounded
+  deferred OCR recovery after AC power returns.
 
 The session, Recall and retrieval foundations were delivered incrementally
 through 3.5.26. The user-visible workflow and underlying data model remain
@@ -178,8 +181,8 @@ line additionally supports listing, deleting and `.wsb` export for automation.
   fake documents and disposable VMs.
 - Accessibility-first natural-language actions that always resolve to a visible
   restore/capsule preview before execution.
-- Energy-aware capture scheduling based on idle state, battery policy and
-  thermal pressure while preserving the user's retention settings.
+- Thermal-pressure and idle-state signals beyond the shipped battery and
+  power-profile policy, without weakening the user's retention controls.
 
 ## Other planned work
 

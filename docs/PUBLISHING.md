@@ -15,6 +15,12 @@ Apple-silicon macOS and Intel macOS, then publishes the GNOME Debian package,
 four portable archives, a checksum file and a bundle of package-manager
 submission metadata.
 
+Version 3.5.26 is published at
+[GitHub Releases](https://github.com/tpluharik/SessionSifu/releases/tag/v3.5.26).
+Its public announcement copy is maintained alongside the synthetic media in
+[`media/RELEASE_3.5.26_POSTS.md`](media/RELEASE_3.5.26_POSTS.md), so channel
+updates use the same tested claims and canonical download link.
+
 The repository, release notes and issue tracker remain the authoritative links
 for every downstream package. Session and Privacy Recall data are never sent to
 a package store.

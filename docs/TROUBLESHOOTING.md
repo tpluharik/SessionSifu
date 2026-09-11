@@ -224,6 +224,22 @@ timeline slider. **View screenshots** opens every window image belonging to the
 saved moment and starts on the matched window. Less common copy and privacy
 deletion actions are under **More**.
 
+## Recall captures less often or has no screenshots on battery
+
+This is expected in version 3.5.26. SessionSifu uses at least a 15-minute Recall
+interval on battery and at least 30 minutes at 20% charge or below. At 10% or
+below, new Recall moments pause until charge recovers or AC power returns.
+Screenshot previews are withheld at 20% or below and while the operating system
+reports power-saver mode. OCR is deferred on battery and resumes for one newest
+deferred moment after AC power returns.
+
+The interval shown in settings remains the user's AC preference; SessionSifu
+does not overwrite it when power changes. To verify the behavior, connect AC,
+leave power-saver mode, and wait for the configured interval. A manual named
+session save is not blocked by this policy. If the machine is on AC but remains
+in low-power behavior, check the desktop's power-profile setting and whether
+UPower reports the battery as discharging.
+
 ## The Recall search shortcut does not open
 
 The shortcut is independent of Recall capture, so it can search existing

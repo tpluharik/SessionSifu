@@ -10,3 +10,7 @@ documented with static screenshots rather than real session data.
 The WebP is the lightweight animated README preview. The MP4 is the downloadable
 video, encoded as H.264/yuv420p for broad browser compatibility. The PNG is a
 static poster and social preview source.
+
+`RELEASE_3.5.26_POSTS.md` contains the factual release announcement used for the
+GitHub release and community-post updates. It links to these synthetic media
+assets and does not contain real desktop content or private user data.

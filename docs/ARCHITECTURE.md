@@ -20,6 +20,31 @@ to the current workspace before the ordinary saved-layout step recreates them.
 SessionSifu 3 has a full GNOME runtime, a portable runtime shared by Windows,
 macOS and Linux desktops, and platform-specific distribution layers.
 
+## Energy policy
+
+Version 3.5.26 centralizes energy-state decisions at the scheduling boundary.
+The GNOME extension reads UPower and power-profiles-daemon properties over the
+system bus without starting either service. Portable builds use `psutil` battery
+status and, on Linux, the ACPI platform profile when available. Missing services
+fail open to the configured AC behavior rather than disabling user features.
+
+The policy raises only effective recurring intervals: 15 minutes for automatic
+snapshots and Recall on battery, 30 minutes for Recall at 20% charge or below,
+and a Recall pause at 10% or below. It disables visual capture at 20% or below
+and in power-saver mode, and defers OCR on battery or in power-saver mode. Power
+transitions reschedule timers without changing the stored user preference.
+
+GNOME preview caching has separate global-pass and per-window freshness limits.
+Focus events enqueue only the old and new focus windows, and a fresh cache entry
+is consumed before a compositor request. Portable Qt timers are very coarse;
+capsule-process polling runs only while its tab is visible and UI rows are
+rebuilt only when the bounded process signature changes.
+
+Power-deferred OCR is stored as authenticated record metadata. On AC return,
+each manager starts at most one bounded reindex job for the newest deferred
+record. A lifecycle or power-state cancellation stops further images; atomic
+record replacement preserves the last valid encrypted state.
+
 ## Trust boundaries
 
 Within GNOME, `compositorOperations.js` provides a shared FIFO for native Recall

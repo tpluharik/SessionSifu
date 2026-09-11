@@ -11,6 +11,11 @@ updates install this extension and the manager into the user's local data
 directories without root access. OCR, encryption, search indexing and preview
 decoding stay in the unprivileged manager rather than GNOME Shell.
 
+Version 3.5.26 adds an adaptive UPower/power-profile policy. Recurring snapshots
+and Recall slow down on battery, low charge suppresses visual capture, OCR is
+deferred outside AC operation, and focus-driven preview caching is rate-limited
+to the affected windows. Stored preferences and manual saves are unchanged.
+
 The implementation is derived from Another Window Session Manager by nlpsuge
 and contributors at audited revision
 `cf23fef152ce90692fc1df984f6fd945725334be`. See `LICENSE` and the package

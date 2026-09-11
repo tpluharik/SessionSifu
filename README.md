@@ -578,6 +578,23 @@ encoding, OCR and encryption. Metadata writes start immediately and history
 summaries are cached. If preview encoding is still busy at the next capture,
 SessionSifu preserves the metadata snapshot and skips only that preview.
 
+### Energy-aware operation
+
+Version 3.5.26 reads the operating system's battery and power-profile state and
+automatically reduces background work without changing retention or deleting
+history. Automatic session snapshots use at least a 15-minute interval on
+battery and skip unchanged desktop state. Recall uses at least 15 minutes on
+battery, 30 minutes at 20% charge or below, and pauses new moments at 10% or
+below. Screenshots stop at 20% or below and in power-saver mode; local OCR is
+deferred while on battery or in power-saver mode.
+
+When AC power returns, SessionSifu reindexes at most one newest power-deferred
+Recall moment in a bounded background job. GNOME also rate-limits preview-cache
+passes and captures only the windows affected by a focus change. Portable builds
+use coarse timers, lower preview quality in energy-saving states and stop polling
+the capsule view while it is hidden. Manual saves remain available regardless of
+the automatic scheduling policy.
+
 Because saved launch commands, open-file paths and window titles may contain
 sensitive information, protect backups of the SessionSifu configuration
 directory as you would other personal application data.

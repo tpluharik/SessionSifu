@@ -25,9 +25,10 @@ may remain metadata-only.
 
 Version 3.5.26 adapts automatic snapshots, Recall capture, OCR and interface
 polling to battery and power-saver state, including bounded deferred OCR when
-AC power returns. Version 3.5.25 also adds disabled-by-default detection and safe delegation
-boundaries for the provisional Wayland session-management protocol. It does not
-make arbitrary third-party applications protocol-aware. Version 3.5.24 added
+AC power returns. It retains the user's configured AC interval and leaves manual
+saves available. Version 3.5.25 also adds disabled-by-default detection and safe
+delegation boundaries for the provisional Wayland session-management protocol.
+It does not make arbitrary third-party applications protocol-aware. Version 3.5.24 added
 per-window restore outcomes with readiness checks and
 unfinished-only retry, asynchronous image/OCR work and one-image compression
 backpressure. Credential-store outages fail closed without changing an existing

@@ -38,6 +38,8 @@ This index describes the current 3.5.26 behavior. Start with the main
   trusted build requirements, roles and privacy statement.
 - [Publishing and distribution](PUBLISHING.md) — GitHub Releases, Ubuntu PPA,
   Snap Store and community package-manager submission status.
+- [3.5.26 release posts](media/RELEASE_3.5.26_POSTS.md) — synchronized GitHub
+  and community announcement copy for the adaptive energy release.
 - [Roadmap](../ROADMAP.md) — shipped foundation, quality priorities, workspace
   capsules, longer-term research and explicit non-goals.
 

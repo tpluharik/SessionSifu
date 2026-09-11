@@ -55,6 +55,24 @@ Recognized private-browsing and protected/remote-content windows are treated the
 same way: their window image is omitted and the shared overview is withheld,
 without cancelling independent captures of other eligible applications.
 
+### Battery and power-saver behavior
+
+Version 3.5.26 keeps the user's configured Recall interval on AC power. On
+battery it raises the effective interval to at least 15 minutes; at 20% charge
+or below it uses at least 30 minutes, and at 10% or below it pauses new Recall
+moments. Screenshot previews are withheld at 20% or below and whenever the
+operating system reports a power-saver profile. Metadata-only capture can still
+continue above the critical threshold.
+
+OCR is deferred on battery and in power-saver mode. The encrypted record labels
+this as `deferred-power`, so it is distinguishable from disabled or failed OCR.
+After AC power returns, one newest deferred moment is reindexed in a bounded
+background job. Returning to battery cancels the remaining work safely. No
+plaintext OCR queue is written to disk.
+
+Battery previews use the storage-saver profile. Manual session saves remain
+available; the energy policy changes only recurring background activity.
+
 ### GNOME workspaces and cached previews
 
 From 3.5.10, GNOME session metadata includes all workspaces. Visual capture uses
@@ -71,6 +89,13 @@ reports how many images came from the cache. Their OCR describes the retained
 image, which can be older than the current session metadata.
 Cached pixels are reused only while the window title still matches their source
 context; a changed title/page requires a fresh visible capture.
+
+On GNOME, a focus change queues only the previously focused and newly focused
+windows. Full cache passes are limited to once every 30 seconds on AC and once
+every two minutes in an energy-saving state; individual cached windows must be
+at least 60 seconds old on AC or five minutes old in an energy-saving state
+before replacement. A periodic Recall moment reuses a fresh cached image before
+requesting another compositor capture.
 
 The cache holds at most 64 previews / 64 MiB (16 MiB per source image) and is
 cleared on extension reload/logout, Recall disable, screenshot disable, exclusion

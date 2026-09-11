@@ -113,6 +113,12 @@ Recall is designed for data minimization, not invisible monitoring:
   Recall browser is open; user-configured exclusions suppress shared display
   previews without stopping safe per-window capture;
 - screenshots, OCR and related-match ranking require separate opt-ins;
+- version 3.5.26 defers OCR on battery or in power-saver mode, withholds
+  screenshots at 20% charge or below, and pauses new Recall moments at 10% or
+  below. The encrypted record marks power-deferred OCR explicitly; no plaintext
+  queue is created;
+- after AC power returns, at most one newest deferred record is reindexed in a
+  bounded background job. Returning to battery cancels remaining OCR work;
 - likely passwords, payment-card numbers and security codes discard a capture
   when default-on sensitive filtering recognizes them;
 - search creates an ephemeral in-memory SQLite FTS5 index and never uploads a
@@ -142,6 +148,10 @@ Recall is designed for data minimization, not invisible monitoring:
   non-excluded window in the same entry remains searchable;
 - timed pause controls, quota pruning, unchanged-frame deduplication and the
   capture status row make recording state and failures visible.
+
+The power policy is a data-minimization and resource-control layer, not an
+additional retention rule. Existing encrypted records are not deleted when the
+power state changes, and manual session saves remain user-controlled.
 
 The optional stdio integration API is read-only and same-user. It returns
 bounded search metadata and restore plans over inherited pipes, never image
