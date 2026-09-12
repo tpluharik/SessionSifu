@@ -2,6 +2,22 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.5.27
+
+- Reframe the product around three connected jobs: Save a desktop session,
+  Resume applications and placement, and Find past visual context locally.
+- Add persistent, owner-private portable window rules with app-wide and
+  title-specific placement overrides for monitor, workspace and geometry.
+- Add portable update discovery and download commands plus an in-app update
+  action. Downloads are selected for the active platform, bounded, and verified
+  against the release SHA-256 manifest before becoming visible.
+- Expand browser and editor recognition for LibreWolf, Floorp, Opera, Arc,
+  RubyMine, Sublime Text, Zed, Kate, Notepad++, Typora and TeXstudio.
+- Add a synthetic, reproducible work-continuity benchmark that uses no desktop
+  or Recall data, along with SPDX SBOM and build-provenance release evidence.
+- Replace the partial Recall clip with a complete Save · Resume · Find product
+  demonstration and document the new workflows and competitive position.
+
 ## 3.5.26
 
 - Add an adaptive power policy for GNOME and portable builds. Automatic

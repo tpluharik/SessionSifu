@@ -1,10 +1,10 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.5.26. It separates shipped
+This roadmap describes the product after version 3.5.27. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
 
-## Shipped foundation — 3.5.26
+## Shipped foundation — 3.5.27
 
 SessionSifu now combines session restoration with an encrypted, opt-in visual
 history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
@@ -43,10 +43,16 @@ history on GNOME 50, KDE Plasma, general Linux, Windows and macOS:
   profiles, without an unsandboxed host-executable fallback.
 - adaptive battery and power-saver scheduling for automatic snapshots, Recall,
   screenshots, OCR, GNOME preview caching and portable UI polling, with bounded
-  deferred OCR recovery after AC power returns.
+  deferred OCR recovery after AC power returns;
+- persistent portable window-placement rules and broader public browser/editor
+  recognition;
+- checksummed portable update discovery and download without silent install;
+  and
+- a reproducible synthetic work-continuity benchmark, SPDX SBOM and build
+  provenance for release artifacts.
 
 The session, Recall and retrieval foundations were delivered incrementally
-through 3.5.26. The user-visible workflow and underlying data model remain
+through 3.5.27. The user-visible workflow and underlying data model remain
 consistent across supported editions, while platform adapters report their
 real capabilities instead of implying parity.
 
@@ -82,8 +88,9 @@ These are validation work, not claims that a driver/compositor crash is solved.
    exists; browser and terminal integrations remain separate opt-ins.
 4. Complete screen-reader labels, focus order, high-contrast and reduced-motion
    review in the GTK and Qt Recall browsers.
-5. Add signed/notarized native portable updates, SBOMs and provenance for
-   Windows, macOS and Linux artifacts.
+5. Add signed/notarized in-place portable replacement for Windows, macOS and
+   Linux. Release SBOMs, provenance and checksummed portable downloads are
+   already shipped; platform-native signing remains the trust boundary.
 
 ## Workspace capsules shipped — 3.5.6
 

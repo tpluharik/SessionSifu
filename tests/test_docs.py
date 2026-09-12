@@ -38,10 +38,10 @@ readme = (ROOT / "README.md").read_text(encoding="utf-8")
 roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
 contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
 extension_readme = (ROOT / "extension/sessionsifu@local/README.md").read_text(encoding="utf-8")
-assert "Version 3.5.26" in readme
-assert "docs/media/recall-demo.webp" in readme
+assert "Version 3.5.27" in readme
+assert "docs/media/work-continuity-demo.webp" in readme
 assert "docs/RECALL_GUIDE.md" in readme
-assert "## Shipped foundation — 3.5.26" in roadmap
+assert "## Shipped foundation — 3.5.27" in roadmap
 assert "## Next: quality and trust" in roadmap
 assert "docs/COMPETITIVE_ANALYSIS.md" in readme
 assert "## Explicit non-goals" in roadmap
@@ -49,9 +49,9 @@ assert "SessionSifu 2 targets" not in contributing
 assert "component of Session Keeper" not in extension_readme
 
 media = ROOT / "docs/media"
-mp4 = media / "recall-demo.mp4"
-webp = media / "recall-demo.webp"
-poster = media / "recall-demo-poster.png"
+mp4 = media / "work-continuity-demo.mp4"
+webp = media / "work-continuity-demo.webp"
+poster = media / "work-continuity-demo-poster.png"
 assert 10_000 < mp4.stat().st_size < 2_000_000
 assert mp4.read_bytes()[4:8] == b"ftyp"
 assert 10_000 < webp.stat().st_size < 2_000_000
@@ -67,6 +67,6 @@ with Image.open(poster) as image:
 
 renderer = (ROOT / "tools/render-recall-demo.py").read_text(encoding="utf-8")
 assert "synthetic" in renderer.casefold()
-assert "FRAMES = 135" in renderer
+assert "FRAMES = 180" in renderer
 
 print(f"documentation checks passed ({len(markdown_files)} Markdown files)")

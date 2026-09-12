@@ -350,7 +350,10 @@ class MainWindow(QMainWindow):
 
         root = QWidget()
         layout = QVBoxLayout(root)
-        heading = QLabel(f"<h1>SessionSifu</h1><p>{controller.adapter.desktop} session restoration</p>")
+        heading = QLabel(
+            f"<h1>Save · Resume · Find</h1>"
+            f"<p>SessionSifu work continuity for {controller.adapter.desktop}</p>"
+        )
         heading.setTextFormat(Qt.RichText)
         layout.addWidget(heading)
 
@@ -643,18 +646,45 @@ class MainWindow(QMainWindow):
             capsule_actions.addWidget(button)
         capsule_layout.addLayout(capsule_actions)
 
+        rules_box = QWidget()
+        rules_layout = QVBoxLayout(rules_box)
+        rules_intro = QLabel(
+            "Keep selected applications on a preferred monitor, workspace and geometry. "
+            "Rules are local, declarative and applied only during a SessionSifu restore."
+        )
+        rules_intro.setWordWrap(True)
+        rules_layout.addWidget(rules_intro)
+        self.rule_items = QListWidget()
+        rules_layout.addWidget(self.rule_items, 1)
+        rules_actions = QHBoxLayout()
+        rule_add = QPushButton("Learn from an open window…")
+        rule_add.clicked.connect(self.create_window_rule)
+        rule_delete = QPushButton("Delete selected rule")
+        rule_delete.clicked.connect(self.delete_window_rule)
+        rules_actions.addWidget(rule_add)
+        rules_actions.addWidget(rule_delete)
+        rules_actions.addStretch(1)
+        rules_layout.addLayout(rules_actions)
+
         self.tabs = QTabWidget()
         self.named = QListWidget()
         self.history = QListWidget()
         self.tabs.addTab(self._list_page(self.named, self.restore_named, self.delete_named), "Named sessions")
         self.tabs.addTab(self._list_page(self.history, self.restore_history), "History (latest five)")
+        self.tabs.addTab(rules_box, "Window rules")
         self.tabs.addTab(recall_box, "Privacy Recall")
         self._capsule_tab_index = self.tabs.addTab(capsule_box, "Workspace capsules")
         layout.addWidget(self.tabs, 1)
 
+        footer = QHBoxLayout()
+        update_button = QPushButton("Check for updates")
+        update_button.clicked.connect(self.check_update)
+        footer.addWidget(update_button)
         diagnostics = QPushButton("Show platform diagnostics")
         diagnostics.clicked.connect(self.show_diagnostics)
-        layout.addWidget(diagnostics)
+        footer.addWidget(diagnostics)
+        footer.addStretch(1)
+        layout.addLayout(footer)
         self.setCentralWidget(root)
 
         self.timer = QTimer(self)
@@ -1591,6 +1621,71 @@ class MainWindow(QMainWindow):
             self.status.setText(f"Deleted {removed} Privacy Recall entries.")
             self.refresh_recall()
 
+    def create_window_rule(self) -> None:
+        try:
+            windows = self.controller.adapter.capture_windows(include_files=False)
+        except (OSError, RuntimeError, ValueError) as error:
+            QMessageBox.warning(self, "Window rules", str(error))
+            return
+        choices = []
+        by_label = {}
+        for window in windows:
+            identity = window.app_id or window.executable or window.app_name
+            if not identity:
+                continue
+            label = f"{window.app_name or identity} — {window.title or 'Untitled window'}"
+            if label in by_label:
+                label += f" ({window.window_id})"
+            choices.append(label)
+            by_label[label] = window
+        if not choices:
+            QMessageBox.information(self, "Window rules", "No eligible open windows were found.")
+            return
+        choice, accepted = QInputDialog.getItem(
+            self, "Learn window rule", "Open window:", choices, 0, False
+        )
+        if not accepted:
+            return
+        scope, accepted = QInputDialog.getItem(
+            self,
+            "Rule scope",
+            "Apply this placement to:",
+            ["Every window from this application", "Only windows with this title"],
+            0,
+            False,
+        )
+        if not accepted:
+            return
+        rule = self.controller.save_window_rule(
+            by_label[choice], title_specific=scope.startswith("Only")
+        )
+        self.status.setText(f"Saved window rule for {rule['app_id']}.")
+        self.refresh_window_rules()
+
+    def delete_window_rule(self) -> None:
+        item = self.rule_items.currentItem()
+        if item is None:
+            self.status.setText("Select a window rule to delete.")
+            return
+        if self.controller.delete_window_rule(str(item.data(Qt.UserRole))):
+            self.status.setText("Window rule deleted.")
+            self.refresh_window_rules()
+
+    def refresh_window_rules(self) -> None:
+        self.rule_items.clear()
+        for rule in self.controller.list_window_rules():
+            scope = f" · title contains {rule['title_contains']}" if rule.get("title_contains") else ""
+            placement = ", ".join(
+                part for part in (
+                    f"monitor {rule.get('monitor')}" if rule.get("monitor") else "",
+                    f"workspace {rule.get('workspace')}" if rule.get("workspace") else "",
+                    f"geometry {','.join(map(str, rule.get('geometry') or []))}" if rule.get("geometry") else "",
+                ) if part
+            )
+            item = QListWidgetItem(f"{rule['app_id']}{scope} → {placement or 'captured placement'}")
+            item.setData(Qt.UserRole, rule["key"])
+            self.rule_items.addItem(item)
+
     def set_recall_state_callback(self, callback) -> None:
         self._recall_state_callback = callback
         self._notify_recall_state()
@@ -1604,6 +1699,7 @@ class MainWindow(QMainWindow):
         for path in self.controller.history():
             self.history.addItem(path.stem)
             self.history.item(self.history.count() - 1).setData(Qt.UserRole, str(path))
+        self.refresh_window_rules()
         self.capsule_items.clear()
         for capsule in self.controller.list_capsules():
             name = str(capsule.get("name") or "")
@@ -1625,6 +1721,38 @@ class MainWindow(QMainWindow):
             "SessionSifu platform diagnostics",
             json.dumps(self.controller.diagnostics(), indent=2),
         )
+
+    def check_update(self) -> None:
+        if self._operation_busy:
+            self.status.setText("An operation is already running.")
+            return
+        self._operation_busy = True
+        self.status.setText("Checking the pinned SessionSifu GitHub release channel…")
+
+        def finished(update, error):
+            self._operation_busy = False
+            if error:
+                self.status.setText(error)
+                QMessageBox.warning(self, "SessionSifu update", error)
+                return
+            if not update:
+                self.status.setText(f"SessionSifu {VERSION} is current.")
+                return
+            answer = QMessageBox.question(
+                self,
+                "Portable update available",
+                f"SessionSifu {update['version']} is available. Download and verify the matching bundle?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            destination = QFileDialog.getExistingDirectory(self, "Download verified update")
+            if destination:
+                self._perform(
+                    lambda: self.controller.download_update(Path(destination)),
+                    "Verified portable update downloaded. Close SessionSifu before replacing this bundle.",
+                )
+
+        self._background.submit(self.controller.check_update, finished)
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API
         if QSystemTrayIcon.isSystemTrayAvailable():

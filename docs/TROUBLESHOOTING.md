@@ -226,7 +226,7 @@ deletion actions are under **More**.
 
 ## Recall captures less often or has no screenshots on battery
 
-This is expected in version 3.5.26. SessionSifu uses at least a 15-minute Recall
+This is expected since version 3.5.26. SessionSifu uses at least a 15-minute Recall
 interval on battery and at least 30 minutes at 20% charge or below. At 10% or
 below, new Recall moments pause until charge recovers or AC power returns.
 Screenshot previews are withheld at 20% or below and while the operating system

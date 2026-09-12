@@ -10,11 +10,13 @@ from . import VERSION
 from .adapters import PlatformAdapter, select_adapter
 from .archive import ArchiveManager
 from .capsule import CapsuleManager, CapsuleStore
-from .model import SessionSnapshot
+from .model import SessionSnapshot, WindowSnapshot
 from .recall import RecallStore
 from .restore_journal import RestoreJournal
 from .semantic import OfflineSemanticSearch
 from .storage import SessionStore
+from .window_rules import WindowRule, WindowRuleStore, rule_from_window
+from .update import check_portable_update, download_portable_update
 
 
 class SessionController:
@@ -32,6 +34,7 @@ class SessionController:
         self.restore_journal = RestoreJournal(self.store.root)
         self.archive = ArchiveManager(self.store, self.recall_store)
         self.capsules = CapsuleManager(CapsuleStore(self.store.root))
+        self.window_rules = WindowRuleStore(self.store.root)
 
     def save_named(self, name: str) -> Path:
         session = self.adapter.capture()
@@ -52,6 +55,7 @@ class SessionController:
     def _restore(
         self, session: SessionSnapshot, source: str, selected: set[str] | None = None
     ) -> dict[str, object]:
+        session = self.window_rules.apply(session)
         plan = self.adapter.plan_restore(session)
         journal_id = self.restore_journal.begin(source, [p for p in plan if selected is None or p.get("identity") in selected])
         try:
@@ -88,6 +92,32 @@ class SessionController:
 
     def history(self) -> list[Path]:
         return self.store.list_history()
+
+    def list_window_rules(self) -> list[dict[str, object]]:
+        return [rule.to_dict() | {"key": rule.key} for rule in self.window_rules.list()]
+
+    def save_window_rule(
+        self, window: WindowSnapshot, *, title_specific: bool = False
+    ) -> dict[str, object]:
+        rule = rule_from_window(window, title_specific=title_specific)
+        self.window_rules.save(rule)
+        return rule.to_dict() | {"key": rule.key}
+
+    def create_window_rule(self, value: dict[str, object]) -> dict[str, object]:
+        rule = WindowRule.from_dict(value)
+        self.window_rules.save(rule)
+        return rule.to_dict() | {"key": rule.key}
+
+    def delete_window_rule(self, key: str) -> bool:
+        return self.window_rules.delete(key)
+
+    def check_update(self) -> dict[str, object] | None:
+        update = check_portable_update()
+        return update.to_dict() if update else None
+
+    def download_update(self, destination: Path) -> Path | None:
+        update = check_portable_update()
+        return download_portable_update(update, destination) if update else None
 
     def save_recall(
         self,
@@ -279,4 +309,5 @@ class SessionController:
             "privacy_recall": self.recall_store.diagnostics(),
             "restore_journals": len(self.restore_journal.list()),
             "workspace_capsules": len(self.capsules.store.list()),
+            "window_rules": len(self.window_rules.list()),
         }

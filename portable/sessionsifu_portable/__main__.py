@@ -22,8 +22,17 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--list", action="store_true", help="list named sessions")
     result.add_argument("--save-history", action="store_true", help="create a rolling snapshot")
     result.add_argument("--history", action="store_true", help="list rolling snapshots")
+    result.add_argument("--window-rules", action="store_true", help="list persistent window placement rules")
+    result.add_argument("--window-rule-app", help="application identity for a placement rule")
+    result.add_argument("--window-rule-title", default="", help="optional title substring for a placement rule")
+    result.add_argument("--window-rule-monitor", default="", help="preferred monitor identity")
+    result.add_argument("--window-rule-workspace", default="", help="preferred workspace")
+    result.add_argument("--window-rule-geometry", help="preferred x,y,width,height")
+    result.add_argument("--window-rule-delete", help="delete a rule by the key shown by --window-rules")
     result.add_argument("--restore-file", type=Path, help="restore a SessionSifu JSON file")
     result.add_argument("--diagnostics", action="store_true", help="print adapter capabilities")
+    result.add_argument("--check-update", action="store_true", help="check the pinned GitHub release channel")
+    result.add_argument("--download-update", type=Path, help="download and SHA-256 verify a newer portable bundle")
     result.add_argument(
         "--experimental-wayland-session-management",
         action="store_true",
@@ -94,11 +103,39 @@ def main() -> int:
     if args.history:
         print("\n".join(str(path) for path in controller.history()))
         handled = True
+    if args.window_rules:
+        print(json.dumps(controller.list_window_rules(), indent=2))
+        handled = True
+    if args.window_rule_app:
+        geometry = None
+        if args.window_rule_geometry:
+            try:
+                geometry = [int(part.strip()) for part in args.window_rule_geometry.split(",")]
+            except ValueError as error:
+                raise SystemExit("--window-rule-geometry must be x,y,width,height") from error
+        print(json.dumps(controller.create_window_rule({
+            "app_id": args.window_rule_app,
+            "title_contains": args.window_rule_title,
+            "monitor": args.window_rule_monitor,
+            "workspace": args.window_rule_workspace,
+            "geometry": geometry,
+        }), indent=2))
+        handled = True
+    if args.window_rule_delete:
+        print(json.dumps({"deleted": controller.delete_window_rule(args.window_rule_delete)}))
+        handled = True
     if args.restore_file:
         print(json.dumps(controller.restore_path(args.restore_file)))
         handled = True
     if args.diagnostics:
         print(json.dumps(controller.diagnostics(), indent=2))
+        handled = True
+    if args.check_update:
+        print(json.dumps(controller.check_update() or {"current": True}, indent=2))
+        handled = True
+    if args.download_update:
+        path = controller.download_update(args.download_update)
+        print(path or "Already current")
         handled = True
     if args.capsule_create:
         print(controller.create_capsule(

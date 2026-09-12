@@ -30,7 +30,10 @@ VSCODE_IDENTITY_RE = re.compile(
 )
 JETBRAINS_IDENTITY_RE = re.compile(r"\b(?:idea|pycharm|clion|goland|webstorm|rider|rubymine)\b", re.IGNORECASE)
 LIBREOFFICE_IDENTITY_RE = re.compile(r"\b(?:libreoffice|soffice|writer|calc|impress)\b", re.IGNORECASE)
-BROWSER_IDENTITY_RE = re.compile(r"\b(?:firefox|chrome|chromium|edge|brave|vivaldi|safari)\b", re.IGNORECASE)
+BROWSER_IDENTITY_RE = re.compile(
+    r"\b(?:firefox|librewolf|floorp|chrome|chromium|edge|brave|vivaldi|opera|safari|arc)\b",
+    re.IGNORECASE,
+)
 MAX_ACCESSIBLE_BYTES = 64 * 1024
 MAX_ACCESSIBLE_NODES = 384
 MAX_TARGETS = 32

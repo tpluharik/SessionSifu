@@ -10,13 +10,13 @@
   If SessionSifu makes your desktop easier to live with, you can support its continued development through <a href="https://github.com/sponsors/tpluharik">GitHub Sponsors</a>.
 </p>
 
-# SessionSifu 3
+# SessionSifu 3 — Save · Resume · Find
 
-SessionSifu saves and reconstructs desktop layouts. It records running
-applications, documents and windows, then can relaunch applications and rebuild
-the supported parts of their layout.
+SessionSifu preserves work continuity. **Save** named projects or automatic
+snapshots, **Resume** selected applications, documents and window layouts, and
+**Find** past context in an optional encrypted local visual timeline.
 
-Version 3.5.26 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
+Version 3.5.27 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
 encrypted, per-window OCR activity timeline across GNOME, Windows, macOS, KDE
 Plasma 6 and other Linux desktops. Czech and English OCR data ships with the
 installer and verified update. Recall previews support two-finger panning,
@@ -99,6 +99,9 @@ and limits of automated testing.
   scrubbing, encrypted bookmarks, collections and private notes.
 - Crash-safe restore journals with per-action outcomes and retry, plus monitor
   topology reconciliation when displays are rearranged or removed.
+- Owner-private portable placement rules that keep an application's preferred
+  monitor, workspace and geometry across future sessions, with optional
+  title-specific overrides.
 - Deep-return adapters for LibreOffice, JetBrains IDEs, VS Code, Obsidian and
   observable browser URLs.
 - Local extractive Ask with snapshot citations, an opt-in read-only MCP stdio
@@ -114,15 +117,19 @@ and limits of automated testing.
   launchers and integrations; SessionSifu opens no local network service.
 - A refreshable installed-application picker for Workspace Capsules, with
   automatic fail-closed backend and per-application profile selection.
+- A portable update checker that selects the current platform archive and
+  verifies its release SHA-256 checksum before saving it.
+- Reproducible synthetic work-continuity benchmarks plus SPDX SBOM and build
+  provenance evidence attached by the release workflow.
 
 ## Recall walkthrough
 
-![Privacy Recall search walkthrough](docs/media/recall-demo.webp)
+![SessionSifu Save, Resume and Find walkthrough](docs/media/work-continuity-demo.webp)
 
 The short walkthrough uses synthetic window titles and documents. It shows a
 local capture, per-window OCR search, matching-word highlighting and gallery
 navigation without publishing a real user's desktop. Download the
-[MP4 version](docs/media/recall-demo.mp4), or read the
+[MP4 version](docs/media/work-continuity-demo.mp4), or read the
 [Recall workflow guide](docs/RECALL_GUIDE.md) for the complete controls and
 privacy boundary.
 
@@ -187,11 +194,11 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_3.5.26_all.deb` from the matching GitHub Release, or build it
+Download `sessionsifu_3.5.27_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_3.5.26_all.deb
+sudo apt install ./sessionsifu_3.5.27_all.deb
 ```
 
 The Ubuntu 26.04 PPA is active at `ppa:tpluharik77/sessionsifu` and its amd64
@@ -221,7 +228,7 @@ compatible GNOME release; SessionSifu never forces a desktop-shell upgrade.
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.5.26_all.deb
+sudo apt install ./dist/sessionsifu_3.5.27_all.deb
 ```
 
 After installation:
@@ -237,10 +244,10 @@ After installation:
 
 Tagged releases attach these self-contained artifacts:
 
-- `SessionSifu-3.5.26-windows-x64.zip`;
-- `SessionSifu-3.5.26-macos-arm64.zip`;
-- `SessionSifu-3.5.26-macos-x64.zip`; and
-- `SessionSifu-3.5.26-linux-x64.tar.gz`.
+- `SessionSifu-3.5.27-windows-x64.zip`;
+- `SessionSifu-3.5.27-macos-arm64.zip`;
+- `SessionSifu-3.5.27-macos-x64.zip`; and
+- `SessionSifu-3.5.27-linux-x64.tar.gz`.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -378,6 +385,18 @@ The manual action bypasses only that timer and keeps all normal safety checks.
 The complete workflow and platform limits are in the
 [session restoration guide](docs/RESTORE_GUIDE.md).
 
+## Persistent window rules
+
+Portable editions can remember a stable placement override for an application.
+Open **Window rules**, choose a window from the current desktop, then save either
+an app-wide rule or a title-specific rule. On later restores, title-specific
+rules take priority; other saved window state remains untouched. Rules are
+stored atomically in the owner's SessionSifu data directory and can be removed
+from the same screen.
+
+See the [window-rule guide](docs/WINDOW_RULES.md) for command-line examples and
+platform limits.
+
 ## Updates
 
 The manager's **Check for Updates** button reads `updates/latest.json` from this
@@ -404,10 +423,11 @@ required to load a replaced GNOME Shell extension on Wayland.
 The Debian package remains the supported initial installation method because it
 provides SessionSifu's runtime dependencies.
 
-Portable Windows, macOS and Linux builds are currently updated by downloading a
-new checksummed artifact from the repository's Releases page. Native verified
-in-app replacement for those bundles is roadmap item 5; the interface
-does not silently invoke a system package manager.
+Portable Windows, macOS and Linux builds can check the repository's latest
+GitHub Release and download the matching archive. The archive is bounded and
+verified against that release's `SHA256SUMS` before it is saved. SessionSifu
+does not silently replace a running application or invoke a system package
+manager; signed/notarized in-place portable replacement remains future work.
 
 ## Command line
 
@@ -419,6 +439,8 @@ sessionsifu --list
 sessionsifu-portable --save Work
 sessionsifu-portable --restore Work
 sessionsifu-portable --save-history
+sessionsifu-portable --window-rules
+sessionsifu-portable --check-update
 sessionsifu-portable --diagnostics
 ```
 
@@ -622,7 +644,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.5.26_all.deb
+dist/sessionsifu_3.5.27_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -643,8 +665,9 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v3.5.26` tag publishes the artifacts and `SHA256SUMS` as a GitHub
-Release; ordinary pushes and pull requests build and retain test artifacts only.
+A pushed `v3.5.27` tag publishes the artifacts, SPDX SBOM, build provenance and
+`SHA256SUMS` as a GitHub Release; ordinary pushes and pull requests build and
+retain test artifacts only.
 
 ## Roadmap
 
@@ -679,7 +702,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Publishing and distribution](docs/PUBLISHING.md)
 - [Documentation index](docs/README.md)
 
-The current 3.5.26 release includes verified Czech and English fast Tesseract
+The current 3.5.27 release includes verified Czech and English fast Tesseract
 models in the Debian package, signed in-app update and portable artifacts. Mixed
 Czech/English desktop text therefore works without installing a separate
 language package, while recognition stays completely local. Recall search is

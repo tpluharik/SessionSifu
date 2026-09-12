@@ -1,6 +1,6 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.26.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.27.
 
 ## Portable restore outcomes
 

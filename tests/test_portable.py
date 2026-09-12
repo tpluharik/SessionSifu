@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -27,6 +28,8 @@ from sessionsifu_portable.recall import RecallStore  # noqa: E402
 from sessionsifu_portable.semantic import OfflineSemanticSearch  # noqa: E402
 from sessionsifu_portable.shortcut import parse_shortcut  # noqa: E402
 from sessionsifu_portable.storage import HISTORY_LIMIT, SessionStore  # noqa: E402
+from sessionsifu_portable.window_rules import WindowRule, WindowRuleStore  # noqa: E402
+from sessionsifu_portable import update as portable_update  # noqa: E402
 from sessionsifu_portable.adapters.linux import GnomeAdapter, KDEAdapter, LinuxAdapter  # noqa: E402
 from sessionsifu_portable.adapters.macos import MacOSAdapter  # noqa: E402
 from sessionsifu_portable.adapters.windows import WindowsAdapter  # noqa: E402
@@ -362,7 +365,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
         self.assertEqual(restored.session_protocol["managed_window_ids"], ["1"])
-        self.assertEqual(VERSION, "3.5.26")
+        self.assertEqual(VERSION, "3.5.27")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_experimental_wayland_detection_is_opt_in_and_fail_closed(self) -> None:
@@ -906,7 +909,7 @@ class PortableTests(unittest.TestCase):
             controller.save_named("Work")
             api = LocalApi(controller)
             status = api.dispatch({"method": "status"})
-            self.assertEqual(status["version"], "3.5.26")
+            self.assertEqual(status["version"], "3.5.27")
             preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
             self.assertEqual(preview["applications"][0]["application"], "Editor")
             with self.assertRaises(ValueError):
@@ -963,12 +966,115 @@ class PortableTests(unittest.TestCase):
         self.assertLessEqual(geometry[0] + geometry[2], 1920)
         self.assertLessEqual(geometry[1] + geometry[3], 1080)
 
+    def test_window_rules_are_atomic_bounded_and_applied_before_restore(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            controller = SessionController(FakeAdapter(), SessionStore(root))
+            specific = controller.create_window_rule({
+                "app_id": "org.example.Editor",
+                "title_contains": "Notes",
+                "monitor": "external",
+                "workspace": "3",
+                "geometry": [2000, 80, 1200, 900],
+            })
+            general = controller.create_window_rule({
+                "app_id": "org.example.Editor",
+                "monitor": "laptop",
+                "workspace": "1",
+                "geometry": [20, 20, 800, 600],
+            })
+            rules = controller.list_window_rules()
+            self.assertEqual(len(rules), 2)
+            self.assertEqual(rules[0]["monitor"], "laptop")
+            controller.save_named("Work")
+            controller.restore_named("Work")
+            restored = controller.adapter.applied.windows[0]
+            self.assertEqual(restored.geometry, [2000, 80, 1200, 900])
+            self.assertEqual(restored.workspace, "3")
+            self.assertEqual(restored.monitor, "external")
+            if os.name != "nt":
+                self.assertEqual((root / "window-rules.json").stat().st_mode & 0o777, 0o600)
+            self.assertTrue(controller.delete_window_rule(specific["key"]))
+            self.assertTrue(controller.delete_window_rule(general["key"]))
+
+            unsafe = root / "window-rules.json"
+            unsafe.write_text(json.dumps({"schema": 1, "rules": [{
+                "app_id": "org.example.Editor", "geometry": [0, 0, 1, 1]
+            }]}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "too small"):
+                WindowRuleStore(root).list()
+
+    def test_portable_update_is_repo_pinned_streamed_and_checksum_verified(self) -> None:
+        bundle = b"portable update payload"
+        checksum = hashlib.sha256(bundle).hexdigest()
+        release = json.dumps({
+            "tag_name": "v9.0.0",
+            "html_url": "https://github.com/tpluharik/SessionSifu/releases/tag/v9.0.0",
+            "assets": [
+                {
+                    "name": "SessionSifu-9.0.0-linux-x64.tar.gz",
+                    "browser_download_url": "https://github.com/tpluharik/SessionSifu/releases/download/v9.0.0/SessionSifu-9.0.0-linux-x64.tar.gz",
+                    "size": len(bundle),
+                },
+                {
+                    "name": "SHA256SUMS",
+                    "browser_download_url": "https://github.com/tpluharik/SessionSifu/releases/download/v9.0.0/SHA256SUMS",
+                    "size": 100,
+                },
+            ],
+        }).encode()
+        checksums = f"{checksum}  SessionSifu-9.0.0-linux-x64.tar.gz\n".encode()
+
+        class Response:
+            def __init__(self, payload, url):
+                self.payload = payload
+                self.url = url
+                self.offset = 0
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def geturl(self): return self.url
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self.payload) - self.offset
+                value = self.payload[self.offset:self.offset + size]
+                self.offset += len(value)
+                return value
+
+        def open_url(request, timeout=0):
+            del timeout
+            url = request.full_url
+            if url == portable_update.RELEASE_API:
+                return Response(release, url)
+            if url.endswith("SHA256SUMS"):
+                return Response(checksums, url)
+            return Response(bundle, url)
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch("sessionsifu_portable.update.platform.system", return_value="Linux"),
+            mock.patch("sessionsifu_portable.update.platform.machine", return_value="x86_64"),
+            mock.patch("sessionsifu_portable.update.urllib.request.urlopen", side_effect=open_url),
+        ):
+            update = portable_update.check_portable_update()
+            self.assertIsNotNone(update)
+            path = portable_update.download_portable_update(update, Path(directory))
+            self.assertEqual(path.read_bytes(), bundle)
+
+            bad_release = json.loads(release)
+            bad_release["assets"][0]["browser_download_url"] = "https://example.com/update.tar.gz"
+            with mock.patch(
+                "sessionsifu_portable.update.urllib.request.urlopen",
+                return_value=Response(json.dumps(bad_release).encode(), portable_update.RELEASE_API),
+            ):
+                with self.assertRaisesRegex(ValueError, "outside GitHub"):
+                    portable_update.check_portable_update()
+
     def test_mcp_surface_is_read_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
             controller.save_named("Work")
             mcp = ReadOnlyMcp(controller)
-            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.26")
+            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.27")
             self.assertTrue(mcp.call("restore_preview", {"name": "Work"}))
             with self.assertRaises(ValueError):
                 mcp.call("restore_execute", {"name": "Work"})

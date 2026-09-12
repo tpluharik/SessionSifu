@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.5.26 runtime and release layout. User-facing
+This document describes the 3.5.27 runtime and release layout. User-facing
 steps live in the [session restoration guide](RESTORE_GUIDE.md) and
 [Privacy Recall guide](RECALL_GUIDE.md).
 
@@ -176,6 +176,18 @@ text and document collections. `storage.py` performs atomic same-directory
 replacement, confines loads to SessionSifu-owned directories and retains the
 five newest automatic snapshots. `controller.py` is the small application API
 used by both the command line and the Qt manager.
+
+`window_rules.py` keeps at most 256 declarative placement overrides in an
+owner-private, atomic JSON file. Matching uses exact application identity;
+title-specific matches win over app-wide matches. Rules transform the validated
+session model before the restore preview and adapter execution, so the preview
+and journal describe the effective placement.
+
+`update.py` reads only the repository-pinned GitHub latest-release endpoint,
+selects the exact current-platform artifact name and bounds metadata, checksum
+and archive sizes. It streams the archive to a same-directory temporary file,
+requires its declared byte count and release-manifest SHA-256, then atomically
+makes the download visible. It does not replace the running bundle.
 
 `ui.py` provides the Windows, macOS and portable Linux manager. It uses
 `QSystemTrayIcon`, offers named sessions and rolling history, saves at 30-second
@@ -449,14 +461,16 @@ creates Windows x64, macOS arm64/x64 and Linux x64 desktop bundles. A separate
 Ubuntu job runs the full GNOME validation and Debian build.
 
 Pushes and pull requests retain build artifacts for inspection. An existing
-`v*` tag additionally downloads all job artifacts, generates `SHA256SUMS` and
-creates one GitHub Release. Signing, Apple notarization and artifact attestation
-are deliberately tracked as roadmap work rather than implied by the pipeline.
+`v*` tag additionally downloads all job artifacts, generates an SPDX SBOM,
+build-provenance evidence and `SHA256SUMS`, then creates one GitHub Release.
+Windows signing and Apple notarization remain separately gated platform work.
 
 Workflow permissions are read-only except for the tag publisher. Action
 references are pinned to reviewed full commit SHAs and direct Python build
-inputs are exact-version pinned. Fully hashed per-platform transitive locks,
-SBOMs and provenance attestations remain roadmap work.
+inputs are exact-version pinned. The SPDX 2.3 SBOM is derived from the portable
+dependency declaration; the JSON provenance record contains the source commit
+plus artifact hashes and sizes. These files are evidence, not a substitute for
+fully hashed per-platform transitive locks, native signing or notarization.
 
 ## Provisional Wayland session protocol
 

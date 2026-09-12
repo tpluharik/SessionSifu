@@ -2,7 +2,7 @@
 
 - [3.5.24 stability/performance audit and recovery](STABILITY_AUDIT.md)
 
-This index describes the current 3.5.26 behavior. Start with the main
+This index describes the current 3.5.27 behavior. Start with the main
 [README](../README.md) for installation and compatibility.
 
 ## Using SessionSifu
@@ -10,6 +10,8 @@ This index describes the current 3.5.26 behavior. Start with the main
 - [Session restoration workflow](RESTORE_GUIDE.md) — named sessions,
   automatic history, previous-desktop recovery, restore preview and platform
   boundaries.
+- [Persistent window rules](WINDOW_RULES.md) — portable app-wide and
+  title-specific monitor, workspace and geometry overrides.
 - [Privacy Recall workflow](RECALL_GUIDE.md) — enable, capture, search, browse,
   reopen, pause and delete Recall moments.
 - [Troubleshooting](TROUBLESHOOTING.md) — integration, update, restoration,
@@ -26,7 +28,7 @@ This index describes the current 3.5.26 behavior. Start with the main
 - [Recall research and product decisions](RECALL_RESEARCH.md) — comparison
   baseline, feedback themes and deliberate differences from other products.
 - [Competitive feature analysis](COMPETITIVE_ANALYSIS.md) — ten adjacent
-  products/approaches, feature gaps and the priorities shipped in 3.4.0.
+  products/approaches, feature gaps and the priorities shipped through 3.5.27.
 - [Sandboxed workspaces and development options](SANDBOXED_WORKSPACES.md) —
   shipped 3.5.6 capsule foundation, platform feasibility, threat boundaries and
   remaining capsule phases.
@@ -38,8 +40,8 @@ This index describes the current 3.5.26 behavior. Start with the main
   trusted build requirements, roles and privacy statement.
 - [Publishing and distribution](PUBLISHING.md) — GitHub Releases, Ubuntu PPA,
   Snap Store and community package-manager submission status.
-- [3.5.26 release posts](media/RELEASE_3.5.26_POSTS.md) — synchronized GitHub
-  and community announcement copy for the adaptive energy release.
+- [3.5.27 release posts](media/RELEASE_3.5.27_POSTS.md) — synchronized GitHub
+  and community announcement copy for the Save · Resume · Find release.
 - [Roadmap](../ROADMAP.md) — shipped foundation, quality priorities, workspace
   capsules, longer-term research and explicit non-goals.
 

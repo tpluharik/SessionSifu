@@ -4,7 +4,7 @@ This package contains the shared SessionSifu 3 desktop application used by the
 Windows, macOS, KDE Plasma and generic GNOME builds. See the repository README
 for platform capabilities and installation artifacts.
 
-The current 3.5.26 manager includes encrypted visual Privacy Recall. It is off by default;
+The current 3.5.27 manager includes encrypted visual Privacy Recall. It is off by default;
 screenshots, open paths, OCR and related ranking require separate choices. Its
 tray menu shows when capture is active and offers timed pauses. Application and
 observable website exclusions redact matching activity from new captures
@@ -22,6 +22,11 @@ native window image is preferred; a geometry crop is used when the platform
 does not expose one. Images are encrypted locally, optional OCR is indexed per
 window, and a result can reopen its opted-in file. Minimized/unmapped windows
 may remain metadata-only.
+
+Version 3.5.27 adds persistent app-wide or title-specific placement rules,
+checksummed downloads from the pinned GitHub Releases channel, and recognition
+for additional browsers and editors. It downloads a verified replacement beside
+the current bundle but never installs it silently.
 
 Version 3.5.26 adapts automatic snapshots, Recall capture, OCR and interface
 polling to battery and power-saver state, including bounded deferred OCR when

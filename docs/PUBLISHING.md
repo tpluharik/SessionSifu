@@ -12,13 +12,13 @@ Tagged releases at
 [GitHub Releases](https://github.com/tpluharik/SessionSifu/releases) are the
 canonical source for SessionSifu. The release workflow tests Ubuntu, Windows,
 Apple-silicon macOS and Intel macOS, then publishes the GNOME Debian package,
-four portable archives, a checksum file and a bundle of package-manager
-submission metadata.
+four portable archives, a checksum file, SPDX SBOM, build provenance and a
+bundle of package-manager submission metadata.
 
-Version 3.5.26 is published at
-[GitHub Releases](https://github.com/tpluharik/SessionSifu/releases/tag/v3.5.26).
+Version 3.5.27 is published at
+[GitHub Releases](https://github.com/tpluharik/SessionSifu/releases/tag/v3.5.27).
 Its public announcement copy is maintained alongside the synthetic media in
-[`media/RELEASE_3.5.26_POSTS.md`](media/RELEASE_3.5.26_POSTS.md), so channel
+[`media/RELEASE_3.5.27_POSTS.md`](media/RELEASE_3.5.27_POSTS.md), so channel
 updates use the same tested claims and canonical download link.
 
 The repository, release notes and issue tracker remain the authoritative links

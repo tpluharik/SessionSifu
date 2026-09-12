@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the synthetic Privacy Recall walkthrough used by the documentation."""
+"""Render the synthetic Save · Resume · Find walkthrough used by documentation."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MEDIA = ROOT / "docs" / "media"
 WIDTH, HEIGHT = 1200, 676
 FPS = 15
-FRAMES = 135
+FRAMES = 180
 
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -66,7 +66,7 @@ def shell(draw: ImageDraw.ImageDraw, recording=False):
 
 def footer(draw: ImageDraw.ImageDraw, step: int, caption: str):
     rounded(draw, (165, 608, 1035, 655), 20, "#17202a")
-    for index in range(4):
+    for index in range(5):
         x = 198 + index * 28
         draw.ellipse((x, 626, x + 10, 636), fill="#69a900" if index <= step else "#65717c")
     label(draw, (330, 631), caption, 18, "#ffffff", True, "lm")
@@ -87,6 +87,31 @@ def capture_scene(frame: int) -> Image.Image:
     draw.ellipse((420, 66, 434, 80), fill=(239, int(68 + 80 * pulse), int(68 + 50 * pulse)))
     label(draw, (448, 73), "Saving encrypted Recall moment locally…", 17, "#30383f", True, "lm")
     footer(draw, 0, "Capture eligible windows — local, bounded, encrypted")
+    return image
+
+
+def restore_scene(frame: int) -> Image.Image:
+    image = Image.new("RGB", (WIDTH, HEIGHT), "#e9edef")
+    draw = ImageDraw.Draw(image)
+    shell(draw, recording=False)
+    rounded(draw, (125, 72, 1075, 585), 24, "#ffffff", "#d1d6da")
+    label(draw, (170, 112), "Resume the Research session", 29, "#30363b", True)
+    label(draw, (170, 146), "Review every application before anything launches", 16, "#707980")
+    rows = [
+        ("Roadmap — Writer", "1 document · workspace 1 · primary display"),
+        ("Research — Browser", "2 return targets · workspace 2 · external display"),
+        ("Tests — Terminal", "workspace 2 · persistent placement rule"),
+    ]
+    for index, (title, detail) in enumerate(rows):
+        y = 188 + index * 92
+        rounded(draw, (170, y, 1030, y + 70), 13, "#f7f9fa", "#cbd2d7")
+        draw.rounded_rectangle((190, y + 21, 218, y + 49), 6, fill="#64a70b")
+        label(draw, (204, y + 35), "✓", 17, "#ffffff", True, "mm")
+        label(draw, (240, y + 22), title, 18, "#30363b", True)
+        label(draw, (240, y + 49), detail, 14, "#707980")
+    rounded(draw, (820, 494, 1030, 544), 14, "#4d8d00")
+    label(draw, (925, 519), "Restore selected", 17, "#ffffff", True, "mm")
+    footer(draw, 1, "Resume safely — preview, pace, verify and retry")
     return image
 
 
@@ -148,7 +173,7 @@ def search_scene(frame: int) -> Image.Image:
                 label(draw, (1035, 511), text, 10, "#ffffff", True, "mm")
     else:
         label(draw, (600, 350), "Search encrypted moments by the window you remember", 20, "#747d84", True, "mm")
-    footer(draw, 1, "Large preview, window filmstrip and OCR match navigation")
+    footer(draw, 2, "Find with a large preview, filmstrip and OCR navigation")
     return image
 
 
@@ -176,7 +201,7 @@ def gallery_scene(frame: int) -> Image.Image:
     label(draw, (525, 539), "Next", 15, "#ffffff", True, "mm")
     glow = int(100 + 80 * math.sin(frame * 0.35) ** 2)
     draw.rounded_rectangle((202, 227, 323, 275), 8, outline=(255, 190, 0, glow), width=4)
-    footer(draw, 2, "Open the exact match, then browse every captured window")
+    footer(draw, 3, "Open the exact match, then browse every captured window")
     return image
 
 
@@ -199,16 +224,18 @@ def privacy_scene(frame: int) -> Image.Image:
         label(draw, (258, y + 20), title, 18, "#30383f", True)
         label(draw, (258, y + 43), subtitle, 14, "#727b82")
         label(draw, (970, y + 31), "✓", 22, color, True, "mm")
-    footer(draw, 3, "Off by default · local processing · no telemetry")
+    footer(draw, 4, "Off by default · local processing · no telemetry")
     return image
 
 
 def render_frame(index: int) -> Image.Image:
-    if index < 28:
+    if index < 30:
         return capture_scene(index)
-    if index < 75:
-        return search_scene(index)
-    if index < 106:
+    if index < 65:
+        return restore_scene(index)
+    if index < 110:
+        return search_scene(index - 37)
+    if index < 145:
         return gallery_scene(index)
     return privacy_scene(index)
 
@@ -232,7 +259,7 @@ def main() -> int:
     MEDIA.mkdir(parents=True, exist_ok=True)
     frames = [render_frame(index) for index in range(FRAMES)]
     frames[0].save(
-        MEDIA / "recall-demo.webp",
+        MEDIA / "work-continuity-demo.webp",
         save_all=True,
         append_images=frames[1:],
         duration=1000 // FPS,
@@ -240,7 +267,7 @@ def main() -> int:
         quality=68,
         method=6,
     )
-    frames[63].save(MEDIA / "recall-demo-poster.png", optimize=True)
+    frames[100].save(MEDIA / "work-continuity-demo-poster.png", optimize=True)
     with tempfile.TemporaryDirectory(prefix="sessionsifu-demo-") as directory:
         frame_dir = Path(directory)
         for index, frame in enumerate(frames):
@@ -250,7 +277,7 @@ def main() -> int:
                 ffmpeg_executable(), "-y", "-loglevel", "error", "-framerate", str(FPS),
                 "-i", str(frame_dir / "frame-%04d.png"), "-c:v", "libx264",
                 "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-crf", "25",
-                str(MEDIA / "recall-demo.mp4"),
+                str(MEDIA / "work-continuity-demo.mp4"),
             ],
             check=True,
         )

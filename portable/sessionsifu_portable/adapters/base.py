@@ -216,14 +216,19 @@ class PlatformAdapter(ABC):
         identity = "\n".join((window.app_id, window.app_name, window.executable)).casefold()
         supports_documents = any(token in identity for token in (
             "libreoffice", "soffice", "code", "codium", "idea", "pycharm",
-            "clion", "goland", "webstorm", "rider", "obsidian",
+            "clion", "goland", "webstorm", "rider", "rubymine", "obsidian",
+            "sublime_text", "sublime text", "zed", "kate", "notepad++",
+            "notepadpp", "typora", "texstudio",
         ))
         if supports_documents:
             command.extend(
                 path for path in window.open_files
                 if Path(path).is_absolute() and Path(path).is_file() and path not in command
             )
-        if any(token in identity for token in ("firefox", "chrome", "chromium", "edge", "brave", "vivaldi")):
+        if any(token in identity for token in (
+            "firefox", "librewolf", "floorp", "chrome", "chromium", "edge",
+            "brave", "vivaldi", "opera", "safari", "arc",
+        )):
             command.extend(
                 target for target in window.deep_targets
                 if urllib.parse.urlparse(target).scheme in {"http", "https"} and target not in command

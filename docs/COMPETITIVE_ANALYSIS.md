@@ -1,6 +1,6 @@
 # Competitive feature analysis
 
-This analysis was refreshed on 25 August 2026 from product documentation and
+This analysis was refreshed on 12 September 2026 from product documentation and
 public source repositories. It compares user workflows, not code quality or
 security certification. “Local” means the core history can remain on the local
 machine; it does not imply identical key protection or zero optional network
@@ -26,7 +26,7 @@ an active competitor: the original service ended in 2025. Its historical lesson
 — powerful continuous capture can disappear with a service — still reinforces
 SessionSifu's open format, local storage and absence of a mandatory account.
 
-## Feature position in 3.4.0
+## Feature position in 3.5.27
 
 SessionSifu is unusual because it combines two related but separate jobs:
 
@@ -35,7 +35,18 @@ SessionSifu is unusual because it combines two related but separate jobs:
 2. an off-by-default encrypted visual history whose primary unit is an
    individual application window rather than only the active display.
 
-Version 3.4.0 implements the P0, P1 and P2 priorities identified above:
+Version 3.5.27 retains the P0, P1 and P2 foundations and closes three practical
+gaps identified by the comparison:
+
+- **Clear product model:** the interface and documentation consistently present
+  Save · Resume · Find as distinct, connected jobs.
+- **Repeatable placement:** portable app-wide and title-specific rules provide
+  a durable counterpart to one-off session geometry.
+- **Verifiable delivery:** portable downloads are checksum verified; release
+  automation emits SPDX SBOM and build provenance; a synthetic benchmark makes
+  continuity costs reproducible without exposing user data.
+
+The underlying competitive foundations include:
 
 - **Search quality:** bounded accessibility text is indexed before OCR, while
   Czech/English per-window OCR remains the fallback.
@@ -63,7 +74,7 @@ Version 3.4.0 implements the P0, P1 and P2 priorities identified above:
   password-encrypted transfer archives expose useful workflows without a
   SessionSifu cloud account.
 
-## Remaining competitive gaps after 3.4.0
+## Remaining competitive gaps after 3.5.27
 
 The roadmap deliberately keeps these separate from shipped claims:
 
@@ -71,7 +82,8 @@ The roadmap deliberately keeps these separate from shipped claims:
   exposed by metadata, accessibility or OCR);
 - more public application/browser restoration APIs without private automation;
 - user-previewable manual monitor mapping for unusual dock configurations;
-- stronger portable native update signing/notarization; and
+- signed/notarized in-place portable replacement beyond the shipped checksummed
+  download workflow;
 - complete accessibility, localization and keyboard-only review of every UI.
 
 Audio history, keystroke/clipboard capture, covert monitoring and generic

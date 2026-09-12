@@ -83,6 +83,21 @@ an excluded window or shared preview visible.
 
 ## Reproducible synthetic check
 
+For the session-continuity hot path, run:
+
+```bash
+python3 tools/benchmark-work-continuity.py --windows 30 --iterations 100
+```
+
+Add `--json` for machine-readable results. The fixture contains only generated
+application identities, titles, geometry and file names. It measures validated
+session loading, serialization and application of persistent window rules; it
+does not launch applications, manipulate the desktop or include user data.
+Publish the operating system, Python version, CPU, run parameters and complete
+JSON output with any claimed result. CI runs a smaller smoke sample to prevent
+the benchmark itself from silently breaking, but intentionally avoids fragile
+wall-clock pass/fail thresholds.
+
 The development benchmark uses 500 encrypted metadata records containing 4,000
 synthetic windows. After the 3.5.4 changes, repeated exact search measured about
 9.7 ms mean (9.4 ms median, 11.9 ms p95) in the portable store and about 7.9 ms

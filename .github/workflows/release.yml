@@ -39,6 +39,9 @@ jobs:
         run: python tests/test_recall_engine.py
       - name: Compile portable sources
         run: python -m compileall -q portable/sessionsifu_portable packaging/build-portable.py
+      - name: Smoke-test synthetic continuity benchmark
+        if: runner.os == 'Linux'
+        run: python tools/benchmark-work-continuity.py --windows 30 --iterations 5 --json
 
   portable-bundles:
     name: Build ${{ matrix.artifact }}
@@ -213,7 +216,13 @@ jobs:
           tar -C marketplace-metadata -czf \
             "release-artifacts/SessionSifu-${GITHUB_REF_NAME#v}-marketplace-metadata.tar.gz" .
       - name: Generate checksums
-        run: sha256sum release-artifacts/* > release-artifacts/SHA256SUMS
+        run: |
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$GITHUB_SHA")"
+          python3 packaging/generate-release-evidence.py \
+            --artifact-dir release-artifacts \
+            --output-dir release-artifacts \
+            --commit "$GITHUB_SHA"
+          sha256sum release-artifacts/* > release-artifacts/SHA256SUMS
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}

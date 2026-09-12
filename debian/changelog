@@ -1,3 +1,12 @@
+sessionsifu (3.5.27-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Add persistent portable window placement rules.
+  * Add verified portable update discovery and downloads.
+  * Expand browser/editor recognition and product documentation.
+  * Publish a synthetic benchmark, SPDX SBOM and build provenance.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Sat, 12 Sep 2026 12:00:00 +0200
+
 sessionsifu (3.5.26-1~ppa1~resolute1) resolute; urgency=medium
 
   * Add adaptive battery and power-saver policies across supported desktops.
