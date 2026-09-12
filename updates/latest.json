@@ -1,11 +1,11 @@
 {
-  "version": "3.5.26",
+  "version": "3.5.27",
   "channel": "stable",
-  "issued_at": "2026-09-10T08:57:27Z",
-  "expires_at": "2026-10-25T08:57:27Z",
+  "issued_at": "2026-09-12T07:17:47Z",
+  "expires_at": "2026-10-27T07:17:47Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.26_all.deb",
-  "sha256": "c6f93638910f9d141ea7ef154e4c8c49a4f45d0261cb64a6b66a48157218fd1e",
-  "size": 3806032,
-  "notes": "SessionSifu 3.5.26 reduces battery and electricity use with adaptive capture intervals, low-power Recall and OCR limits, focused GNOME preview caching, encrypted OCR reuse, automatic snapshot deduplication and quieter portable UI polling. Deferred OCR resumes in one bounded job when AC power returns."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.27_all.deb",
+  "sha256": "85564b1a0c9f2abd28598cfc2a8e3ef8271aa73c7c6815f7b888cb5b7d0236c2",
+  "size": 3803172,
+  "notes": "SessionSifu 3.5.27 unifies Save, Resume and Find, adds persistent portable window-placement rules, verified portable update downloads, broader browser/editor recognition, a reproducible synthetic benchmark, SPDX SBOM and build provenance."
 }
