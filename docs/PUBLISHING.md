@@ -12,14 +12,26 @@ Tagged releases at
 [GitHub Releases](https://github.com/tpluharik/SessionSifu/releases) are the
 canonical source for SessionSifu. The release workflow tests Ubuntu, Windows,
 Apple-silicon macOS and Intel macOS, then publishes the GNOME Debian package,
-four portable archives, a checksum file, SPDX SBOM, build provenance and a
-bundle of package-manager submission metadata.
+up to four portable archives, a checksum file, SPDX SBOM, build provenance and
+a bundle of package-manager submission metadata. Platform archives that do not
+meet their signing policy are withheld rather than published unsigned.
 
 Version 3.5.27 is published at
 [GitHub Releases](https://github.com/tpluharik/SessionSifu/releases/tag/v3.5.27).
 Its public announcement copy is maintained alongside the synthetic media in
 [`media/RELEASE_3.5.27_POSTS.md`](media/RELEASE_3.5.27_POSTS.md), so channel
 updates use the same tested claims and canonical download link.
+
+The public 3.5.27 asset set contains Linux x64, macOS arm64/x64 and GNOME
+Debian packages, marketplace metadata, `SHA256SUMS`, SPDX SBOM and provenance.
+The Windows archive and dependent Chocolatey publication were withheld because
+no production Authenticode signature was produced. The exact record is in
+[`RELEASE_3.5.27_VERIFICATION.md`](RELEASE_3.5.27_VERIFICATION.md).
+
+The GNOME in-app channel was published from follow-up commit `0d97ed7` after
+the tag workflow. It contains a separately built 3.5.27 Debian payload plus an
+expiring Ed25519-signed manifest. It is not an unrecorded replacement of the
+immutable GitHub Release asset; both hashes are documented explicitly.
 
 The repository, release notes and issue tracker remain the authoritative links
 for every downstream package. Session and Privacy Recall data are never sent to
@@ -162,7 +174,7 @@ window titles, paths or captured content before sharing.
 
 1. Run all unit, integration, packaging and metadata-generator tests.
 2. Confirm every version field matches the proposed tag.
-3. Push the release commit and signed tag to `main`.
+3. Push the release commit and annotated release tag to `main`.
 4. Wait for all platform builds and inspect the release checksums.
 5. Build and sign the Launchpad source upload from the exact tag.
 6. Publish the Snap only after its confinement review permits the requested
@@ -170,3 +182,5 @@ window titles, paths or captured content before sharing.
 7. Generate downstream submissions from the final immutable assets; never reuse
    hashes from a draft or replaced upload.
 8. Announce only channels that are actually downloadable.
+9. Build the GNOME in-app payload with the offline Ed25519 key, commit its
+   package, manifest and signature together, then verify the public `main` URLs.

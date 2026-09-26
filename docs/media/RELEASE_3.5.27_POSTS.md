@@ -25,6 +25,11 @@ overpromised.
 
 Downloads and checksums: <https://github.com/tpluharik/SessionSifu/releases/tag/v3.5.27>
 
+Published assets include Linux x64, macOS arm64/x64 and GNOME Debian packages,
+plus checksums, SPDX SBOM and provenance. The unsigned Windows archive was
+withheld. GNOME users also receive 3.5.27 through the independently signed
+in-app stable channel.
+
 ## Community post
 
 SessionSifu 3.5.27 is out: save a working desktop, resume its apps and window

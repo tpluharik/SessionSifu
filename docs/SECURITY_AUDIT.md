@@ -1,4 +1,8 @@
-# Security audit — 22 August 2026 (documentation verified for 3.2.1)
+# Security audit — 22 August 2026
+
+The original audit covered 2.4.0 and was re-reviewed for 2.5.0. This remediation
+record was last reconciled with the shipped 3.5.27 release on 26 September 2026;
+it is not a new full-scope penetration test of every subsequent feature.
 
 ## Version 3.0 Recall security delta
 
@@ -54,9 +58,9 @@ Version 2.5.0 removes the shell path, introduces independently signed update
 metadata, private storage migration, race-aware screenshot deletion, bounded
 literal Shell matching, D-Bus rate limits and lower-detail normal logs. Release
 actions and direct build dependencies are pinned. Fully hashed transitive
-platform locks, SBOM/provenance, interactive D-Bus authorization and sanitized
-diagnostic export remain defence-in-depth roadmap work. No claim is made that
-this review is exhaustive.
+platform locks, interactive D-Bus authorization and sanitized diagnostic export
+remain defence-in-depth roadmap work. Tagged releases now publish SPDX SBOM and
+build-provenance evidence. No claim is made that this review is exhaustive.
 
 ## Scope and method
 
@@ -150,7 +154,7 @@ integrity check.
 ### SS-2026-003 — Mutable release inputs
 
 **Severity:** Medium  
-**Status:** Partially remediated in 2.5.0; hashed transitive locks remain open
+**Status:** Partially remediated through 3.5.27; hashed transitive locks remain open
 **Affected code:** `.github/workflows/release.yml`, `portable/pyproject.toml`
 
 Eight workflow steps reference moving major-version tags such as
@@ -160,15 +164,13 @@ silently changed action/dependency can influence release artifacts. The
 top-level token is read-only and the release job narrows write access to tagged
 publishing, which limits but does not remove this risk.
 
-**Proposed fix:** pin every action to a reviewed full commit SHA, keep a comment
-with the human-readable release tag, and enable the repository policy requiring
-SHA pins. Generate platform lock files with exact versions and hashes, install
-with `--require-hashes --only-binary :all:`, and update them through reviewed
-automation. Emit an SBOM and signed provenance for each artifact, separate build
-from publication, and publish only artifacts whose digest is included in the
-signed manifest. GitHub states that a full commit SHA is the only immutable
-action reference; pip's secure-install guidance likewise recommends locally
-pinned hashes.
+**Response:** every workflow action is pinned to a reviewed full commit SHA with
+a human-readable version comment. Version 3.5.27 also emits SPDX SBOM, JSON
+build provenance and aggregate artifact checksums before publication. Platform
+lock files with exact transitive hashes and cryptographically signed provenance
+remain open. GitHub states that a full commit SHA is the only immutable action
+reference; pip's secure-install guidance likewise recommends locally pinned
+hashes.
 
 References: [GitHub secure use](https://docs.github.com/en/actions/reference/security/secure-use),
 [pip secure installs](https://pip.pypa.io/en/stable/topics/secure-installs/).
@@ -311,8 +313,9 @@ mass-assignment results no longer reproduce.
 
 1. Shell-based restore was deleted; malicious metacharacters remain opaque argv.
 2. Storage uses `0700`/`0600` with bounded ownership/symlink-aware migration.
-3. Action SHAs and direct dependencies are pinned; transitive hashed locks,
-   SBOM and provenance remain planned.
+3. Action SHAs and direct dependencies are pinned; SPDX SBOM and JSON
+   provenance ship with tagged releases. Transitive hashed locks and signed
+   attestations remain planned.
 4. Ed25519-signed, expiring and rollback-resistant metadata is deployed for
    2.5.0+; older clients require one manual transition.
 5. Recall checks exclusion, lock and capture generation across every async stage.

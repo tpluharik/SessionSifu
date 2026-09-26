@@ -26,7 +26,9 @@ may remain metadata-only.
 Version 3.5.27 adds persistent app-wide or title-specific placement rules,
 checksummed downloads from the pinned GitHub Releases channel, and recognition
 for additional browsers and editors. It downloads a verified replacement beside
-the current bundle but never installs it silently.
+the current bundle but never installs it silently. The public 3.5.27 release
+contains Linux x64 and macOS arm64/x64 portable archives. Its Windows archive
+was withheld because no production Authenticode signature was available.
 
 Version 3.5.26 adapts automatic snapshots, Recall capture, OCR and interface
 polling to battery and power-saver state, including bounded deferred OCR when

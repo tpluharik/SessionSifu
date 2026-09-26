@@ -17,6 +17,9 @@ All notable SessionSifu changes are documented here.
   or Recall data, along with SPDX SBOM and build-provenance release evidence.
 - Replace the partial Recall clip with a complete Save · Resume · Find product
   demonstration and document the new workflows and competitive position.
+- Reconcile the documentation with the verified public release: record the
+  exact 3.5.27 asset hashes and signed in-app update, and clarify that unsigned
+  Windows and Chocolatey artifacts were intentionally withheld.
 
 ## 3.5.26
 

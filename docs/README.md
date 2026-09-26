@@ -36,6 +36,8 @@ This index describes the current 3.5.27 behavior. Start with the main
   hardening work.
 - [Release signing and recovery](RELEASE_SECURITY.md) — maintainer procedure,
   key rotation and compromise response.
+- [3.5.27 release verification](RELEASE_3.5.27_VERIFICATION.md) — exact public
+  assets, checksums, signed update channel and deliberately withheld artifacts.
 - [Code signing policy](../CODE_SIGNING_POLICY.md) — signed artifact scope,
   trusted build requirements, roles and privacy statement.
 - [Publishing and distribution](PUBLISHING.md) — GitHub Releases, Ubuntu PPA,

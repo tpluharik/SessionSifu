@@ -26,6 +26,9 @@ openssl pkeyutl -verify -pubin -inkey packaging/update-signing-public.pem \
 Inspect the generated version, channel, issue/expiry time, minimum version, URL,
 size and SHA-256 before committing the package, manifest and signature together.
 Do not put the private key in a repository secret merely to automate signing.
+After pushing, repeat signature, size and digest verification against the public
+URLs. The completed 3.5.27 example and its distinct tag/in-app hashes are in the
+[release verification record](RELEASE_3.5.27_VERIFICATION.md).
 
 Confirm that the package contains `ces.traineddata`, `eng.traineddata`, the TSV
 configuration, provenance README and Apache-2.0 license under
@@ -50,6 +53,7 @@ signature.
 ## Remaining release hardening
 
 Workflow actions are full-SHA pinned and direct Python dependencies are exact-
-version pinned. Per-platform transitive hash locks, SBOMs, provenance
-attestations, Windows Authenticode and Apple notarization remain tracked in the
+version pinned. Tagged releases now include an SPDX 2.3 SBOM, JSON provenance
+record and aggregate SHA-256 manifest. Per-platform transitive hash locks,
+Windows Authenticode availability and Apple notarization remain tracked in the
 roadmap; none replaces the application update signature.

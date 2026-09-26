@@ -90,6 +90,9 @@ when a target window closes midway through an asynchronous callback.
 4. Verify `updates/latest.json.sig` with the published public key and confirm
    the manifest version, expiry, size and SHA-256.
 5. Commit source, matching package, manifest and signature together.
+6. After pushing, download the public `main` manifest, signature and package;
+   verify Ed25519, byte size and SHA-256 again. A successful local build alone
+   does not prove that the public update path is coherent.
 
 Do not edit `updates/latest.json` by hand; the build generates it from the
 package bytes. Follow [docs/RELEASE_SECURITY.md](docs/RELEASE_SECURITY.md) for

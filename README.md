@@ -242,12 +242,17 @@ After installation:
 
 ### Windows, macOS, KDE and portable GNOME
 
-Tagged releases attach these self-contained artifacts:
+The 3.5.27 release attaches these self-contained portable artifacts:
 
-- `SessionSifu-3.5.27-windows-x64.zip`;
 - `SessionSifu-3.5.27-macos-arm64.zip`;
 - `SessionSifu-3.5.27-macos-x64.zip`; and
 - `SessionSifu-3.5.27-linux-x64.tar.gz`.
+
+The Windows x64 build passed its tests, but its public archive was withheld
+because no production Authenticode certificate was available. SessionSifu does
+not publish an unsigned Windows archive as an official release. See the
+[3.5.27 verification record](docs/RELEASE_3.5.27_VERIFICATION.md) for the exact
+public asset inventory and hashes.
 
 Extract the matching archive and launch **SessionSifu**. macOS asks for
 Accessibility permission the first time window geometry is inspected. On KDE
@@ -422,6 +427,12 @@ privileges or system package manager are used. A logout and login is still
 required to load a replaced GNOME Shell extension on Wayland.
 The Debian package remains the supported initial installation method because it
 provides SessionSifu's runtime dependencies.
+
+The signed stable channel currently serves 3.5.27 from commit `0d97ed7`. Its
+Ed25519 manifest binds the package URL, version, validity period, byte size and
+SHA-256. The in-app package is built from the same 3.5.27 source but is a
+separate, later signed-channel artifact from the immutable tag-release Debian
+asset, so their byte hashes are intentionally documented separately.
 
 Portable Windows, macOS and Linux builds can check the repository's latest
 GitHub Release and download the matching archive. The archive is bounded and
@@ -664,10 +675,10 @@ python3 tests/test_portable.py
 ```
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
-and Intel macOS, then builds the four portable bundles and GNOME Debian package.
-A pushed `v3.5.27` tag publishes the artifacts, SPDX SBOM, build provenance and
-`SHA256SUMS` as a GitHub Release; ordinary pushes and pull requests build and
-retain test artifacts only.
+and Intel macOS, then builds up to four portable bundles and the GNOME Debian
+package. A pushed `v3.5.27` tag publishes only eligible artifacts, plus the SPDX
+SBOM, build provenance and `SHA256SUMS`; an unsigned Windows bundle is withheld.
+Ordinary pushes and pull requests build and retain test artifacts only.
 
 ## Roadmap
 

@@ -44,6 +44,8 @@ assert "docs/RECALL_GUIDE.md" in readme
 assert "## Shipped foundation — 3.5.27" in roadmap
 assert "## Next: quality and trust" in roadmap
 assert "docs/COMPETITIVE_ANALYSIS.md" in readme
+assert "docs/RELEASE_3.5.27_VERIFICATION.md" in readme
+assert "SessionSifu-3.5.27-windows-x64.zip" not in readme
 assert "## Explicit non-goals" in roadmap
 assert "SessionSifu 2 targets" not in contributing
 assert "component of Session Keeper" not in extension_readme

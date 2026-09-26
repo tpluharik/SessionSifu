@@ -463,7 +463,9 @@ Ubuntu job runs the full GNOME validation and Debian build.
 Pushes and pull requests retain build artifacts for inspection. An existing
 `v*` tag additionally downloads all job artifacts, generates an SPDX SBOM,
 build-provenance evidence and `SHA256SUMS`, then creates one GitHub Release.
-Windows signing and Apple notarization remain separately gated platform work.
+Only artifacts permitted by their platform policy are uploaded: 3.5.27 withheld
+the Windows archive because no production Authenticode signature was available.
+Windows signing availability and Apple notarization remain separately gated.
 
 Workflow permissions are read-only except for the tag publisher. Action
 references are pinned to reviewed full commit SHAs and direct Python build

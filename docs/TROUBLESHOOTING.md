@@ -344,6 +344,13 @@ origin, size and SHA-256. Never bypass a signature, expiry or rollback error.
 Versions 2.4 and older need one manual 2.5 package installation because they do
 not understand the signed update channel.
 
+The 3.5.27 signed channel was published in commit `0d97ed7` and expires on
+27 October 2026. A short GitHub raw-content cache delay can temporarily return
+the previous valid manifest immediately after publication; retry normally
+rather than bypassing verification. If 3.5.27 is still not offered afterward,
+compare the public manifest with the
+[release verification record](RELEASE_3.5.27_VERIFICATION.md).
+
 ## Version 3.0.1 does not start after an in-app update
 
 Version 3.0.1's user-local updater omitted the new Recall engine module, so the

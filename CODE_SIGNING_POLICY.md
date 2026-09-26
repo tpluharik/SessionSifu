@@ -55,7 +55,8 @@ immutable signed release archive.
 
 The release workflow must:
 
-1. build from a signed `v*` tag on the public repository;
+1. build from a reviewed annotated `v*` tag on the public repository and bind
+   the workflow to its exact source commit;
 2. run all required tests on GitHub-hosted runners;
 3. upload the unsigned artifact to GitHub Actions before requesting signing;
 4. submit it through the official SignPath GitHub integration;
@@ -68,6 +69,11 @@ are provisioned, tagged releases withhold the Windows archive and the
 Chocolatey/WinGet metadata derived from it. Linux, GNOME and macOS artifacts may
 still be published with their signing status stated accurately. A Windows
 release must never be unblocked with a self-signed certificate.
+
+The current workflow verifies that the annotated tag exists but does not enforce
+a developer GPG/SSH signature on the Git tag itself. Cryptographic tag-policy
+enforcement is separate release hardening and must not be confused with
+Authenticode verification of the Windows executable.
 
 ## Key custody and compromise response
 

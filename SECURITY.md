@@ -46,6 +46,10 @@ supported security branches.
 - Version 2.5+ verifies an Ed25519-signed, expiring manifest with an application-
   embedded public key before trusting version, URL, size or SHA-256. Versions
   2.4 and older require one manual upgrade to enter the signed channel.
+- Tagged releases publish aggregate checksums, an SPDX SBOM and build-provenance
+  evidence. These improve reviewability but do not replace the signed GNOME
+  update manifest, native platform signatures or full transitive dependency
+  locks.
 - Session state is stored in owner-only directories/files on POSIX systems.
 
 The same-user boundary is not a defence against malware already running as the
