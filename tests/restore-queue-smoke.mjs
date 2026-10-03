@@ -21,6 +21,7 @@ await safety.link(() => { throw Error('Unexpected dependency'); });
 await safety.evaluate();
 const stubs = {
     'gi://Shell': {default: {AppState: {STOPPED: 0, STARTING: 1, RUNNING: 2}}},
+    'gi://GioUnix': {default: {DesktopAppInfo: {new_from_filename: () => null}}},
     'gi://Gio': {default: {Settings: {sync() {}}, FileQueryInfoFlags: {NOFOLLOW_SYMLINKS: 0},
         FileType: {REGULAR: 1}, File: {new_for_path: path => ({path,
             query_info: () => ({get_file_type: () => 1, get_attribute_boolean: () => true}),
@@ -112,6 +113,21 @@ const entries = Array.from({length: 9}, (_, index) => ({sessionConfig: {
 }}));
 assert.equal(restorer._automaticRestorePlan(entries, true).groups.length, 8);
 assert.equal(restorer._automaticRestorePlan(entries, false).groups.length, 9);
+
+// Login autostart owns automatic launch, while an explicit manual restore may
+// still recover the application on demand.
+restorer._autostartTargets = {
+    desktopIds: new Set(['io.github.tpluharik.powersifu.desktop']),
+    executables: new Set(['powersifu']),
+};
+restorer._defaultAppSystem = {lookup_app: () => ({get_app_info: () => ({
+    should_show: () => true, get_executable: () => '/opt/powersifu',
+})})};
+const autostartEntry = [{sessionConfig: {
+    desktop_file_id: 'io.github.tpluharik.PowerSifu.desktop', windows_count: 1,
+}}];
+assert.equal(restorer._automaticRestorePlan(autostartEntry, true).groups.length, 0);
+assert.equal(restorer._automaticRestorePlan(autostartEntry, false).groups.length, 1);
 
 // A competing restore cannot clear or replace the active window mapping.
 let finish;

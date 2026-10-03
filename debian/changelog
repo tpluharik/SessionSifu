@@ -1,3 +1,11 @@
+sessionsifu (3.5.28-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Prevent duplicate login launches for applications with XDG autostart.
+  * Preserve explicit manual restore for autostart-managed applications.
+  * Add restore-planning regressions for desktop IDs and executable aliases.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Sat, 03 Oct 2026 11:00:00 +0200
+
 sessionsifu (3.5.27-1~ppa1~resolute1) resolute; urgency=medium
 
   * Add persistent portable window placement rules.

@@ -1,5 +1,13 @@
 # Troubleshooting
 
+## An application opens twice after login
+
+Update SessionSifu to 3.5.28. Automatic previous-desktop recovery now detects
+enabled XDG autostart entries and leaves those applications to the desktop
+login manager. Explicit manual restores can still launch them. If duplication
+continues, check for multiple differently named files in `~/.config/autostart`
+and `/etc/xdg/autostart`, or a separate systemd user service for the same app.
+
 ## 3.5.24 vault and restore diagnostics
 
 If the Recall key is unavailable, unlock the OS credential store and retry.

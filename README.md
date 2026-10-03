@@ -16,7 +16,7 @@ SessionSifu preserves work continuity. **Save** named projects or automatic
 snapshots, **Resume** selected applications, documents and window layouts, and
 **Find** past context in an optional encrypted local visual timeline.
 
-Version 3.5.27 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
+Version 3.5.28 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
 encrypted, per-window OCR activity timeline across GNOME, Windows, macOS, KDE
 Plasma 6 and other Linux desktops. Czech and English OCR data ships with the
 installer and verified update. Recall previews support two-finger panning,
@@ -228,7 +228,7 @@ compatible GNOME release; SessionSifu never forces a desktop-shell upgrade.
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.5.27_all.deb
+sudo apt install ./dist/sessionsifu_3.5.28_all.deb
 ```
 
 After installation:
@@ -655,7 +655,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.5.27_all.deb
+dist/sessionsifu_3.5.28_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -676,7 +676,7 @@ python3 tests/test_portable.py
 
 `.github/workflows/release.yml` repeats them on Ubuntu, Windows, Apple silicon
 and Intel macOS, then builds up to four portable bundles and the GNOME Debian
-package. A pushed `v3.5.27` tag publishes only eligible artifacts, plus the SPDX
+package. A pushed `vX.Y.Z` tag publishes only eligible artifacts, plus the SPDX
 SBOM, build provenance and `SHA256SUMS`; an unsigned Windows bundle is withheld.
 Ordinary pushes and pull requests build and retain test artifacts only.
 

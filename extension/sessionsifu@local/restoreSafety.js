@@ -42,6 +42,27 @@ export function automaticRestoreDesktopIdAllowed(desktopFileId) {
         !compactId.includes('rastersoftding');
 }
 
+export function automaticRestoreTargetAllowed(
+    desktopFileId, executable, autostartDesktopIds = new Set(),
+    autostartExecutables = new Set()
+) {
+    if (!automaticRestoreDesktopIdAllowed(desktopFileId))
+        return false;
+    const id = String(desktopFileId).trim().toLowerCase();
+    if (autostartDesktopIds.has(id))
+        return false;
+    const executableName = String(executable ?? '').trim().split('/').pop().toLowerCase();
+    // Shared runtimes are not application identities. Treating them as such
+    // would suppress every Python, Electron, Java, or Flatpak application when
+    // only one of them is configured for autostart.
+    const sharedRuntimes = new Set([
+        'bash', 'electron', 'env', 'flatpak', 'gjs', 'java', 'node',
+        'python', 'python3', 'sh',
+    ]);
+    return !executableName || sharedRuntimes.has(executableName) ||
+        !autostartExecutables.has(executableName);
+}
+
 export function restoreCommandAllowed(command) {
     if (!Array.isArray(command) || !command.length)
         return false;

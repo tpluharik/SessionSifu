@@ -1,6 +1,6 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.27.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.28.
 
 ## Portable restore outcomes
 
@@ -79,6 +79,9 @@ recovery. SessionSifu waits for its startup delay, rejects helper and command-
 only processes, then restores visible desktop applications through the same
 paced queue used by manual restoration. On GNOME/Wayland, the queue continues
 through all eligible application groups, with eight seconds between groups.
+Applications with an enabled XDG autostart entry are left to the desktop's
+login manager, preventing SessionSifu from racing that launcher and opening a
+second instance. They remain available in explicit manual restores.
 Previous-desktop records are deduplicated and capped at the newest recorded
 window count, with a defensive maximum of 32 records per application. Excess
 and unavailable records remain on disk. A launched application has up to

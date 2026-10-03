@@ -1,8 +1,14 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.5.27. It separates shipped
+This roadmap describes the product after version 3.5.28. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
+
+## Login restore reliability — 3.5.28
+
+- Detect enabled XDG autostart applications before automatic login recovery.
+- Leave their launch to the desktop session to prevent duplicate instances,
+  while preserving explicit manual restoration.
 
 ## Shipped foundation — 3.5.27
 

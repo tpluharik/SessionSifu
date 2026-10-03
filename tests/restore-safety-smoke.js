@@ -8,6 +8,7 @@ import {
     AUTOMATIC_RESTORE_COOLDOWN_SECONDS,
     automaticRestoreAttemptAllowed,
     automaticRestoreDesktopIdAllowed,
+    automaticRestoreTargetAllowed,
     automaticRestoreGroups,
     deduplicatePreviousSessionEntries,
     previousSessionIdentity,
@@ -70,6 +71,24 @@ for (const unsafe of [
 }
 if (!automaticRestoreDesktopIdAllowed('chatgpt.desktop'))
     throw new Error('A normal desktop application was rejected');
+const autostartDesktopIds = new Set(['io.github.tpluharik.powersifu.desktop']);
+const autostartExecutables = new Set(['powersifu']);
+if (automaticRestoreTargetAllowed(
+    'io.github.tpluharik.PowerSifu.desktop', '/opt/powersifu', autostartDesktopIds,
+    autostartExecutables))
+    throw new Error('An exact XDG autostart target was accepted');
+if (automaticRestoreTargetAllowed(
+    'powersifu.desktop', '/opt/powersifu', autostartDesktopIds,
+    autostartExecutables))
+    throw new Error('An XDG autostart executable alias was accepted');
+if (!automaticRestoreTargetAllowed(
+    'editor.desktop', '/usr/bin/editor', autostartDesktopIds,
+    autostartExecutables))
+    throw new Error('An unrelated application was rejected by the autostart guard');
+if (!automaticRestoreTargetAllowed(
+    'python-editor.desktop', '/usr/bin/python3', autostartDesktopIds,
+    new Set(['python3'])))
+    throw new Error('A shared runtime was mistaken for an autostart application');
 
 const automaticEntries = [];
 for (let application = 0; application < MAX_AUTOMATIC_RESTORE_APPLICATIONS + 2;

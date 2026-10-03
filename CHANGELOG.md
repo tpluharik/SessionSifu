@@ -2,6 +2,15 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.5.28
+
+- Prevent duplicate application launches during login restore by detecting
+  enabled XDG autostart entries before the automatic restore queue runs.
+- Match both desktop-file identities and application-specific executables while
+  avoiding broad suppression of shared runtimes such as Python or Electron.
+- Keep explicit manual restoration available for autostart-managed applications
+  and add regression coverage for the automatic/manual boundary.
+
 ## 3.5.27
 
 - Reframe the product around three connected jobs: Save a desktop session,

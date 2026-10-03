@@ -2,6 +2,7 @@
 
 import Shell from 'gi://Shell';
 import Gio from 'gi://Gio';
+import GioUnix from 'gi://GioUnix';
 import GLib from 'gi://GLib';
 
 import * as FileUtils from './utils/fileUtils.js';
@@ -20,6 +21,7 @@ import {
     AUTOMATIC_RESTORE_INTERVAL_MS,
     MIN_RESTORE_INTERVAL_MS,
     automaticRestoreDesktopIdAllowed,
+    automaticRestoreTargetAllowed,
     automaticRestoreAttemptAllowed,
     automaticRestoreGroups,
     deduplicatePreviousSessionEntries,
@@ -28,6 +30,90 @@ import {
     restoreCommandAllowed,
     remainingRestoreDelay,
 } from './restoreSafety.js';
+
+
+function _enabledDesktopAutostart(path, currentDesktops) {
+    try {
+        const keyFile = new GLib.KeyFile();
+        keyFile.load_from_file(path, GLib.KeyFileFlags.NONE);
+        const group = GLib.KEY_FILE_DESKTOP_GROUP;
+        if (keyFile.get_string(group, 'Type') !== 'Application' ||
+            (keyFile.has_key(group, 'Hidden') &&
+                keyFile.get_boolean(group, 'Hidden')) ||
+            (keyFile.has_key(group, 'X-GNOME-Autostart-enabled') &&
+                !keyFile.get_boolean(group, 'X-GNOME-Autostart-enabled')))
+            return null;
+
+        const onlyShowIn = keyFile.has_key(group, 'OnlyShowIn')
+            ? keyFile.get_string_list(group, 'OnlyShowIn')
+                .map(value => value.toLowerCase()) : [];
+        const notShowIn = keyFile.has_key(group, 'NotShowIn')
+            ? keyFile.get_string_list(group, 'NotShowIn')
+                .map(value => value.toLowerCase()) : [];
+        if ((onlyShowIn.length &&
+            !onlyShowIn.some(value => currentDesktops.has(value))) ||
+            notShowIn.some(value => currentDesktops.has(value)))
+            return null;
+
+        const appInfo = GioUnix.DesktopAppInfo.new_from_filename(path);
+        if (!appInfo)
+            return null;
+        return String(appInfo.get_executable?.() ?? '')
+            .trim().split('/').pop().toLowerCase();
+    } catch (_error) {
+        return null;
+    }
+}
+
+
+function _desktopAutostartTargets() {
+    const desktopIds = new Set();
+    const executables = new Set();
+    const seen = new Set();
+    const configDirectories = [
+        GLib.get_user_config_dir(),
+        ...GLib.get_system_config_dirs(),
+    ];
+    const currentDesktops = new Set(
+        String(GLib.getenv('XDG_CURRENT_DESKTOP') ?? 'GNOME')
+            .split(':').map(value => value.trim().toLowerCase()).filter(value => value));
+
+    // XDG autostart uses the first matching filename, with the user directory
+    // taking precedence. A hidden user entry therefore disables a system one.
+    for (const configDirectory of configDirectories) {
+        const directory = Gio.File.new_for_path(
+            GLib.build_filenamev([configDirectory, 'autostart']));
+        let enumerator = null;
+        try {
+            enumerator = directory.enumerate_children(
+                'standard::name,standard::type',
+                Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null);
+            let info;
+            while ((info = enumerator.next_file(null)) !== null) {
+                const filename = info.get_name();
+                if (!filename.toLowerCase().endsWith('.desktop') || seen.has(filename))
+                    continue;
+                seen.add(filename);
+
+                const path = GLib.build_filenamev([
+                    configDirectory, 'autostart', filename,
+                ]);
+                const executable = _enabledDesktopAutostart(path, currentDesktops);
+                if (executable === null)
+                    continue;
+                desktopIds.add(filename.toLowerCase());
+                if (executable)
+                    executables.add(executable);
+            }
+        } catch (_error) {
+            // Missing and malformed autostart directories are normal. They
+            // must not prevent restoration of unrelated applications.
+        } finally {
+            try { enumerator?.close(null); } catch (_error) { /* Already closed. */ }
+        }
+    }
+    return {desktopIds, executables};
+}
 
 
 export const restoreSessionObject = {
@@ -45,6 +131,7 @@ export const RestoreSession = class {
         this.sessionName = FileUtils.default_sessionName;
         this._defaultAppSystem = Shell.AppSystem.get_default();
         this._windowTracker = Shell.WindowTracker.get_default();
+        this._autostartTargets = _desktopAutostartTargets();
 
         this._restore_session_interval = Math.max(
             MIN_RESTORE_INTERVAL_MS,
@@ -458,6 +545,10 @@ export const RestoreSession = class {
             const appInfo = shellApp?.get_app_info?.();
             if ((automatic && this._heldApplications[desktopFileId?.toLowerCase()]) ||
                 !automaticRestoreDesktopIdAllowed(desktopFileId) ||
+                (automatic && !automaticRestoreTargetAllowed(
+                    desktopFileId, appInfo?.get_executable?.(),
+                    this._autostartTargets?.desktopIds,
+                    this._autostartTargets?.executables)) ||
                 !shellApp || !appInfo || appInfo.should_show?.() === false) {
                 unavailableEntries.push(entry);
                 continue;
