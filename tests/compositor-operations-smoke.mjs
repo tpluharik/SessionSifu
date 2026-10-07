@@ -72,6 +72,20 @@ finish();
 await blocked;
 assert.equal(await destroyed, false);
 assert.equal(await make().moveWindowByMetaWindow({}, [], () => false), false);
+const checkpointed = make();
+const checkpointEvents = [];
+checkpointed._moveWindowByMetaWindow = async () => { checkpointEvents.push('native-layout'); return true; };
+assert.equal(await checkpointed.moveWindowByMetaWindow({}, [], () => true,
+    () => checkpointEvents.push('durable-checkpoint')), true);
+assert.deepEqual(checkpointEvents, ['durable-checkpoint', 'native-layout']);
+checkpointEvents.length = 0;
+assert.equal(await checkpointed.moveWindowByMetaWindow({}, [], () => false,
+    () => checkpointEvents.push('stale-checkpoint')), false);
+assert.deepEqual(checkpointEvents, [], 'Stale callbacks must not overwrite the active checkpoint');
+checkpointed._moveWindowsByShellApp = async () => { checkpointEvents.push('app-layout'); return true; };
+assert.equal(await checkpointed.moveWindowsByShellApp({}, [],
+    () => checkpointEvents.push('app-checkpoint')), true);
+assert.deepEqual(checkpointEvents, ['app-checkpoint', 'app-layout']);
 
 // Matching the workspace is NOT proof that geometry/state was applied.
 const saved = {windows_count: 1, window_title: 'test', desktop_number: 0};
@@ -88,6 +102,63 @@ assert.equal(direct._getAutoMoveInterestingWindows({get_windows: () => [sheetWin
     get_name: () => 'LibreOffice'}, [sheet]).length, 1);
 assert.equal(direct._matchesSavedWindow({...sheetWindow, get_title: () => 'Other document'}, sheet), false);
 assert.equal(direct._matchesSavedWindow({...sheetWindow, get_wm_class: () => 'unrelated'}, sheet), false);
+
+// Indexed matching preserves exact-document/class policy, first-match order,
+// single-window fallback and one-to-one assignment without a Cartesian scan.
+const manySaved = Array.from({length: 80}, (_, i) => ({
+    wm_class: 'editor', window_title: `Document ${i}`, windows_count: 80, desktop_number: 0,
+}));
+const manyWindows = manySaved.map(savedWindow => ({get_wm_class: () => 'editor',
+    get_title: () => savedWindow.window_title, get_workspace: () => ({index: () => 0})})).reverse();
+let matchChecks = 0;
+const indexed = make();
+indexed._log.debug = () => {};
+const originalMatch = indexed._matchesSavedWindow;
+indexed._matchesSavedWindow = function (...args) { matchChecks++; return originalMatch.apply(this, args); };
+const indexedApp = {get_windows: () => manyWindows, get_name: () => 'Editor'};
+assert.equal(indexed._getAutoMoveInterestingWindows(indexedApp, manySaved).length, 80);
+assert.equal(matchChecks, 80, 'Unique titles need one authoritative check each, not 6400 candidates');
+const single = {wm_class: 'editor', window_title: 'Old title', windows_count: 1, desktop_number: 0};
+const ambiguous = indexed._getAutoMoveInterestingWindows(indexedApp, [single, single]);
+assert.equal(ambiguous.length, 1, 'A saved record cannot be assigned twice');
+assert.equal(ambiguous[0].open_window, manyWindows[0], 'Single-window fallback retains original ordering');
+assert.equal(indexed._getAutoMoveInterestingWindows({get_windows: () => [win], get_name: () => 'Editor'}, [saved]).length, 1,
+    'Missing WM_CLASS must preserve the existing matching fallback');
+// Compare indexed selection to the previous nested matcher over deterministic
+// mixtures of duplicate titles, missing classes and LibreOffice transitions.
+const classes = ['editor', 'unrelated', 'libreoffice-startcenter', 'libreoffice-calc', null];
+for (let seed = 0; seed < 30; seed++) {
+    const windows = Array.from({length: 15}, (_, i) => ({
+        get_wm_class: () => classes[(i * 7 + seed) % classes.length],
+        get_title: () => (i + seed) % 6 ? `Title ${(i * 3 + seed) % 7}` : '',
+        get_workspace: () => ({index: () => 0}),
+    }));
+    const records = Array.from({length: 18}, (_, i) => ({
+        wm_class: classes[(i + seed) % classes.length],
+        window_title: (i + seed) % 5 ? `Title ${(i + seed) % 7}` : '',
+        windows_count: (i + seed) % 3 ? 5 : 1, desktop_number: 0,
+        moved: (i + seed) % 11 === 0,
+    }));
+    const expected = [];
+    const assigned = new Set();
+    for (const record of records.filter(record => !record.moved)) {
+        for (const window of windows) {
+            if (assigned.has(window) || expected.some(item => item.saved_window_session === record))
+                continue;
+            if (originalMatch.call(indexed, window, record)) {
+                expected.push({open_window: window, saved_window_session: record});
+                assigned.add(window);
+            }
+        }
+    }
+    const actual = indexed._getAutoMoveInterestingWindows({get_windows: () => windows,
+        get_name: () => 'Fixture'}, records);
+    assert.equal(actual.length, expected.length);
+    for (let i = 0; i < actual.length; i++) {
+        assert.equal(actual[i].open_window, expected[i].open_window);
+        assert.equal(actual[i].saved_window_session, expected[i].saved_window_session);
+    }
+}
 console.log('Compositor serialization and layout regressions passed');
 
 const guarded = new CompositorOperations();

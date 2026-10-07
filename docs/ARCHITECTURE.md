@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.5.30 runtime and release layout. User-facing
+This document describes the 3.5.31 runtime and release layout. User-facing
 steps live in the [session restoration guide](RESTORE_GUIDE.md) and
 [Privacy Recall guide](RECALL_GUIDE.md).
 
@@ -110,12 +110,18 @@ soon as GNOME confirms logout, reboot or shutdown; canceling the end-session
 dialog reopens the gate.
 
 GNOME recovery processes all eligible groups sequentially, with an eight-second
-inter-application delay and a 30-second readiness deadline. Historical records
+minimum between actual launch requests and a 30-second readiness deadline.
+Named sessions register expected windows by application group; reused windows
+use the one-second entry floor. Readiness signals supplement polling, unmatched
+layouts share a final ten-second retry budget, and previous-session preparation
+uses at most four asynchronous file reads without reordering records. Native
+window matching uses a transient exact-title/class index. Historical records
 are capped by the latest saved window count (maximum 32 per app). Windows owned
 by an application still in `Shell.AppState.STARTING` are never mutated through
 the immediate existing-window path; the indicator waits for the window's
 shown/title settle callbacks. A shared queue owner prevents overlapping restores.
-GSettings records progress and a flushed per-application checkpoint before launch.
+GSettings records progress and a flushed per-application checkpoint before launch
+and before native layout execution, including late shown/title callbacks.
 After interruption, the global pause lasts ten minutes; a separate 24-hour hold
 applies only to the in-flight application and can be bypassed manually.
 Successful requests clear their application hold, and normal queue completion

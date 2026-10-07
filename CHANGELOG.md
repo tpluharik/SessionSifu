@@ -2,6 +2,21 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.5.31
+
+- Group named-session records by application and register expected windows
+  before processing the group; reuse running apps without a per-window
+  eight-second launch delay. Actual launches, including additional documents,
+  retain at least eight seconds of spacing and any larger configured interval.
+- Wake readiness waits on application/window/title signals, with the existing
+  polling fallback and unchanged window-settle/native-operation guards.
+- Defer unmatched layouts to one bounded final reconciliation pass instead of
+  blocking each record for ten seconds. Unresolved records remain available;
+  successful late layouts retire only unchanged previous-session records.
+- Prepare previous-session files with at most four asynchronous reads and use
+  a transient exact-title/class index for window matching. Native operations
+  and application startup remain serial; no live-desktop speedup is claimed.
+
 ## 3.5.30
 
 - Validate paired tiling geometry against current work areas and reject crossed,

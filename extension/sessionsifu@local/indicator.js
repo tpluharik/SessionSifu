@@ -234,7 +234,14 @@ class AwsIndicator extends PanelMenu.Button {
                 return false;
             try {
                 return await moveSession.moveWindowByMetaWindow(
-                    metaWindow, savedWindowSessions, isCurrent);
+                    metaWindow, savedWindowSessions, isCurrent, () => {
+                        const app = this._windowTracker?.get_window_app(metaWindow);
+                        const mappings = RestoreSession.restoreSessionObject.restoringApps;
+                        const mapping = mappings?.get(app) ?? mappings?.get(metaWindow.get_pid());
+                        const id = mapping?.saved_window_sessions[0]?.desktop_file_id ?? app?.get_id?.();
+                        if (id)
+                            RestoreSession.restoreSessionObject.activeRestorer?._checkpointApplication(id);
+                    });
             } finally {
                 this._lastWindowRestoreAt = Date.now();
             }

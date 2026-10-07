@@ -2,7 +2,7 @@
 
 ## An application opens twice after login
 
-Update SessionSifu to 3.5.30. Automatic previous-desktop recovery now detects
+Update SessionSifu to 3.5.31. Automatic previous-desktop recovery now detects
 enabled XDG autostart entries and leaves those applications to the desktop
 login manager. Explicit manual restores can still launch them. If duplication
 continues, check for multiple differently named files in `~/.config/autostart`
@@ -70,6 +70,12 @@ eight seconds between application groups and at least 750 milliseconds between
 window mutations. Historical records are bounded by their saved window count
 (maximum 32 per app). A 30-second readiness timeout retains slow-app records
 and lets the queue continue. A single queue owner prevents overlapping restores.
+
+In 3.5.31 the eight-second gap is tied to actual launch requests rather than
+every application group or reused window. The existing window-settle delays and
+serialized native operations remain intact. Late layouts share one final retry
+pass, and unresolved records remain saved; this does not guarantee immunity
+from a native compositor or graphics-driver hang.
 
 An interrupted restore pauses automatic recovery for ten minutes and holds only
 the application in flight for 24 hours. At the next eligible login other apps
@@ -352,7 +358,8 @@ origin, size and SHA-256. Never bypass a signature, expiry or rollback error.
 Versions 2.4 and older need one manual 2.5 package installation because they do
 not understand the signed update channel.
 
-The signed stable channel offers 3.5.30, including paired tiling hardening,
+The signed stable channel offers 3.5.31, including conservative restore scheduling,
+paired tiling hardening,
 the 3.5.28 autostart fix and shutdown/LibreOffice recovery corrections.
 A source commit or version bump
 alone does not update this channel: the package, manifest and Ed25519 signature

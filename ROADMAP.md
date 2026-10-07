@@ -1,8 +1,17 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.5.30. It separates shipped
+This roadmap describes the product after version 3.5.31. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
+
+## Conservative restore scheduling — 3.5.31
+
+- Group expected windows by application; reuse running apps without fresh-launch gaps.
+- Wake readiness on app/window/title signals with polling fallback.
+- Share a bounded final reconciliation pass for unmatched layouts; retain unresolved records.
+- Use bounded asynchronous state loading and transient exact-title/class indexes.
+- Preserve launch/settle pacing, serialized native operations and crash checkpoints.
+- Native desktop benchmarks and shorter safety delays remain validation work.
 
 ## Paired tiling safety — 3.5.30
 

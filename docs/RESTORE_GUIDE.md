@@ -1,6 +1,16 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.30.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.31.
+
+### Conservative scheduling in 3.5.31
+
+SessionSifu now groups GNOME named restores by application, registers
+expected windows before processing each group, and avoids fresh-launch delays
+when reusing an app. Actual launches still retain at least eight seconds of
+spacing. Late layouts share a final retry pass; unresolved records remain saved.
+Readiness signals supplement polling, while window-settle delays, crash markers
+and serialized native operations remain intact. Simulated regression timings
+are not live-desktop benchmarks. See [performance notes](PERFORMANCE.md).
 
 ## Portable restore outcomes
 
@@ -18,11 +28,14 @@ desktop restore on GNOME, KDE Plasma, Windows, macOS and portable Linux.
 
 Version 3.5.24 counts time already spent on launch readiness and layout toward
 the pacing interval instead of adding the entire pause afterward. The eight-
-second pacing floor is unchanged, and time queued behind a screenshot before
+second launch pacing floor is unchanged, and time queued behind a screenshot before
 launch does not count toward it. Fixed window-settle delays remain fixed. For
 example, 1.75 seconds of work leaves 6.25 seconds of an eight-second interval,
 not eight more seconds. These are scheduler timings, not measured application
 startup speedups; slow applications can still need their readiness timeout.
+In 3.5.31 this gap applies to actual launches (including additional documents),
+not every reused window. Expected windows are registered by application group;
+unmatched layouts share a final retry pass rather than blocking each record.
 
 The yin-yang panel icon gains a native animated spinner for the full restore
 queue, including planning and waits. Open its menu for the current progress.
@@ -78,7 +91,8 @@ Enable **Restore previous desktop after login** only when you want automatic
 recovery. SessionSifu waits for its startup delay, rejects helper and command-
 only processes, then restores visible desktop applications through the same
 paced queue used by manual restoration. On GNOME/Wayland, the queue continues
-through all eligible application groups, with eight seconds between groups.
+through all eligible application groups, with at least eight seconds between
+actual launch requests; reusing a running app does not trigger that launch gap.
 Applications with an enabled XDG autostart entry are left to the desktop's
 login manager, preventing SessionSifu from racing that launcher and opening a
 second instance. They remain available in explicit manual restores.
@@ -102,7 +116,8 @@ Version 3.5.29 also protects records throughout logout/reboot/power-off and
 cancels pending tracking saves. Automatic history waits while restoration is
 active. LibreOffice WM_CLASS transitions migrate one native-window record;
 layout matching accepts the same document title across Start Center and
-document classes and waits up to ten seconds for delayed window readiness.
+document classes. In 3.5.31 unmatched layouts share a final ten-second retry
+budget; native operations can outlast that budget and are never force-aborted.
 The queue records the application in flight before launching it. After an
 interruption, automatic recovery pauses for ten minutes and holds that specific
 application for 24 hours; other applications remain eligible at the next login.

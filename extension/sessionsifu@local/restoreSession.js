@@ -16,6 +16,7 @@ import * as MoveSession from './moveSession.js';
 import {mayRestoreApplications} from './runtimeSafety.js';
 import {compositorOperations} from './compositorOperations.js';
 import {restoreActivity} from './recallActivity.js';
+import {groupRestoreEntries, loadRestoreEntries} from './restoreScheduling.js';
 import {MAX_WORKSPACE_INDEX, launchWorkspaceIndex} from './windowSafety.js';
 import {
     AUTOMATIC_RESTORE_INTERVAL_MS,
@@ -153,6 +154,7 @@ export const RestoreSession = class {
 
         this._connectIds = [];
         this._pendingRestoreDelays = new Map();
+        this._pendingReadinessWaits = new Set();
         this._destroyed = false;
     }
 
@@ -251,19 +253,26 @@ export const RestoreSession = class {
             return true;
         }
 
-        const interval = Math.max(this._restore_session_interval, AUTOMATIC_RESTORE_INTERVAL_MS);
-        for (let index = 0; index < session_config_objects.length; index++) {
-            if (!mayRestoreApplications() || this._destroyed)
-                return false;
-            this._progress(`Processing window ${index + 1} of ${session_config_objects.length}…`);
-            const [handled] = await this._restoreQueuedEntry(session_config_objects[index]);
-            if (!handled)
-                this._retained++;
-            if (session_config_objects[index + 1] &&
-                !await this._waitBeforeNextRestore(interval))
-                return false;
+        const groups = groupRestoreEntries(session_config_objects.map(
+            sessionConfig => ({sessionConfig})), session => this._sessionApplicationKey(session));
+        let processed = 0;
+        for (const entries of groups) {
+            this._registerRestoreEntries(entries);
+            for (const {sessionConfig} of entries) {
+                if (!mayRestoreApplications() || this._destroyed)
+                    return false;
+                this._progress(`Processing window ${++processed} of ${session_config_objects.length}…`);
+                const [handled, , deferred] = await this._restoreQueuedEntry(
+                    sessionConfig, {deferLayout: true});
+                if (!handled && !deferred)
+                    this._retained++;
+                if (processed < session_config_objects.length &&
+                    !await this._waitBeforeNextRestore(MIN_RESTORE_INTERVAL_MS))
+                    return false;
+            }
         }
-        return true;
+        await this._reconcileDeferredLayouts();
+        return mayRestoreApplications() && !this._destroyed;
     }
 
     async restorePreviousSession(removeAfterRestore, automatic = true) {
@@ -298,15 +307,11 @@ export const RestoreSession = class {
                 sessionFiles.push(file);
             });
 
-            const sessionEntries = [];
-            for (const file of sessionFiles) {
-                if (!mayRestoreApplications() || this._destroyed)
-                    break;
-
+            const sessionEntries = await loadRestoreEntries(sessionFiles, async file => {
                 try {
                     const contents = await this._loadSessionContents(file);
                     if (!contents)
-                        continue;
+                        return null;
 
                     const sessionConfig = FileUtils.getJsonObj(contents);
                     sessionConfig._file_path = file.get_path();
@@ -320,12 +325,13 @@ export const RestoreSession = class {
                         // A missing timestamp does not make an otherwise valid
                         // previous-session record unsafe to restore.
                     }
-                    sessionEntries.push({file, sessionConfig, modified, contents});
+                    return {file, sessionConfig, modified, contents};
                 } catch (error) {
                     this._retained++;
                     this._log.error(error, `Could not load previous-session state from ${file.get_path()}`);
+                    return null;
                 }
-            }
+            }, () => mayRestoreApplications() && !this._destroyed);
             const deduplicated = deduplicatePreviousSessionEntries(sessionEntries);
             if (deduplicated.duplicates.length) {
                 this._log.warn(
@@ -344,27 +350,39 @@ export const RestoreSession = class {
             }
 
             let completed = true;
+            const retirements = new Map();
+            const retire = async sessionConfig => {
+                if (!removeAfterRestore || !mayRestoreApplications() || this._destroyed)
+                    return;
+                const entry = retirements.get(sessionConfig);
+                if (!entry)
+                    return;
+                await this._retireSessionEntry(entry);
+                const identity = previousSessionIdentity(sessionConfig);
+                for (const duplicate of deduplicated.duplicates) {
+                    if (previousSessionIdentity(duplicate.sessionConfig) === identity)
+                        await this._retireSessionEntry(duplicate);
+                }
+            };
             for (let groupIndex = 0; groupIndex < planned.groups.length; groupIndex++) {
                 if (!mayRestoreApplications() || this._destroyed)
                     return;
 
                 const groupEntries = planned.groups[groupIndex].entries;
+                this._registerRestoreEntries(groupEntries);
                 this._progress(`Processing application ${groupIndex + 1} of ${planned.groups.length}…`);
                 for (let entryIndex = 0; entryIndex < groupEntries.length; entryIndex++) {
                     if (!mayRestoreApplications() || this._destroyed)
                         return;
                     const {file, sessionConfig, contents} = groupEntries[entryIndex];
-                    const [launched] = await this._restoreQueuedEntry(sessionConfig);
-                    if (!launched)
+                    retirements.set(sessionConfig, {file, contents});
+                    const [launched, , deferred] = await this._restoreQueuedEntry(
+                        sessionConfig, {deferLayout: true});
+                    if (!launched && !deferred)
                         this._retained++;
                     if (removeAfterRestore && launched) {
                         this._log.debug(`Restored one window for ${sessionConfig.app_name}`);
-                        await this._retireSessionEntry({file, contents});
-                        const identity = previousSessionIdentity(sessionConfig);
-                        for (const duplicate of deduplicated.duplicates) {
-                            if (previousSessionIdentity(duplicate.sessionConfig) === identity)
-                                await this._retireSessionEntry(duplicate);
-                        }
+                        await retire(sessionConfig);
                     }
                     if (groupEntries[entryIndex + 1] &&
                         !await this._waitBeforeNextRestore(MIN_RESTORE_INTERVAL_MS)) {
@@ -374,11 +392,13 @@ export const RestoreSession = class {
                 }
 
                 if (planned.groups[groupIndex + 1] &&
-                    !await this._waitBeforeNextRestore(AUTOMATIC_RESTORE_INTERVAL_MS)) {
+                    !await this._waitBeforeNextRestore(MIN_RESTORE_INTERVAL_MS)) {
                     completed = false;
                     break;
                 }
             }
+            if (completed)
+                await this._reconcileDeferredLayouts(retire);
             return completed && mayRestoreApplications() && !this._destroyed;
         } catch (error) {
             this._log.error(error);
@@ -414,6 +434,11 @@ export const RestoreSession = class {
         restoreSessionObject.restoringApps = new Map();
         this._retained = 0;
         this._timedOutApps = new Set();
+        this._deferredLayouts = [];
+        this._lastLaunchStartedAt = null;
+        this._restoredApps?.clear();
+        this._launchedFilesByApp?.clear();
+        this._cmdAppIdMap?.clear();
         restoreActivity.begin();
         try {
             if (!this._beginAutomaticRestore(automatic))
@@ -434,6 +459,9 @@ export const RestoreSession = class {
             this._log.error(error);
             return false;
         } finally {
+            for (const finish of this._pendingReadinessWaits ?? [])
+                finish(false);
+            this._deferredLayouts = [];
             restoreSessionObject.restoringApps?.clear();
             if (restoreSessionObject.activeRestorer === this)
                 restoreSessionObject.activeRestorer = null;
@@ -441,15 +469,12 @@ export const RestoreSession = class {
         }
     }
 
-    async _restoreQueuedEntry(sessionConfig) {
+    async _restoreQueuedEntry(sessionConfig, {deferLayout = false} = {}) {
         this._entryStartedAt = GLib.get_monotonic_time();
         const id = sessionConfig.desktop_file_id ?? '';
         if (this._timedOutApps.has(id))
             return [false, false];
-        this._settings.set_string('restore-active-application', id.toLowerCase());
-        this._settings.set_int64('last-automatic-restore-attempt', Math.floor(Date.now() / 1000));
-        // Persist the checkpoint before handing work to the compositor.
-        Gio.Settings.sync();
+        this._checkpointApplication(id);
         const result = await this._restoreOneSession(sessionConfig);
         if (this._destroyed || !mayRestoreApplications())
             return [false, false];
@@ -463,7 +488,7 @@ export const RestoreSession = class {
                     this._log.warn(`Application did not become ready within 30 seconds: ${id}`);
                     return [false, result[1]];
                 }
-                if (!await this._waitBeforeNextRestore(1000, true))
+                if (!await this._waitForRestoreEvent(app, 1000))
                     return [false, result[1]];
             }
             // Let mapped windows settle before issuing another launch request.
@@ -474,22 +499,144 @@ export const RestoreSession = class {
             // queue with shown/title callbacks and Recall before retiring data.
             const layoutDeadline = GLib.get_monotonic_time() + 10 * 1000000;
             while (!sessionConfig.moved) {
-                if (await this._moveSession.moveWindowsByShellApp(app, [sessionConfig]) ||
+                if (await this._moveSession.moveWindowsByShellApp(app, [sessionConfig],
+                    () => this._checkpointApplication(id)) ||
                     sessionConfig.moved)
                     break;
+                if (deferLayout) {
+                    this._deferredLayouts.push({app, sessionConfig});
+                    return [false, result[1], true];
+                }
                 if (GLib.get_monotonic_time() >= layoutDeadline) {
                     this._log.warn(`Saved window layout did not become ready: ${id}; record retained`);
                     return [false, result[1]];
                 }
-                if (!await this._waitBeforeNextRestore(1000, true))
+                if (!await this._waitForRestoreEvent(app, 1000))
                     return [false, result[1]];
             }
         }
-        if (result[0]) {
-            delete this._heldApplications[id.toLowerCase()];
-            this._settings.set_string('restore-held-applications', JSON.stringify(this._heldApplications));
-        }
+        if (result[0])
+            this._markApplicationHandled(sessionConfig);
         return result;
+    }
+
+    _markApplicationHandled(sessionConfig) {
+        delete this._heldApplications[(sessionConfig.desktop_file_id ?? '').toLowerCase()];
+        this._settings.set_string('restore-held-applications', JSON.stringify(this._heldApplications));
+    }
+
+    _checkpointApplication(id) {
+        id = id.toLowerCase();
+        const timestamp = Math.floor(Date.now() / 1000);
+        if (this._settings.get_string('restore-active-application') === id &&
+            this._settings.get_int64('last-automatic-restore-attempt') === timestamp)
+            return;
+        this._settings.set_string('restore-active-application', id);
+        this._settings.set_int64('last-automatic-restore-attempt', timestamp);
+        // Persist before native work, including late shown/title callbacks that
+        // belong to a different app from the queue's current launch entry.
+        Gio.Settings.sync();
+    }
+
+    _registerRestoreEntries(entries) {
+        for (const {sessionConfig} of entries) {
+            const app = sessionConfig.desktop_file_id
+                ? this._defaultAppSystem.lookup_app(sessionConfig.desktop_file_id) : null;
+            if (!app)
+                continue;
+            const mapping = restoreSessionObject.restoringApps.get(app) ?? {saved_window_sessions: []};
+            if (!mapping.saved_window_sessions.includes(sessionConfig))
+                mapping.saved_window_sessions.push(sessionConfig);
+            restoreSessionObject.restoringApps.set(app, mapping);
+        }
+    }
+
+    async _reconcileDeferredLayouts(onHandled = async () => {}) {
+        let pending = this._deferredLayouts ?? [];
+        const deadline = GLib.get_monotonic_time() + 10 * 1000000;
+        while (pending.length && !this._destroyed && mayRestoreApplications()) {
+            const remaining = [];
+            for (const entry of pending) {
+                if (this._destroyed || !mayRestoreApplications())
+                    return;
+                const {app, sessionConfig} = entry;
+                // Every later native attempt needs its own durable crash marker.
+                this._checkpointApplication(sessionConfig.desktop_file_id ?? '');
+                let running = false;
+                try { running = app.get_state() === Shell.AppState.RUNNING; } catch (_error) {}
+                const handled = sessionConfig.moved || (running &&
+                    await this._moveSession.moveWindowsByShellApp(app, [sessionConfig],
+                        () => this._checkpointApplication(sessionConfig.desktop_file_id ?? '')));
+                if (this._destroyed || !mayRestoreApplications())
+                    return;
+                if (handled) {
+                    this._markApplicationHandled(sessionConfig);
+                    await onHandled(sessionConfig);
+                } else {
+                    remaining.push(entry);
+                }
+            }
+            pending = remaining;
+            if (!pending.length || GLib.get_monotonic_time() >= deadline)
+                break;
+            if (!await this._waitForRestoreEvent(null, 1000, pending.map(entry => entry.app)))
+                return;
+        }
+        this._retained += pending.length;
+        if (pending.length)
+            this._log.warn(`Saved window layouts did not become ready: ${pending.length} records retained`);
+        this._deferredLayouts = [];
+    }
+
+    _waitForRestoreEvent(app, milliseconds, apps = app ? [app] : []) {
+        if (this._destroyed || !mayRestoreApplications())
+            return Promise.resolve(false);
+        this._pendingReadinessWaits ??= new Set();
+        return new Promise(resolve => {
+            const connections = [];
+            let sourceId = 0;
+            let finished = false;
+            const finish = result => {
+                if (finished)
+                    return;
+                finished = true;
+                if (sourceId)
+                    GLib.Source.remove(sourceId);
+                for (const [object, id] of connections) {
+                    try { object.disconnect(id); } catch (_error) {}
+                }
+                this._pendingReadinessWaits.delete(finish);
+                resolve(result && !this._destroyed && mayRestoreApplications());
+            };
+            const wake = () => finish(true);
+            const connect = (object, signal) => {
+                try {
+                    if (object?.connect)
+                        connections.push([object, object.connect(signal, wake)]);
+                } catch (_error) {
+                    // Unsupported signals retain the original one-second poll.
+                }
+            };
+            for (const target of new Set(apps)) {
+                connect(target, 'notify::state');
+                connect(target, 'windows-changed');
+                try {
+                    for (const window of target.get_windows())
+                        if (!window._aboutToClose) {
+                            connect(window, 'unmanaging');
+                            connect(window, 'notify::title');
+                        }
+                } catch (_error) {
+                    // A closing/disposed app must retain the timer fallback.
+                }
+            }
+            this._pendingReadinessWaits.add(finish);
+            sourceId = GLib.timeout_add(GLib.PRIORITY_LOW, milliseconds, () => {
+                sourceId = 0;
+                finish(true);
+                return GLib.SOURCE_REMOVE;
+            });
+        });
     }
 
     _loadSessionContents(file) {
@@ -616,15 +763,20 @@ export const RestoreSession = class {
                     : [];
                 const restoringShellAppData = restoreSessionObject.restoringApps.get(shell_app);
                 if (restoringShellAppData) {
-                    restoringShellAppData.saved_window_sessions.push(session_config_object);
+                    if (!restoringShellAppData.saved_window_sessions.includes(session_config_object))
+                        restoringShellAppData.saved_window_sessions.push(session_config_object);
                 } else {
                     restoreSessionObject.restoringApps.set(shell_app, {
                         saved_window_sessions: [session_config_object]
                     });
                 }
 
+                if (this._willLaunch(shell_app, session_config_object.open_files) &&
+                    !await this._waitForLaunchTurn())
+                    return [false, false];
                 const launchResult = await compositorOperations.run(
                     () => {
+                        this._checkpointApplication(desktop_file_id);
                         const result = this.launch(shell_app,
                             session_config_object.desktop_number,
                             session_config_object.open_files);
@@ -651,11 +803,11 @@ export const RestoreSession = class {
                     // silently treating the record as restored.
                     if (appWasStableRunning && restorableDocuments.length === 0) {
                         const movedExisting = await this._moveSession.moveWindowsByShellApp(
-                            shell_app, [session_config_object]);
-                        if (!movedExisting) {
-                            launched = false;
+                            shell_app, [session_config_object],
+                            () => this._checkpointApplication(desktop_file_id));
+                        if (!movedExisting && !session_config_object.moved) {
                             this._log.warn(
-                                `No matching existing window was found for ${app_name}; retaining its restore record`);
+                                `Waiting for a matching existing window for ${app_name}`);
                         }
                     }
                 } else {
@@ -697,7 +849,11 @@ export const RestoreSession = class {
                 }
 
                 try {
+                    if (!await this._waitForLaunchTurn())
+                        return [false, false];
                     const spawned = await compositorOperations.run(() => {
+                        this._checkpointApplication(desktop_file_id ?? '');
+                        this._lastLaunchStartedAt = GLib.get_monotonic_time();
                         const result = SubprocessUtils.spawnDirectArgv(cmd);
                         this._entryStartedAt = GLib.get_monotonic_time();
                         return result;
@@ -752,6 +908,7 @@ export const RestoreSession = class {
                 DateUtils.get_current_time(),
                 desktopNumber);
             this._log.info(`Launching ${shellApp.get_name()} with ${files.length} saved file(s)`);
+            this._lastLaunchStartedAt = GLib.get_monotonic_time();
             const launched = appInfo.launch(files, context);
             if (launched)
                 paths.forEach(path => launchedFiles.add(path));
@@ -771,8 +928,9 @@ export const RestoreSession = class {
             if (canLaunchFiles)
                 return [launchFiles(), true];
             this._log.info(`${shellApp.get_name()} is running, skipping`);
-            // Delete shellApp from restoringApps to prevent it move the same app when close and open it manually.
-            if (shellApp.get_state() === Shell.AppState.RUNNING)
+            // During an active restore, keep the complete expected-window map
+            // for late browser-owned recovery. Completion clears it globally.
+            if (!restoreSessionObject.activeRestorer && shellApp.get_state() === Shell.AppState.RUNNING)
                 restoreSessionObject.restoringApps.delete(shellApp);
             return [true, true];
         }
@@ -780,12 +938,30 @@ export const RestoreSession = class {
         if (canLaunchFiles)
             return [launchFiles(), false];
 
+        this._lastLaunchStartedAt = GLib.get_monotonic_time();
         const launched = shellApp.launch(
             // 0 for current event timestamp
             0,
             desktopNumber,
             this._getProperGpuPref(shellApp));
         return [launched, false];
+    }
+
+    _willLaunch(shellApp, openFiles = []) {
+        const appInfo = shellApp.get_app_info();
+        const launchedFiles = this._launchedFilesByApp.get(shellApp) ?? new Set();
+        const newDocuments = OpenFiles.appInfoSupportsDocumentFiles(appInfo) &&
+            OpenFiles.existingOpenFiles(openFiles).some(path => !launchedFiles.has(path));
+        return newDocuments || (!this._restoredApps.has(shellApp) && !this._appIsRunning(shellApp));
+    }
+
+    _waitForLaunchTurn() {
+        if (!Number.isFinite(this._lastLaunchStartedAt))
+            return Promise.resolve(!this._destroyed && mayRestoreApplications());
+        const delay = remainingRestoreDelay(
+            Math.max(AUTOMATIC_RESTORE_INTERVAL_MS, this._restore_session_interval),
+            this._lastLaunchStartedAt, GLib.get_monotonic_time());
+        return this._waitBeforeNextRestore(delay, true);
     }
 
     _appIsRunning(app) {
@@ -818,6 +994,8 @@ export const RestoreSession = class {
 
     cancel() {
         this._destroyed = true;
+        for (const finish of this._pendingReadinessWaits ?? [])
+            finish(false);
         if (restoreSessionObject.activeRestorer === this)
             restoreSessionObject.restoringApps?.clear();
         for (const [sourceId, resolve] of this._pendingRestoreDelays ?? []) {
@@ -831,6 +1009,8 @@ export const RestoreSession = class {
 
     destroy() {
         this._destroyed = true;
+        for (const finish of this._pendingReadinessWaits ?? [])
+            finish(false);
 
         if (this._pendingRestoreDelays) {
             for (const [sourceId, resolve] of this._pendingRestoreDelays) {

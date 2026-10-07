@@ -1,11 +1,11 @@
 {
-  "version": "3.5.30",
+  "version": "3.5.31",
   "channel": "stable",
-  "issued_at": "2026-10-07T14:41:05Z",
-  "expires_at": "2026-11-21T14:41:05Z",
+  "issued_at": "2026-10-07T15:40:11Z",
+  "expires_at": "2026-11-21T15:40:11Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.30_all.deb",
-  "sha256": "a09b2d5258e86e0755340138b4117af2bf22830f8d1fd82a2c273878a073b927",
-  "size": 3811492,
-  "notes": "SessionSifu 3.5.30 hardens paired window tiling: validates geometry, serializes resizing and raising, prevents recursive signals, and cancels stale work on window close, shutdown or extension disable. Includes the 3.5.29 recovery and 3.5.28 autostart fixes."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.31_all.deb",
+  "sha256": "85cd3157db4f6e17093a3dbb7343a7ef5916e2993bb7744f25ebd931e188e398",
+  "size": 3818326,
+  "notes": "SessionSifu 3.5.31 improves GNOME restore scheduling: groups application windows, avoids fresh-launch gaps for reused apps, wakes readiness on signals, shares bounded late-layout retries, and indexes exact window matches. Retains conservative launch and settle pacing, serialized compositor operations, crash checkpoints and unresolved records. Includes paired tiling, shutdown recovery and autostart fixes."
 }

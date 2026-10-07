@@ -1,3 +1,13 @@
+sessionsifu (3.5.31-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Group named restores, reuse running apps and wake readiness on signals.
+  * Share bounded late-layout retries while preserving recovery records.
+  * Index exact window matches and prepare saved records with bounded reads.
+  * Preserve native-operation serialization and durable crash checkpoints.
+  * Publish the Ed25519-signed GNOME in-app update.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Wed, 07 Oct 2026 17:40:00 +0200
+
 sessionsifu (3.5.30-1~ppa1~resolute1) resolute; urgency=medium
 
   * Validate paired tiling geometry and reject dead or stale window pairs.

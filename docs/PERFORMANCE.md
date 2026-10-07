@@ -1,5 +1,45 @@
 # Recall search performance
 
+## 3.5.31: conservative restore scheduling
+
+GNOME named restores group records by application and register the complete
+expected-window group before launch. Reused apps/windows use the existing
+one-second minimum entry interval rather than an eight-second per-record gap.
+Actual application launches and additional document launch requests retain at
+least eight seconds of spacing, measured from the actual native request; larger
+user-configured intervals are respected. The first launch has no extra wait.
+
+Readiness waits wake on `notify::state`, `windows-changed` and window-title
+changes, retaining the one-second timer fallback and 30-second startup deadline.
+The one-second window settle, 750 ms native pacing, monitor-change confirmation,
+500 ms unmaximize delay and single compositor-operation queue are unchanged.
+Native operations never run concurrently or release ownership on a timeout.
+
+Unmatched layouts receive an initial attempt and share one final ten-second
+retry budget. The expected-window map remains valid during the entire restore,
+so existing shown/title callbacks can complete late layouts. Records are
+retired only after layout success and only if their saved bytes have not changed.
+Cancellation disconnects temporary readiness handlers and cancels their timers.
+Every later native reconciliation attempt has a durable application checkpoint.
+The retry budget cannot preempt native operations or bound a compositor hang.
+
+Previous-session preparation uses at most four asynchronous file reads; results
+retain their original order, and cancellation stops new reads. Matching uses a
+per-call exact-title/class index, preserving the existing one-to-one assignment,
+first-match ordering and LibreOffice class-transition rules. No fuzzy document
+matching or persistent cache of native window objects was added.
+
+Isolated regressions use virtual time and fake applications/windows. Six already-
+running windows use five seconds of entry spacing instead of forty, and five
+unmatched layouts share ten seconds of retry waiting instead of fifty. An
+80-document exact-title fixture needs 80 authoritative candidate checks rather
+than scanning 6,400 window/record pairs. These are scheduling/algorithm fixtures,
+not native-desktop latency benchmarks or a stability guarantee.
+
+Portable backend concurrency, reduced settle/native pacing and parallel startup
+remain unchanged pending platform-specific validation. Earlier published assets
+remain historical releases; the 3.5.31 package carries these source changes.
+
 ## 3.5.24 audit follow-up
 
 The earlier full-record LRU could thrash above capacity. Search now maintains a

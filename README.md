@@ -16,7 +16,7 @@ SessionSifu preserves work continuity. **Save** named projects or automatic
 snapshots, **Resume** selected applications, documents and window layouts, and
 **Find** past context in an optional encrypted local visual timeline.
 
-Version 3.5.30 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
+Version 3.5.31 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
 encrypted, per-window OCR activity timeline across GNOME, Windows, macOS, KDE
 Plasma 6 and other Linux desktops. Czech and English OCR data ships with the
 installer and verified update. Recall previews support two-finger panning,
@@ -26,7 +26,14 @@ per-capture completeness, and redacts recognized private/protected contexts.
 Adaptive capture intervals reduce battery and electricity use, suspend visual
 Recall in low-power states, reuse unchanged OCR data and avoid unnecessary
 preview or hidden-interface refreshes.
-Version 3.5.30 also hardens GNOME paired-window tiling: invalid geometry is
+Version 3.5.31 improves GNOME restore scheduling: named restores group expected
+windows by application, running apps avoid fresh-launch gaps, readiness signals
+supplement polling, and unmatched layouts share a bounded final retry pass.
+Saved-record preparation uses bounded asynchronous reads and window matching
+uses a transient exact-title/class index. Actual launches keep at least eight
+seconds of spacing; settle delays, native-operation serialization and recovery
+records remain protected. Simulated timings are not live-desktop benchmarks.
+The release also retains the 3.5.30 GNOME paired-window tiling hardening: invalid geometry is
 rejected, resize/raise operations share the compositor queue, recursive signals
 are guarded and stale requests are cancelled when window pairs or lifetimes
 change. These checks are not a guarantee against native compositor/driver hangs.
@@ -198,11 +205,11 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_3.5.30_all.deb` from the matching GitHub Release, or build it
+Download `sessionsifu_3.5.31_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_3.5.30_all.deb
+sudo apt install ./sessionsifu_3.5.31_all.deb
 ```
 
 The Ubuntu 26.04 PPA is active at `ppa:tpluharik77/sessionsifu` and its amd64
@@ -232,7 +239,7 @@ compatible GNOME release; SessionSifu never forces a desktop-shell upgrade.
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.5.30_all.deb
+sudo apt install ./dist/sessionsifu_3.5.31_all.deb
 ```
 
 After installation:
@@ -246,11 +253,11 @@ After installation:
 
 ### Windows, macOS, KDE and portable GNOME
 
-The 3.5.30 release workflow builds these self-contained portable artifacts:
+The 3.5.31 release workflow builds these self-contained portable artifacts:
 
-- `SessionSifu-3.5.30-macos-arm64.zip`;
-- `SessionSifu-3.5.30-macos-x64.zip`; and
-- `SessionSifu-3.5.30-linux-x64.tar.gz`.
+- `SessionSifu-3.5.31-macos-arm64.zip`;
+- `SessionSifu-3.5.31-macos-x64.zip`; and
+- `SessionSifu-3.5.31-linux-x64.tar.gz`.
 
 In 3.5.27, the Windows x64 build passed its tests, but its public archive was withheld
 because no production Authenticode certificate was available. SessionSifu does
@@ -378,7 +385,9 @@ records stay available for a later attempt. Confirming logout, reboot or
 shutdown cancels any restore work still in progress.
 
 On GNOME/Wayland, recovery processes every eligible application group in a
-sequential queue, with eight seconds between groups. Starting applications have
+sequential queue. Actual launch requests retain at least eight seconds of
+spacing; reused windows avoid that launch gap. Unmatched layouts share a final
+retry pass without retiring unresolved records. Starting applications have
 up to 30 seconds to expose a running window; a timeout retains their records and
 allows other applications to continue. Previous-desktop records are deduplicated
 and bounded by the recorded window count (at most 32 per application).
@@ -432,7 +441,8 @@ required to load a replaced GNOME Shell extension on Wayland.
 The Debian package remains the supported initial installation method because it
 provides SessionSifu's runtime dependencies.
 
-The signed stable channel serves 3.5.30, including paired tiling hardening,
+The signed stable channel serves 3.5.31, including conservative restore scheduling,
+paired tiling hardening,
 shutdown-record protection, LibreOffice window migration and the 3.5.28
 autostart duplicate-launch fix. Its
 Ed25519 manifest binds the package URL, version, validity period, byte size and
@@ -661,7 +671,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.5.30_all.deb
+dist/sessionsifu_3.5.31_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -719,7 +729,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Publishing and distribution](docs/PUBLISHING.md)
 - [Documentation index](docs/README.md)
 
-The current 3.5.30 release includes verified Czech and English fast Tesseract
+The current 3.5.31 release includes verified Czech and English fast Tesseract
 models in the Debian package, signed in-app update and portable artifacts. Mixed
 Czech/English desktop text therefore works without installing a separate
 language package, while recognition stays completely local. Recall search is

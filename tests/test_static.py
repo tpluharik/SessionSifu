@@ -48,8 +48,8 @@ metadata = json.loads((extension / "metadata.json").read_text())
 assert metadata["uuid"] == "sessionsifu@local"
 assert metadata["shell-version"] == ["50"]
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.5.30"
-assert metadata["version"] == 64
+assert metadata["version-name"] == "3.5.31"
+assert metadata["version"] == 65
 autostart_source = (extension / "ui" / "autostart.js").read_text()
 file_utils_source = (extension / "utils" / "fileUtils.js").read_text()
 assert "extensionObject.metadata['version-name']" in file_utils_source
@@ -88,7 +88,7 @@ assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
 assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.5.30"' in build_script
+assert 'version="3.5.31"' in build_script
 package_control = (root / "packaging" / "control").read_text()
 assert "python3-pyatspi" in package_control
 assert "gnome-settings-daemon-common" in package_control
@@ -189,7 +189,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.5.30"' in app_source
+assert 'CURRENT_VERSION = "3.5.31"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source
@@ -385,7 +385,13 @@ assert "_completeAutomaticRestore" in source_text
 assert "shell_app.get_state() === Shell.AppState.RUNNING" in source_text
 assert "restoreCommandAllowed(cmd)" in source_text
 assert "appInfo.should_show?.() === false" in source_text
-assert "!await this._waitBeforeNextRestore(AUTOMATIC_RESTORE_INTERVAL_MS)" in source_text
+assert "!await this._waitForLaunchTurn()" in source_text
+assert "Math.max(AUTOMATIC_RESTORE_INTERVAL_MS, this._restore_session_interval)" in source_text
+assert "this._lastLaunchStartedAt = GLib.get_monotonic_time()" in source_text
+assert "groupRestoreEntries" in source_text
+assert "loadRestoreEntries" in source_text
+assert "_pendingReadinessWaits" in source_text
+assert "_reconcileDeferredLayouts" in source_text
 assert "!await this._waitBeforeNextRestore(MIN_RESTORE_INTERVAL_MS)" in source_text
 assert "get_work_area_current_monitor()" in source_text
 assert "clampWindowGeometry" in source_text
@@ -397,7 +403,7 @@ assert "const restorePreviousDelay = automatic" in source_text
 assert "restorePreviousSession(removeAfterRestore, automatic)" in source_text
 assert "restorePreviousSession(removeAfterRestore, automatic = true)" in source_text
 assert "moveWindowsByShellApp(" in source_text
-assert "No matching existing window was found" in source_text
+assert "Waiting for a matching existing window" in source_text
 assert "return restoredAny" in source_text
 assert "removeAfterRestore && launched" in source_text
 assert "this._appIsRunning(shellApp) && savedDocuments.length === 0" not in source_text

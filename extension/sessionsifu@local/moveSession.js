@@ -104,9 +104,12 @@ export const MoveSession = class {
         }
     }
 
-    moveWindowsByShellApp(shellApp, saved_window_sessions) {
+    moveWindowsByShellApp(shellApp, saved_window_sessions, beforeMove = () => {}) {
         return compositorOperations.run(
-            () => this._moveWindowsByShellApp(shellApp, saved_window_sessions),
+            () => {
+                beforeMove();
+                return this._moveWindowsByShellApp(shellApp, saved_window_sessions);
+            },
             () => !this._destroyed && mayRestoreApplications());
     }
 
@@ -352,9 +355,12 @@ export const MoveSession = class {
         }
     }
 
-    moveWindowByMetaWindow(metaWindow, saved_window_sessions, isCurrent = () => true) {
+    moveWindowByMetaWindow(metaWindow, saved_window_sessions, isCurrent = () => true, beforeMove = () => {}) {
         return compositorOperations.run(
-            () => this._moveWindowByMetaWindow(metaWindow, saved_window_sessions),
+            () => {
+                beforeMove();
+                return this._moveWindowByMetaWindow(metaWindow, saved_window_sessions);
+            },
             () => isCurrent() && this._isWindowUsable(metaWindow));
     }
 
@@ -614,8 +620,38 @@ export const MoveSession = class {
         let autoMoveInterestingWindows = [];
         const assignedWindows = new Set();
         const open_windows = shellApp.get_windows();
+        // A capture-scoped index avoids scanning every live window for every
+        // saved title. Never cache native objects across lifecycle events.
+        const byTitle = new Map();
+        const byClass = new Map();
+        const unknownClass = [];
+        const add = (index, key, position) => {
+            if (!index.has(key))
+                index.set(key, []);
+            index.get(key).push(position);
+        };
+        open_windows.forEach((window, position) => {
+            if (!this._isWindowUsable(window))
+                return;
+            add(byTitle, window.get_title(), position);
+            const wmClass = window.get_wm_class?.();
+            if (wmClass == null)
+                unknownClass.push(position);
+            else
+                add(byClass, wmClass, position);
+        });
         saved_window_sessions.forEach(saved_window_session => {
-            open_windows.forEach(open_window => {
+            const candidates = new Set(byTitle.get(saved_window_session.window_title) ?? []);
+            if (saved_window_session.windows_count === 1) {
+                for (const position of byClass.get(saved_window_session.wm_class) ?? [])
+                    candidates.add(position);
+                for (const position of unknownClass)
+                    candidates.add(position);
+            }
+            // Preserve the old first-match ordering and authoritative class /
+            // exact-title rules, including LibreOffice transitional classes.
+            [...candidates].sort((a, b) => a - b).forEach(position => {
+                const open_window = open_windows[position];
                 if (assignedWindows.has(open_window) || !this._isWindowUsable(open_window) ||
                     autoMoveInterestingWindows.some(item => item.saved_window_session === saved_window_session))
                     return;

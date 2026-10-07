@@ -30,7 +30,8 @@ adapters and offscreen Qt—not a production desktop or its real Recall vault.
   Counts reflect completed layout actions, not saved-window totals. Cancel
   stops remaining actions, not an app already launched or an active OS call.
   Default readiness is 15 seconds per app, capped internally at 30 seconds;
-  backend calls have their own timeouts. GNOME pacing remains unchanged.
+  backend calls have their own timeouts. GNOME native-operation pacing remains
+  unchanged; 3.5.31 ties launch spacing to actual requests, not reused windows.
 - OCR cancellation and a two-minute budget are checked between images.
   An active OCR job can take up to its existing 20-second timeout to return.
   Finished image results are saved; remaining images are deferred.
@@ -75,6 +76,15 @@ closed actors, changed monitors/workspaces, fullscreen/non-resizable windows,
 pair replacement, signal recursion, shutdown, native exceptions and disable/
 re-enable. It does not manipulate the live desktop or reproduce a native GPU
 hang.
+
+The 3.5.31 restore regressions use virtual time and fake applications/windows.
+They verify application grouping without record loss, bounded asynchronous
+reads with cancellation/order preservation, signal/timer cleanup, disposed-app
+handling, shared late-layout retries, unchanged-record retirement, cancellation
+during a late native result, eight-second spacing for app/document launches,
+and durable checkpoint refresh inside the compositor queue. Indexed matching
+is compared to the previous nested matcher across deterministic mixed-class/
+duplicate-title fixtures. These checks are not live-desktop latency benchmarks.
 
 Real Windows/macOS/KWin permissions, delayed applications and multi-monitor RSS
 still need native validation. These fixes do not prove the cause of historical
