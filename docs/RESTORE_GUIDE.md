@@ -1,6 +1,6 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.29.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.30.
 
 ## Portable restore outcomes
 
@@ -126,6 +126,16 @@ returns; JavaScript does not pretend a timed-out native operation has ended.
 Privacy and window-lifetime checks run again when queued work actually starts.
 This serializes SessionSifu's own operations, not every application's rendering
 or other GNOME extensions.
+
+Version 3.5.30 also routes paired-window resizing and raising
+through that queue. Resize bursts use the latest geometry rather than replaying
+each signal. Both windows must still be managed, paired together and on the same
+monitor/workspace at execution time. Invalid or crossed edges are rejected,
+valid geometry is clipped to the current work area, and closing a window,
+ending its grab or disabling/re-enabling the extension invalidates pending work.
+Recursion guards prevent paired raised/size-changed signals from feeding back.
+These checks do not prove immunity to a native Mutter or graphics-driver hang;
+a GLib watchdog cannot run while the Shell's own main thread is blocked.
 
 Since 3.5.22, native Recall capture is also suspended for the **whole restore**,
 including application readiness waits. Preview caching resumes after 2.5 seconds

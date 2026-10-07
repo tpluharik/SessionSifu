@@ -57,6 +57,7 @@ python3 tests/test_audit_regressions.py
 python3 tests/test_portable.py
 python3 tests/test_recall_engine.py
 node --experimental-vm-modules tests/compositor-operations-smoke.mjs
+node --experimental-vm-modules tests/window-tiling-safety-smoke.mjs
 # Install portable[gui] in an isolated environment for offscreen Qt coverage:
 python3 tests/test_qt_background.py
 ./packaging/build-deb.sh
@@ -68,6 +69,12 @@ deletions, KDE mixed IDs, absent/slow windows, document aggregation and cancella
 Qt checks cover GUI heartbeat during slow work, search error recovery, stale
 image suppression and sequential 16-window compression. The watchdog test
 withholds a callback and confirms no overlapping operation starts on timeout.
+The 3.5.30 tiling test runs the real tiling, geometry and queue methods with
+fake windows: crossed edges, offset/negative monitor origins, resize bursts,
+closed actors, changed monitors/workspaces, fullscreen/non-resizable windows,
+pair replacement, signal recursion, shutdown, native exceptions and disable/
+re-enable. It does not manipulate the live desktop or reproduce a native GPU
+hang.
 
 Real Windows/macOS/KWin permissions, delayed applications and multi-monitor RSS
 still need native validation. These fixes do not prove the cause of historical

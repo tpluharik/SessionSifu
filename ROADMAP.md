@@ -1,8 +1,16 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.5.29. It separates shipped
+This roadmap describes the product after version 3.5.30. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
+
+## Paired tiling safety — 3.5.30
+
+- Validate paired-window geometry, including negative/offset monitor origins.
+- Serialize paired resizing and raising through the shared compositor queue.
+- Reject stale/dead pairs and cancel requests across shutdown or disable/re-enable.
+- Guard recursive signals and coalesce repeated resize events; native compositor
+  and graphics-driver hang immunity remains outside the test evidence.
 
 ## Login restore reliability — 3.5.28–3.5.29
 

@@ -28,6 +28,28 @@ export function clampWindowGeometry(workArea, position) {
     };
 }
 
+// Preserve the partner's outside edge instead of treating screen coordinates
+// as widths. Crossed edges must never reach Mutter as negative dimensions.
+export function pairedWindowGeometry(workArea, grabbed, partner) {
+    const validRect = rect => rect &&
+        [rect.x, rect.y, rect.width, rect.height].every(Number.isSafeInteger) &&
+        rect.width > 0 && rect.height > 0 &&
+        rect.width <= 32768 && rect.height <= 32768 &&
+        rect.x >= -2147483648 && rect.y >= -2147483648 &&
+        rect.x + rect.width <= 2147483647 && rect.y + rect.height <= 2147483647;
+    if (![workArea, grabbed, partner].every(validRect))
+        return null;
+    const onLeft = grabbed.x < partner.x;
+    const left = Math.max(workArea.x, onLeft ? grabbed.x + grabbed.width : partner.x);
+    const right = Math.min(workArea.x + workArea.width,
+        onLeft ? partner.x + partner.width : grabbed.x);
+    const top = Math.max(workArea.y, partner.y);
+    const bottom = Math.min(workArea.y + workArea.height, partner.y + partner.height);
+    if (right <= left || bottom <= top)
+        return null;
+    return {x: left, y: top, width: right - left, height: bottom - top};
+}
+
 export function isWindowUsable(metaWindow, monitorCount = null) {
     try {
         if (!metaWindow || metaWindow._aboutToClose)

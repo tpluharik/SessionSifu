@@ -1,11 +1,11 @@
 {
-  "version": "3.5.29",
+  "version": "3.5.30",
   "channel": "stable",
-  "issued_at": "2026-10-07T03:59:08Z",
-  "expires_at": "2026-11-21T03:59:08Z",
+  "issued_at": "2026-10-07T14:41:05Z",
+  "expires_at": "2026-11-21T14:41:05Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.29_all.deb",
-  "sha256": "dbd7e2d53a18deed82186c6715d005e2098cfb584712a042aa16bb776835db8f",
-  "size": 3808312,
-  "notes": "SessionSifu 3.5.29 preserves recovery records during shutdown, fixes LibreOffice window-record migration and delayed layout matching, keeps automatic history during restoration, and includes the 3.5.28 autostart duplicate-launch fix."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.30_all.deb",
+  "sha256": "a09b2d5258e86e0755340138b4117af2bf22830f8d1fd82a2c273878a073b927",
+  "size": 3811492,
+  "notes": "SessionSifu 3.5.30 hardens paired window tiling: validates geometry, serializes resizing and raising, prevents recursive signals, and cancels stale work on window close, shutdown or extension disable. Includes the 3.5.29 recovery and 3.5.28 autostart fixes."
 }

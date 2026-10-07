@@ -2,6 +2,18 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.5.30
+
+- Validate paired tiling geometry against current work areas and reject crossed,
+  non-positive, non-finite and overflowing dimensions before native operations.
+- Serialize paired resizing and raising with other compositor work; coalesce
+  resize bursts and prevent recursive raised/size-changed signal feedback.
+- Recheck both window lifetimes, workspace/monitor membership and current pair
+  identity before execution. Cancel stale work on unmanaging, re-pairing, grab
+  completion, shutdown or extension disable/re-enable.
+- Add isolated tiling fault-injection regressions to the mandatory build checks.
+- Publish the Ed25519-signed GNOME in-app update and versioned release assets.
+
 ## 3.5.29
 
 - Preserve previous-desktop records during confirmed logout, reboot and power
