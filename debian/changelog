@@ -1,3 +1,11 @@
+sessionsifu (3.5.29-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Preserve recovery records and automatic history during shutdown/restore.
+  * Fix LibreOffice record migration, deduplication and delayed layout matching.
+  * Publish signed GNOME update including the autostart duplicate-launch fix.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Wed, 07 Oct 2026 06:00:00 +0200
+
 sessionsifu (3.5.28-1~ppa1~resolute1) resolute; urgency=medium
 
   * Prevent duplicate login launches for applications with XDG autostart.

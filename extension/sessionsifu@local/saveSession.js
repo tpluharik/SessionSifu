@@ -211,6 +211,11 @@ export const SaveSession = class {
                     const app = this._windowTracker.get_window_app(metaWindow);
                     if (!app) continue;
                     if (UiHelper.ignoreWindows(metaWindow)) continue;
+                    const processInfoMap = await processInfoPromise;
+                    if (cancellable?.is_cancelled()) continue;
+                    // LibreOffice can change WM_CLASS while process metadata
+                    // is being read. Derive the path and payload together only
+                    // after that asynchronous boundary.
                     const wmClass = metaWindow.get_wm_class();
                     if (!wmClass) continue;
 
@@ -225,7 +230,6 @@ export const SaveSession = class {
                         cancellable);
                     if (!canContinue) return;
 
-                    const processInfoMap = await processInfoPromise;
                     const processInfoArray = processInfoMap.get(metaWindow.get_pid());
                     this._setFieldsFromProcess(processInfoArray, sessionConfigObject);
 

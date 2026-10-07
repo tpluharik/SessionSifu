@@ -472,10 +472,18 @@ export const RestoreSession = class {
                 return [false, result[1]];
             // Readiness is not layout completion. Share the native-operation
             // queue with shown/title callbacks and Recall before retiring data.
-            if (!sessionConfig.moved &&
-                !await this._moveSession.moveWindowsByShellApp(app, [sessionConfig]) &&
-                !sessionConfig.moved)
-                return [false, result[1]];
+            const layoutDeadline = GLib.get_monotonic_time() + 10 * 1000000;
+            while (!sessionConfig.moved) {
+                if (await this._moveSession.moveWindowsByShellApp(app, [sessionConfig]) ||
+                    sessionConfig.moved)
+                    break;
+                if (GLib.get_monotonic_time() >= layoutDeadline) {
+                    this._log.warn(`Saved window layout did not become ready: ${id}; record retained`);
+                    return [false, result[1]];
+                }
+                if (!await this._waitBeforeNextRestore(1000, true))
+                    return [false, result[1]];
+            }
         }
         if (result[0]) {
             delete this._heldApplications[id.toLowerCase()];

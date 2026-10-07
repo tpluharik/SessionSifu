@@ -173,6 +173,11 @@ assert.equal((await restorer._restoreQueuedEntry({desktop_file_id: 'slow.desktop
 restorer._moveSession = {moveWindowsByShellApp: async () => false};
 assert.equal((await restorer._restoreQueuedEntry({desktop_file_id: 'unmatched.desktop'}))[0], false);
 
+let layoutAttempts = 0;
+restorer._moveSession = {moveWindowsByShellApp: async () => ++layoutAttempts === 3};
+assert.equal((await restorer._restoreQueuedEntry({desktop_file_id: 'late-layout.desktop'}))[0], true);
+assert.equal(layoutAttempts, 3, 'Wait for late document titles and WM_CLASS before retiring records');
+
 // Errors release the queue lock and keep an actionable failure status.
 ({restorer, state} = make());
 assert.equal(await restorer._runRestore(async () => { throw Error('test'); }, false), false);

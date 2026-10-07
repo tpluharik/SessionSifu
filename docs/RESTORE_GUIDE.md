@@ -1,6 +1,6 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.28.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.29.
 
 ## Portable restore outcomes
 
@@ -98,6 +98,11 @@ Successfully handled previous-session records are retired after the restore.
 Records that could not be handled remain available for another attempt. This
 prevents old successful entries from accumulating into a large duplicate launch
 burst on a later login. A record updated during recovery is not deleted.
+Version 3.5.29 also protects records throughout logout/reboot/power-off and
+cancels pending tracking saves. Automatic history waits while restoration is
+active. LibreOffice WM_CLASS transitions migrate one native-window record;
+layout matching accepts the same document title across Start Center and
+document classes and waits up to ten seconds for delayed window readiness.
 The queue records the application in flight before launching it. After an
 interruption, automatic recovery pauses for ten minutes and holds that specific
 application for 24 hours; other applications remain eligible at the next login.

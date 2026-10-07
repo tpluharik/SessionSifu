@@ -2,6 +2,19 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.5.29
+
+- Preserve previous-desktop records during confirmed logout, reboot and power
+  off, including logind shutdown requests; cancel pending tracking saves.
+- Register cleanup handlers once per window, migrate its record after WM_CLASS
+  changes, and delete only that window's record when it closes.
+- Deduplicate native window identities across changing titles/classes; match
+  LibreOffice document titles across Start Center/Calc/Impress transitions and
+  wait up to ten seconds for delayed layout readiness.
+- Defer automatic history snapshots during restoration and shutdown so partial
+  desktops do not displace useful recovery snapshots.
+- Publish the Ed25519-signed GNOME update, including the 3.5.28 autostart fix.
+
 ## 3.5.28
 
 - Prevent duplicate application launches during login restore by detecting

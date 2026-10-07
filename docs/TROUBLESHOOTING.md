@@ -2,7 +2,7 @@
 
 ## An application opens twice after login
 
-Update SessionSifu to 3.5.28. Automatic previous-desktop recovery now detects
+Update SessionSifu to 3.5.29. Automatic previous-desktop recovery now detects
 enabled XDG autostart entries and leaves those applications to the desktop
 login manager. Explicit manual restores can still launch them. If duplication
 continues, check for multiple differently named files in `~/.config/autostart`
@@ -352,11 +352,12 @@ origin, size and SHA-256. Never bypass a signature, expiry or rollback error.
 Versions 2.4 and older need one manual 2.5 package installation because they do
 not understand the signed update channel.
 
-The 3.5.27 signed channel was published in commit `0d97ed7` and expires on
-27 October 2026. A short GitHub raw-content cache delay can temporarily return
+The signed stable channel offers 3.5.29, including the 3.5.28 autostart fix and
+shutdown/LibreOffice recovery corrections. A source commit or version bump
+alone does not update this channel: the package, manifest and Ed25519 signature
+must be published together. A short GitHub raw-content cache delay can return
 the previous valid manifest immediately after publication; retry normally
-rather than bypassing verification. If 3.5.27 is still not offered afterward,
-compare the public manifest with the
+rather than bypassing verification. The historical 3.5.27 hashes remain in the
 [release verification record](RELEASE_3.5.27_VERIFICATION.md).
 
 ## Version 3.0.1 does not start after an in-app update

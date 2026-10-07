@@ -33,6 +33,11 @@ the tag workflow. It contains a separately built 3.5.27 Debian payload plus an
 expiring Ed25519-signed manifest. It is not an unrecorded replacement of the
 immutable GitHub Release asset; both hashes are documented explicitly.
 
+The current GNOME signed stable channel is 3.5.29. Its package, expiring
+manifest and Ed25519 signature are committed together in `updates/`. It
+includes the 3.5.28 login-autostart correction and 3.5.29 shutdown/LibreOffice
+recovery fixes; the existing 3.5.27 tag assets remain historical artifacts.
+
 The repository, release notes and issue tracker remain the authoritative links
 for every downstream package. Session and Privacy Recall data are never sent to
 a package store.

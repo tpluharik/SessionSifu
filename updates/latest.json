@@ -1,11 +1,11 @@
 {
-  "version": "3.5.27",
+  "version": "3.5.29",
   "channel": "stable",
-  "issued_at": "2026-09-12T07:17:47Z",
-  "expires_at": "2026-10-27T07:17:47Z",
+  "issued_at": "2026-10-07T03:59:08Z",
+  "expires_at": "2026-11-21T03:59:08Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.27_all.deb",
-  "sha256": "85564b1a0c9f2abd28598cfc2a8e3ef8271aa73c7c6815f7b888cb5b7d0236c2",
-  "size": 3803172,
-  "notes": "SessionSifu 3.5.27 unifies Save, Resume and Find, adds persistent portable window-placement rules, verified portable update downloads, broader browser/editor recognition, a reproducible synthetic benchmark, SPDX SBOM and build provenance."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.29_all.deb",
+  "sha256": "dbd7e2d53a18deed82186c6715d005e2098cfb584712a042aa16bb776835db8f",
+  "size": 3808312,
+  "notes": "SessionSifu 3.5.29 preserves recovery records during shutdown, fixes LibreOffice window-record migration and delayed layout matching, keeps automatic history during restoration, and includes the 3.5.28 autostart duplicate-launch fix."
 }

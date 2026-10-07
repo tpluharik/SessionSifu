@@ -416,11 +416,10 @@ export const MoveSession = class {
 
         for (const saved_window_session of saved_window_sessions) {
             const title = metaWindow.get_title();
-            const windows_count = saved_window_session.windows_count;
             const open_window_workspace_index = metaWindow.get_workspace().index();
             const desktop_number = saved_window_session.desktop_number;
 
-            if (windows_count === 1 || title === saved_window_session.window_title) {
+            if (this._matchesSavedWindow(metaWindow, saved_window_session)) {
                 if (open_window_workspace_index === desktop_number) {
                     if (this._log.isDebug()) {
                         const shellApp = this._windowTracker.get_window_app(metaWindow);
@@ -432,6 +431,20 @@ export const MoveSession = class {
             }
         }
         return null;
+    }
+
+    _matchesSavedWindow(window, saved) {
+        const currentClass = window.get_wm_class?.() ?? saved.wm_class;
+        const savedClass = saved.wm_class;
+        const compatibleClass = currentClass === savedClass ||
+            (/^libreoffice-(startcenter|writer|calc|impress|draw|base|math)$/i.test(currentClass ?? '') &&
+             /^libreoffice-(startcenter|writer|calc|impress|draw|base|math)$/i.test(savedClass ?? ''));
+        if (!compatibleClass)
+            return false;
+        const exactTitle = Boolean(saved.window_title) && window.get_title() === saved.window_title;
+        // Transitional LibreOffice classes are compatible only when the
+        // document title identifies the window; never assign a random sheet.
+        return exactTitle || (currentClass === savedClass && saved.windows_count === 1);
     }
 
     /**
@@ -606,25 +619,22 @@ export const MoveSession = class {
                 if (assignedWindows.has(open_window) || !this._isWindowUsable(open_window) ||
                     autoMoveInterestingWindows.some(item => item.saved_window_session === saved_window_session))
                     return;
-                if (open_window.get_wm_class() != saved_window_session.wm_class) {
+                if (!this._matchesSavedWindow(open_window, saved_window_session)) {
                     return;
                 }
 
                 const title = open_window.get_title();
-                const windows_count = saved_window_session.windows_count;
                 const open_window_workspace_index = open_window.get_workspace().index();
                 const desktop_number = saved_window_session.desktop_number;
 
-                if (windows_count === 1 || title === saved_window_session.window_title) {
-                    if (open_window_workspace_index === desktop_number) {
-                        this._log.debug(`The window '${title}' is already on workspace ${desktop_number} for ${shellApp.get_name()}`);
-                    }
-                    autoMoveInterestingWindows.push({
-                        open_window: open_window,
-                        saved_window_session: saved_window_session
-                    });
-                    assignedWindows.add(open_window);
+                if (open_window_workspace_index === desktop_number) {
+                    this._log.debug(`The window '${title}' is already on workspace ${desktop_number} for ${shellApp.get_name()}`);
                 }
+                autoMoveInterestingWindows.push({
+                    open_window: open_window,
+                    saved_window_session: saved_window_session
+                });
+                assignedWindows.add(open_window);
 
             });
 

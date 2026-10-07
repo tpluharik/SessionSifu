@@ -1,6 +1,6 @@
 """Shared SessionSifu desktop session engine."""
 
-VERSION = "3.5.28"
+VERSION = "3.5.29"
 SCHEMA_VERSION = 4
 
 __all__ = ["SCHEMA_VERSION", "VERSION"]

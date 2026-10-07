@@ -86,6 +86,19 @@ export const OpenWindowsTracker = class {
         this._windowsAboutToSaveSet = new Set();
         this._saveSessionByBatchTimeoutId = 0;
         this._windowsWithSaveSignals = new WeakSet();
+        this._windowSessionRecords = new WeakMap();
+
+        // Also cover reboots requested outside GNOME's confirmation dialog.
+        this._prepareShutdownId = Gio.DBus.system.signal_subscribe(
+            'org.freedesktop.login1', 'org.freedesktop.login1.Manager',
+            'PrepareForShutdown', '/org/freedesktop/login1', null,
+            Gio.DBusSignalFlags.NONE,
+            (_connection, _sender, _path, _interface, _signal, parameters) => {
+                if (parameters.deep_unpack()[0])
+                    this._beginShutdown();
+                else
+                    RuntimeSafety.cancelShutdown();
+            });
 
         this._confirmedLogoutId = 0;
         this._confirmedRebootId = 0;
@@ -308,6 +321,8 @@ export const OpenWindowsTracker = class {
 
     async _prepareToSaveWindowSession(window) {
         try {
+            if (!RuntimeSafety.mayRestoreApplications())
+                return;
             if (!this._settings.get_boolean('stash-and-restore-states')
                 && !this._settings.get_boolean('enable-restore-previous-session'))
                 return;
@@ -327,11 +342,15 @@ export const OpenWindowsTracker = class {
     }
 
     _saveWindowSessionPeriodically() {
+        if (!RuntimeSafety.mayRestoreApplications())
+            return;
         // One-shot debounce: sleeping desktops should not wake twice a second.
         if (this._saveSessionByBatchTimeoutId)
             return;
         this._saveSessionByBatchTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
             this._saveSessionByBatchTimeoutId = 0;
+            if (!RuntimeSafety.mayRestoreApplications())
+                return GLib.SOURCE_REMOVE;
             if (this._summaryAboutToSave) {
                 this._summaryAboutToSave = false;
                 this._saveSummary().then(() => {
@@ -383,12 +402,24 @@ export const OpenWindowsTracker = class {
 
     _connectSignalsToCleanUpSessionFile(window, sessionDirectory, sessionName) {
         try {
-            // Clean up while window is closing
+            const previous = this._windowSessionRecords.get(window);
+            const record = {sessionDirectory, sessionName};
+            this._windowSessionRecords.set(window, record);
+            if (previous) {
+                // A WM_CLASS change must not leave a second record for the
+                // same native window. Register closing callbacks only once.
+                if (previous.sessionDirectory !== sessionDirectory && this._mayCleanUp())
+                    FileUtils.removeFile(`${previous.sessionDirectory}/${previous.sessionName}`);
+                return;
+            }
 
             let unmanagingId = window.connect('unmanaging', () => {
                 window.disconnect(unmanagingId);
                 unmanagingId = 0;
-                this._cleanUpSessionFileByWindow(window, sessionDirectory, sessionName);
+                const current = this._windowSessionRecords.get(window);
+                if (current)
+                    this._cleanUpSessionFileByWindow(
+                        window, current.sessionDirectory, current.sessionName);
             });
             this._signals.push([unmanagingId, window]);
 
@@ -396,12 +427,14 @@ export const OpenWindowsTracker = class {
 
             const app = this._windowTracker.get_window_app(window);
             if (app) {
-                const appName = app.get_name();
                 let appId = app.connect('notify::state', app => {
                     if (app.state === Shell.AppState.STOPPED) {
                         app.disconnect(appId);
                         appId = 0;
-                        this._cleanUpSessionFileByApp(app, appName, window, sessionDirectory);
+                        const current = this._windowSessionRecords.get(window);
+                        if (current)
+                            this._cleanUpSessionFileByWindow(
+                                window, current.sessionDirectory, current.sessionName);
                     }
                 });
                 this._signals.push([appId, app]);
@@ -412,61 +445,24 @@ export const OpenWindowsTracker = class {
     }
 
     _cleanUpSessionFileByWindow(window, sessionDirectory, sessionName) {
-        if (!window || Autoclose.autocloseObject.sessionClosedByUser || this._meta_is_restarting) return;
+        if (!window || !this._mayCleanUp()) return;
 
         const sessionFilePath = `${sessionDirectory}/${sessionName}`;
         if (!GLib.file_test(sessionFilePath, GLib.FileTest.EXISTS)) return;
 
-        const app = this._windowTracker.get_window_app(window);
-
-        this._log.debug(`${window.get_title()}(${app?.get_name()}) was closed. Cleaning up its saved session files.`);
+        // A STOPPED window-backed Shell.App may already be disposed. Do not
+        // query its name or native window title from a teardown callback.
+        this._log.debug(`Cleaning up closed window record ${sessionName}`);
 
         FileUtils.removeFile(sessionFilePath);
-        this._removeOrphanSessionConfigs(app, sessionDirectory);
+        // Delete only the record belonging to this window. Sweeping the
+        // directory can erase other windows still waiting in a restore queue.
     }
 
-    _removeOrphanSessionConfigs(app, sessionDirectory) {
-        try {
-            if (!app) return;
-            if (!GLib.file_test(sessionDirectory, GLib.FileTest.EXISTS)) return;
-
-            this._log.debug(`Checking if ${app.get_name()} has orphan session configs`);
-
-            const sessionNames = new Set();
-            const windows = app.get_windows();
-            for (const metaWindow of windows) {
-                if (UiHelper.ignoreWindows(metaWindow)) continue;
-                sessionNames.add(`${MetaWindowUtils.getStableWindowId(metaWindow)}.json`);
-            }
-
-            FileUtils.listAllSessions(sessionDirectory, false, (file, info) => {
-                const filename = info.get_name();
-                const path = file.get_path();
-                if (!sessionNames.has(filename) && path && GLib.file_test(path, GLib.FileTest.EXISTS)) {
-                    FileUtils.removeFile(path);
-                }
-            });
-        } catch (e) {
-            this._log.error(e);
-        }
-    }
-
-    _cleanUpSessionFileByApp(app, appName, window, sessionDirectory) {
-        if (!app || Autoclose.autocloseObject.sessionClosedByUser || this._meta_is_restarting) return;
-
-        if (!GLib.file_test(sessionDirectory, GLib.FileTest.EXISTS)) return;
-
-        // If this app is window-backed, app.get_name() will cause gnome-shell to bail out, so we get
-        // the app name outside this function. (See: shell-app.c -> shell_app_get_name -> window_backed_app_get_window: g_assert (app->running_state->windows))
-        this._log.debug(`${appName} was closed. Cleaning up its saved session files.`);
-
-        FileUtils.removeFile(sessionDirectory, true);
-
-        const possibleOrphanFolder = `${FileUtils.current_session_path}/${window.get_wm_class_instance()}`;
-        if (GLib.file_test(possibleOrphanFolder, GLib.FileTest.EXISTS)) {
-            this._log.debug(`Removing orphan session folder ${possibleOrphanFolder}`)
-            FileUtils.removeFile(possibleOrphanFolder, true);
-        }
+    _mayCleanUp() {
+        return RuntimeSafety.mayRestoreApplications() &&
+            !Autoclose.autocloseObject.sessionClosedByUser &&
+            !this._meta_is_restarting && !RestoreSession.restoreSessionObject.activeRestorer;
     }
 
     _onNameAppearedGnomeShell() {
@@ -510,7 +506,7 @@ export const OpenWindowsTracker = class {
     }
 
     _onConfirmedLogout(proxy, sender) {
-        RuntimeSafety.beginShutdown();
+        this._beginShutdown();
         try {
             this._log.debug(`Resetting windows-mapping before logout.`);
             this._settings.set_string('windows-mapping', '{}');
@@ -520,13 +516,13 @@ export const OpenWindowsTracker = class {
     }
 
     _onConfirmedReboot(proxy, sender) {
-        RuntimeSafety.beginShutdown();
+        this._beginShutdown();
         this._log.debug(`Resetting windows-mapping before reboot.`);
         this._settings.set_string('windows-mapping', '{}');
     }
 
     _onConfirmedShutdown(proxy, sender) {
-        RuntimeSafety.beginShutdown();
+        this._beginShutdown();
         this._log.debug(`Resetting windows-mapping before shutdown.`);
         this._settings.set_string('windows-mapping', '{}');
 
@@ -604,6 +600,18 @@ export const OpenWindowsTracker = class {
 
     }
 
+    _beginShutdown() {
+        RuntimeSafety.beginShutdown();
+        this._cancelAllRunningSave();
+        this._saveSummaryCancellable?.cancel();
+        this._windowsAboutToSaveSet.clear();
+        this._summaryAboutToSave = false;
+        if (this._saveSessionByBatchTimeoutId) {
+            GLib.Source.remove(this._saveSessionByBatchTimeoutId);
+            this._saveSessionByBatchTimeoutId = 0;
+        }
+    }
+
     _cancelAllRunningSave() {
         if (!this._runningSaveCancelableMap) {
             return;
@@ -618,6 +626,10 @@ export const OpenWindowsTracker = class {
 
     destroy() {
         this._cancelAllRunningSave();
+        if (this._prepareShutdownId) {
+            Gio.DBus.system.signal_unsubscribe(this._prepareShutdownId);
+            this._prepareShutdownId = 0;
+        }
 
         this._moveSession?.destroy();
         this._moveSession = null;

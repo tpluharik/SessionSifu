@@ -16,7 +16,7 @@ SessionSifu preserves work continuity. **Save** named projects or automatic
 snapshots, **Resume** selected applications, documents and window layouts, and
 **Find** past context in an optional encrypted local visual timeline.
 
-Version 3.5.28 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
+Version 3.5.29 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
 encrypted, per-window OCR activity timeline across GNOME, Windows, macOS, KDE
 Plasma 6 and other Linux desktops. Czech and English OCR data ships with the
 installer and verified update. Recall previews support two-finger panning,
@@ -228,7 +228,7 @@ compatible GNOME release; SessionSifu never forces a desktop-shell upgrade.
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.5.28_all.deb
+sudo apt install ./dist/sessionsifu_3.5.29_all.deb
 ```
 
 After installation:
@@ -428,11 +428,12 @@ required to load a replaced GNOME Shell extension on Wayland.
 The Debian package remains the supported initial installation method because it
 provides SessionSifu's runtime dependencies.
 
-The signed stable channel currently serves 3.5.27 from commit `0d97ed7`. Its
+The signed stable channel serves 3.5.29, including shutdown-record protection,
+LibreOffice window migration and the 3.5.28 autostart duplicate-launch fix. Its
 Ed25519 manifest binds the package URL, version, validity period, byte size and
-SHA-256. The in-app package is built from the same 3.5.27 source but is a
-separate, later signed-channel artifact from the immutable tag-release Debian
-asset, so their byte hashes are intentionally documented separately.
+SHA-256. The historical 3.5.27 tag and its separately built in-app payload are
+documented in the release verification record; source pushes alone do not
+publish a new signed in-app update.
 
 Portable Windows, macOS and Linux builds can check the repository's latest
 GitHub Release and download the matching archive. The archive is bounded and
@@ -655,7 +656,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.5.28_all.deb
+dist/sessionsifu_3.5.29_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```

@@ -7,6 +7,8 @@ import * as FileUtils from './utils/fileUtils.js';
 import * as Log from './utils/log.js';
 import * as PowerPolicy from './powerPolicy.js';
 import * as SaveSession from './saveSession.js';
+import {mayRestoreApplications} from './runtimeSafety.js';
+import {restoreActivity} from './recallActivity.js';
 
 
 // Keep accepting legacy second-resolution names while ensuring that rapid
@@ -108,6 +110,8 @@ export const ContinuousSaver = class {
     }
 
     async saveNow(force = false) {
+        if (!mayRestoreApplications() || (!force && restoreActivity.saving))
+            return false;
         if (this._saving || (!force && !this._settings.get_boolean('continuous-save-enabled')))
             return false;
         this._saving = true;
@@ -116,6 +120,8 @@ export const ContinuousSaver = class {
             const saved = await this._saver.saveSessionAsync(
                 name, FileUtils.history_path, false, !force);
             if (!saved)
+                return false;
+            if (!mayRestoreApplications() || restoreActivity.saving)
                 return false;
             this._prune();
             return true;

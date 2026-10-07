@@ -162,6 +162,16 @@ export function interruptedRestoreApplications(raw, activeApplication, previousA
 }
 
 export function previousSessionIdentity(sessionConfig) {
+    const windowId = Number(sessionConfig?.window_id);
+    const pid = Number(sessionConfig?.pid);
+    if (Number.isSafeInteger(windowId) && windowId > 0 &&
+        Number.isSafeInteger(pid) && pid > 0 && sessionConfig?.process_create_time) {
+        // Native identity survives title, workspace and WM_CLASS changes.
+        // Process creation time prevents confusing IDs reused after reboot.
+        return JSON.stringify(['native-window', windowId, pid,
+            String(sessionConfig.process_create_time),
+            String(sessionConfig.client_machine_name ?? '')]);
+    }
     const application = String(
         sessionConfig?.desktop_file_id ?? sessionConfig?.app_name ?? '');
     const command = Array.isArray(sessionConfig?.cmd)

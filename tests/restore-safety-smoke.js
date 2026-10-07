@@ -51,6 +51,18 @@ if (deduplicated.entries.length !== 2 || deduplicated.duplicates.length !== 1)
 if (!deduplicated.entries.includes(newEntry) || !deduplicated.duplicates.includes(oldEntry))
     throw new Error('The newest duplicate previous-session window was not retained');
 
+const startCenter = {...original, window_id: 123, pid: 456,
+    process_create_time: '2026-10-07T03:43:29Z', wm_class: 'libreoffice-startcenter'};
+const calcWindow = {...startCenter, wm_class: 'libreoffice-calc', window_title: 'Sheet'};
+const nativePlan = deduplicatePreviousSessionEntries([
+    {sessionConfig: startCenter, modified: 1},
+    {sessionConfig: calcWindow, modified: 2},
+    {sessionConfig: {...calcWindow, window_id: 124}, modified: 2},
+]);
+if (nativePlan.entries.length !== 2 || nativePlan.duplicates.length !== 1 ||
+    nativePlan.entries[0].sessionConfig !== calcWindow)
+    throw new Error('WM_CLASS migration duplicated a native window or collapsed distinct windows');
+
 if (MIN_RESTORE_INTERVAL_MS < 1000 || WINDOW_RESTORE_INTERVAL_MS < 750 ||
     MAX_PREVIOUS_SESSION_WINDOWS > 32 ||
     MAX_AUTOMATIC_RESTORE_APPLICATIONS > 4 ||

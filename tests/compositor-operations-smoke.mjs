@@ -78,6 +78,16 @@ const saved = {windows_count: 1, window_title: 'test', desktop_number: 0};
 const win = {get_title: () => 'test', get_workspace: () => ({index: () => 0})};
 assert.equal(direct._getOneMatchedSavedWindow(win, [saved]), saved);
 assert.equal(saved.moved, undefined);
+direct._log.debug = () => {};
+const sheet = {wm_class: 'libreoffice-startcenter', window_title: 'Budget - LibreOffice Calc',
+    windows_count: 8, desktop_number: 0};
+const sheetWindow = {get_wm_class: () => 'libreoffice-calc',
+    get_title: () => sheet.window_title, get_workspace: () => ({index: () => 0})};
+assert.equal(direct._getOneMatchedSavedWindow(sheetWindow, [sheet]), sheet);
+assert.equal(direct._getAutoMoveInterestingWindows({get_windows: () => [sheetWindow],
+    get_name: () => 'LibreOffice'}, [sheet]).length, 1);
+assert.equal(direct._matchesSavedWindow({...sheetWindow, get_title: () => 'Other document'}, sheet), false);
+assert.equal(direct._matchesSavedWindow({...sheetWindow, get_wm_class: () => 'unrelated'}, sheet), false);
 console.log('Compositor serialization and layout regressions passed');
 
 const guarded = new CompositorOperations();
