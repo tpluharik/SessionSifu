@@ -1,11 +1,11 @@
 {
-  "version": "3.5.31",
+  "version": "3.5.32",
   "channel": "stable",
-  "issued_at": "2026-10-07T15:40:11Z",
-  "expires_at": "2026-11-21T15:40:11Z",
+  "issued_at": "2026-10-08T08:56:39Z",
+  "expires_at": "2026-11-22T08:56:39Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.31_all.deb",
-  "sha256": "85cd3157db4f6e17093a3dbb7343a7ef5916e2993bb7744f25ebd931e188e398",
-  "size": 3818326,
-  "notes": "SessionSifu 3.5.31 improves GNOME restore scheduling: groups application windows, avoids fresh-launch gaps for reused apps, wakes readiness on signals, shares bounded late-layout retries, and indexes exact window matches. Retains conservative launch and settle pacing, serialized compositor operations, crash checkpoints and unresolved records. Includes paired tiling, shutdown recovery and autostart fixes."
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.32_all.deb",
+  "sha256": "67dfd6a6d60b7e438cfb9dead72ef2418f9798a2103d2ba8631572b515ccddb4",
+  "size": 3819782,
+  "notes": "SessionSifu 3.5.32 adds layout restore safeguards: rechecks cancellation and window lifetime after asynchronous waits, invalidates stale geometry after monitor changes with a one-second quiet period, and requires observed unmaximization before resize within a two-second deadline. Keeps unresolved records, conservative launch pacing and serialized compositor operations. Includes preceding scheduling, tiling, recovery and autostart fixes. Isolated tests do not prove native Wayland stability."
 }

@@ -2,6 +2,20 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.5.32
+
+- Recheck restore validity and window lifetime after asynchronous monitor and
+  geometry waits; cancelled or superseded work cannot continue moving windows.
+- Preserve the minimum 500 ms unmaximize settle delay, then require observed
+  unmaximization before resizing. Abort after two seconds without retiring the
+  unresolved record instead of forcing geometry onto a still-maximized window.
+- Pause layout and paired tiling/raising for one second after the last monitor
+  change. Invalidate queued and in-flight layout generations on hotplug or
+  shutdown without pausing application launches or adding an idle polling timer.
+- Add isolated real-module/fake-window regressions to the Debian build gate.
+  These safeguards are not attribution of the 8 October session-wide logouts
+  and do not establish native Wayland stability.
+
 ## 3.5.31
 
 - Group named-session records by application and register expected windows

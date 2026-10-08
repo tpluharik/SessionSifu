@@ -16,7 +16,7 @@ SessionSifu preserves work continuity. **Save** named projects or automatic
 snapshots, **Resume** selected applications, documents and window layouts, and
 **Find** past context in an optional encrypted local visual timeline.
 
-Version 3.5.31 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
+Version 3.5.32 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
 encrypted, per-window OCR activity timeline across GNOME, Windows, macOS, KDE
 Plasma 6 and other Linux desktops. Czech and English OCR data ships with the
 installer and verified update. Recall previews support two-finger panning,
@@ -26,7 +26,13 @@ per-capture completeness, and redacts recognized private/protected contexts.
 Adaptive capture intervals reduce battery and electricity use, suspend visual
 Recall in low-power states, reuse unchanged OCR data and avoid unnecessary
 preview or hidden-interface refreshes.
-Version 3.5.31 improves GNOME restore scheduling: named restores group expected
+Version 3.5.32 guards layout work across asynchronous waits, invalidates stale
+requests on monitor changes and waits for observed unmaximization before resize.
+Monitor changes pause geometry and paired tiling for one second; unresolved
+records remain available when the two-second unmaximize deadline is reached.
+These isolated-tested safeguards do not establish native Wayland stability or
+attribute the reported 8 October session-wide logouts to SessionSifu.
+The release retains 3.5.31 GNOME restore scheduling: named restores group expected
 windows by application, running apps avoid fresh-launch gaps, readiness signals
 supplement polling, and unmatched layouts share a bounded final retry pass.
 Saved-record preparation uses bounded asynchronous reads and window matching
@@ -205,11 +211,11 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50 full integration
 
-Download `sessionsifu_3.5.31_all.deb` from the matching GitHub Release, or build it
+Download `sessionsifu_3.5.32_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_3.5.31_all.deb
+sudo apt install ./sessionsifu_3.5.32_all.deb
 ```
 
 The Ubuntu 26.04 PPA is active at `ppa:tpluharik77/sessionsifu` and its amd64
@@ -239,7 +245,7 @@ compatible GNOME release; SessionSifu never forces a desktop-shell upgrade.
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.5.31_all.deb
+sudo apt install ./dist/sessionsifu_3.5.32_all.deb
 ```
 
 After installation:
@@ -253,11 +259,11 @@ After installation:
 
 ### Windows, macOS, KDE and portable GNOME
 
-The 3.5.31 release workflow builds these self-contained portable artifacts:
+The 3.5.32 release workflow builds these self-contained portable artifacts:
 
-- `SessionSifu-3.5.31-macos-arm64.zip`;
-- `SessionSifu-3.5.31-macos-x64.zip`; and
-- `SessionSifu-3.5.31-linux-x64.tar.gz`.
+- `SessionSifu-3.5.32-macos-arm64.zip`;
+- `SessionSifu-3.5.32-macos-x64.zip`; and
+- `SessionSifu-3.5.32-linux-x64.tar.gz`.
 
 In 3.5.27, the Windows x64 build passed its tests, but its public archive was withheld
 because no production Authenticode certificate was available. SessionSifu does
@@ -441,7 +447,7 @@ required to load a replaced GNOME Shell extension on Wayland.
 The Debian package remains the supported initial installation method because it
 provides SessionSifu's runtime dependencies.
 
-The signed stable channel serves 3.5.31, including conservative restore scheduling,
+The signed stable channel serves 3.5.32, including conservative restore scheduling,
 paired tiling hardening,
 shutdown-record protection, LibreOffice window migration and the 3.5.28
 autostart duplicate-launch fix. Its
@@ -671,7 +677,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.5.31_all.deb
+dist/sessionsifu_3.5.32_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -729,7 +735,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Publishing and distribution](docs/PUBLISHING.md)
 - [Documentation index](docs/README.md)
 
-The current 3.5.31 release includes verified Czech and English fast Tesseract
+The current 3.5.32 release includes verified Czech and English fast Tesseract
 models in the Debian package, signed in-app update and portable artifacts. Mixed
 Czech/English desktop text therefore works without installing a separate
 language package, while recognition stays completely local. Recall search is

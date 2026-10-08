@@ -85,7 +85,10 @@ await tiling.link(name => {
 await tiling.evaluate();
 const {WindowTilingSupport: T} = tiling.namespace;
 const queue = modules['./compositorOperations.js'].namespace.compositorOperations;
-const {beginShutdown, cancelShutdown} = modules['./runtimeSafety.js'].namespace;
+const {beginShutdown, cancelShutdown, configureLayoutSafety, beginMonitorChange} =
+    modules['./runtimeSafety.js'].namespace;
+let now = 0;
+configureLayoutSafety(() => now);
 const {pairedWindowGeometry} = modules['./windowSafety.js'].namespace;
 const plain = value => JSON.parse(JSON.stringify(value));
 async function drain() {
@@ -108,6 +111,7 @@ function pair(a, b) {
 function freshPair(area) {
     if (T._settings) T.destroy();
     cancelShutdown();
+    configureLayoutSafety(() => now);
     settings.set('restore-window-tiling', true);
     settings.set('raise-windows-together', true);
     T.initialize();
@@ -208,6 +212,34 @@ for (const invalidate of [
     assert.equal(b.resizes.length, 0, 'Invalidated request touched the compositor');
 }
 console.log('Resize bursts coalesce; closed, stale, shutdown and disabled requests never run');
+
+// Hotplug invalidates native work even if monitor count/pair identity stay the
+// same and the queued operation starts after the quiet period has expired.
+for (const action of ['resize', 'raise']) {
+    ({a, b} = freshPair());
+    release = await blockQueue();
+    if (action === 'resize') {
+        T._grabOpBegin(display, a, 2);
+        a.rect.width = 1000;
+        a.emit('size-changed');
+    } else {
+        a.emit('raised');
+    }
+    beginMonitorChange();
+    now += 1000;
+    release();
+    await drain();
+    assert.equal(b.resizes.length + b.raises, 0, 'Pre-hotplug tiling work must remain invalid');
+}
+({a, b} = freshPair());
+beginMonitorChange();
+a.emit('raised');
+await drain();
+assert.equal(b.raises, 0, 'No paired raise during the monitor quiet period');
+now += 1000;
+a.emit('raised');
+await drain();
+assert.equal(b.raises, 1, 'Fresh paired work resumes after the quiet period');
 
 ({a, b} = freshPair());
 release = await blockQueue();

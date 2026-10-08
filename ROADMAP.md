@@ -1,8 +1,16 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.5.31. It separates shipped
+This roadmap describes the product after version 3.5.32. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
+
+## Layout restore safeguards — 3.5.32
+
+- Recheck cancellation and window lifetime after asynchronous layout waits.
+- Invalidate queued/in-flight geometry on monitor changes; wait one quiet second.
+- Require observed unmaximization before resize, with a two-second deadline.
+- Keep unresolved records, application-launch pacing and serial native operations.
+- Validate with isolated fake-window regressions; native Wayland stability remains unproven.
 
 ## Conservative restore scheduling — 3.5.31
 

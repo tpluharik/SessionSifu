@@ -19,7 +19,10 @@ import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/ex
 import * as Log from './utils/log.js';
 import * as FileUtils from './utils/fileUtils.js';
 import {prefsUtilsInit, prefsUtilsDestroy} from './utils/prefsUtils.js';
-import {beginShutdown, cancelShutdown, mayRestoreApplications} from './runtimeSafety.js';
+import {
+    beginShutdown, cancelShutdown, mayRestoreApplications,
+    configureLayoutSafety, beginMonitorChange,
+} from './runtimeSafety.js';
 import {restoreActivity} from './recallActivity.js';
 
 
@@ -49,6 +52,9 @@ export default class SessionSifuExtension extends Extension {
             }),
             source => GLib.Source.remove(source));
         cancelShutdown();
+        configureLayoutSafety(() => GLib.get_monotonic_time() / 1000);
+        this._monitorsChangedId = Main.layoutManager.connect(
+            'monitors-changed', () => beginMonitorChange());
         this._shutdownId = global.connect('shutdown', () => beginShutdown());
         // settings is needed by the initialization of some utils
         this._settings = this.getSettings('org.gnome.shell.extensions.sessionsifu');
@@ -161,6 +167,10 @@ export default class SessionSifuExtension extends Extension {
         }
         // Gate pending callbacks before destroying UI, settings or Meta objects.
         beginShutdown();
+        if (this._monitorsChangedId) {
+            Main.layoutManager.disconnect(this._monitorsChangedId);
+            this._monitorsChangedId = 0;
+        }
         if (this._shutdownId) {
             global.disconnect(this._shutdownId);
             this._shutdownId = 0;

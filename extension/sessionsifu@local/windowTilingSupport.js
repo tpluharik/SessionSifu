@@ -7,7 +7,7 @@ import GObject from 'gi://GObject';
 import * as Log from './utils/log.js';
 import {PrefsUtils} from './utils/prefsUtils.js';
 import {isWindowUsable, pairedWindowGeometry} from './windowSafety.js';
-import {mayRestoreApplications} from './runtimeSafety.js';
+import {layoutSafety, mayRestoreLayout} from './runtimeSafety.js';
 import {compositorOperations} from './compositorOperations.js';
 
 
@@ -64,7 +64,7 @@ export class WindowTilingSupport {
 
     static _isWindowUsable(window) {
         return !this._destroyed && Boolean(this._settings) &&
-            mayRestoreApplications() && isWindowUsable(window);
+            mayRestoreLayout() && isWindowUsable(window);
     }
 
     static _pairIsUsable(window, partner) {
@@ -89,8 +89,10 @@ export class WindowTilingSupport {
 
     static _queueOperation(operation, mayRun, finished) {
         const generation = this._generation;
+        const monitorGeneration = layoutSafety.generation;
         compositorOperations.run(operation, () =>
-            generation === this._generation && !this._destroyed && mayRun()).then(
+            generation === this._generation && !this._destroyed &&
+            mayRestoreLayout(monitorGeneration) && mayRun()).then(
             () => finished(), error => {
                 finished();
                 this._log?.error(error);

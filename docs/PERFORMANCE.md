@@ -1,5 +1,21 @@
 # Recall search performance
 
+## 3.5.32: layout safety hardening
+
+Layout guards remain valid across every asynchronous monitor/geometry wait.
+Monitor changes invalidate old work, including requests still in the shared
+compositor queue, and pause fresh layout and paired tiling/raising until one
+second after the last change. Launching applications remains permitted. The
+quiet period uses a monotonic clock and no recurring idle timer.
+
+Unmaximizing still has a minimum 500 ms settle delay. Geometry is applied only
+after the window reports that it is no longer maximized; a two-second deadline,
+cancellation, fullscreen transition, disappearance or monitor-generation change
+aborts that attempt. An unresolved restore record remains available for retry.
+This checks reported state, not a guarantee that all compositor animations have
+finished. Validation is isolated fault injection with fake windows, not live
+Wayland crash reproduction or a claim about the cause of the 8 October logouts.
+
 ## 3.5.31: conservative restore scheduling
 
 GNOME named restores group records by application and register the complete

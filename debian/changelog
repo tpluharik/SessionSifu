@@ -1,3 +1,12 @@
+sessionsifu (3.5.32-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Guard layout work across cancellation, window lifetime and monitor changes.
+  * Wait for observed unmaximization with a bounded two-second deadline.
+  * Keep unresolved recovery records and conservative native-operation pacing.
+  * Add isolated regressions and publish the Ed25519-signed GNOME update.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Thu, 08 Oct 2026 10:55:00 +0200
+
 sessionsifu (3.5.31-1~ppa1~resolute1) resolute; urgency=medium
 
   * Group named restores, reuse running apps and wake readiness on signals.

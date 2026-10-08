@@ -500,7 +500,8 @@ export const RestoreSession = class {
             const layoutDeadline = GLib.get_monotonic_time() + 10 * 1000000;
             while (!sessionConfig.moved) {
                 if (await this._moveSession.moveWindowsByShellApp(app, [sessionConfig],
-                    () => this._checkpointApplication(id)) ||
+                    () => this._checkpointApplication(id),
+                    () => !this._destroyed && mayRestoreApplications()) ||
                     sessionConfig.moved)
                     break;
                 if (deferLayout) {
@@ -566,7 +567,8 @@ export const RestoreSession = class {
                 try { running = app.get_state() === Shell.AppState.RUNNING; } catch (_error) {}
                 const handled = sessionConfig.moved || (running &&
                     await this._moveSession.moveWindowsByShellApp(app, [sessionConfig],
-                        () => this._checkpointApplication(sessionConfig.desktop_file_id ?? '')));
+                        () => this._checkpointApplication(sessionConfig.desktop_file_id ?? ''),
+                        () => !this._destroyed && mayRestoreApplications()));
                 if (this._destroyed || !mayRestoreApplications())
                     return;
                 if (handled) {
@@ -804,7 +806,8 @@ export const RestoreSession = class {
                     if (appWasStableRunning && restorableDocuments.length === 0) {
                         const movedExisting = await this._moveSession.moveWindowsByShellApp(
                             shell_app, [session_config_object],
-                            () => this._checkpointApplication(desktop_file_id));
+                            () => this._checkpointApplication(desktop_file_id),
+                            () => !this._destroyed && mayRestoreApplications());
                         if (!movedExisting && !session_config_object.moved) {
                             this._log.warn(
                                 `Waiting for a matching existing window for ${app_name}`);

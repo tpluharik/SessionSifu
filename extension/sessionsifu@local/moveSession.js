@@ -17,7 +17,7 @@ import {
     isValidWorkspaceIndex,
     isWindowUsable,
 } from './windowSafety.js';
-import {mayRestoreApplications} from './runtimeSafety.js';
+import {layoutSafety, mayRestoreLayout, mayRestoreApplications} from './runtimeSafety.js';
 import {WINDOW_RESTORE_INTERVAL_MS} from './restoreSafety.js';
 import {compositorOperations} from './compositorOperations.js';
 
@@ -39,8 +39,17 @@ export const MoveSession = class {
     }
 
     _isWindowUsable(metaWindow) {
-        return !this._destroyed && mayRestoreApplications() &&
+        return !this._destroyed && mayRestoreLayout() &&
             !this._cancelledWindows.has(metaWindow) && isWindowUsable(metaWindow);
+    }
+
+    _layoutGuard(isCurrent = () => true) {
+        const generation = layoutSafety.generation;
+        return () => !this._destroyed && mayRestoreLayout(generation) && isCurrent();
+    }
+
+    _canMove(metaWindow, isCurrent = () => true) {
+        return isCurrent() && this._isWindowUsable(metaWindow);
     }
 
     cancelWindow(metaWindow) {
@@ -104,16 +113,17 @@ export const MoveSession = class {
         }
     }
 
-    moveWindowsByShellApp(shellApp, saved_window_sessions, beforeMove = () => {}) {
+    moveWindowsByShellApp(shellApp, saved_window_sessions, beforeMove = () => {}, isCurrent = () => true) {
+        const mayMove = this._layoutGuard(isCurrent);
         return compositorOperations.run(
             () => {
                 beforeMove();
-                return this._moveWindowsByShellApp(shellApp, saved_window_sessions);
+                return this._moveWindowsByShellApp(shellApp, saved_window_sessions, mayMove);
             },
-            () => !this._destroyed && mayRestoreApplications());
+            mayMove);
     }
 
-    async _moveWindowsByShellApp(shellApp, saved_window_sessions) {
+    async _moveWindowsByShellApp(shellApp, saved_window_sessions, isCurrent = () => true) {
         try {
             const interestingWindows = this._getAutoMoveInterestingWindows(shellApp, saved_window_sessions);
 
@@ -124,7 +134,7 @@ export const MoveSession = class {
             let restoredAny = false;
             for (const interestingWindow of interestingWindows) {
                 const metaWindow = interestingWindow.open_window;
-                if (UiHelper.ignoreWindows(metaWindow) || !this._isWindowUsable(metaWindow))
+                if (!this._canMove(metaWindow, isCurrent) || UiHelper.ignoreWindows(metaWindow))
                     continue;
 
                 const saved_window_session = interestingWindow.saved_window_session;
@@ -134,9 +144,10 @@ export const MoveSession = class {
                 const desktop_number = saved_window_session.desktop_number;
 
                 try {
-                    if (!await this._restoreWindowStates(metaWindow, saved_window_session))
+                    if (!await this._restoreWindowStates(metaWindow, saved_window_session, false, isCurrent) ||
+                        !this._canMove(metaWindow, isCurrent))
                         continue;
-                    if (!this._createEnoughWorkspace(desktop_number))
+                    if (!this._createEnoughWorkspace(desktop_number, isCurrent))
                         continue;
 
                     // Sticky windows don't need moving, in fact moving would unstick them
@@ -146,7 +157,7 @@ export const MoveSession = class {
                         this._log.debug(`The window '${shellApp.get_name()} - ${title}' is already sticky on workspace ${desktop_number}`);
                     } else {
                         this._log.debug(`Auto move ${shellApp.get_name()} - ${title} to workspace ${desktop_number} from ${metaWindow.get_workspace().index()}`);
-                        if (!this._changeWorkspace(metaWindow, desktop_number))
+                        if (!this._changeWorkspace(metaWindow, desktop_number, isCurrent))
                             continue;
                     }
 
@@ -156,6 +167,8 @@ export const MoveSession = class {
                     this._log?.error(e, `Failed to move window ${title} for ${shellApp.get_name()} automatically`);
                     continue;
                 }
+                if (!this._canMove(metaWindow, isCurrent))
+                    return restoredAny;
                 saved_window_session.moved = true;
                 restoredAny = true;
                 if (!await this._waitForCompositor())
@@ -169,8 +182,8 @@ export const MoveSession = class {
     }
 
     // Inspired by https://github.com/Leleat/Tiling-Assistant/blob/main/tiling-assistant%40leleat-on-github/src/extension/resizeHandler.js
-    _restoreTiling(metaWindow, saved_window_session) {
-        if (!this._isWindowUsable(metaWindow))
+    _restoreTiling(metaWindow, saved_window_session, isCurrent = () => true) {
+        if (!this._canMove(metaWindow, isCurrent))
             return false;
         WindowTilingSupport.prepareToTile(metaWindow, saved_window_session.window_tiling);
         return true;
@@ -183,8 +196,8 @@ export const MoveSession = class {
      *
      * @see https://gitlab.gnome.org/GNOME/gnome-shell/-/blob/gnome-41/js/ui/workspace.js#L1497
      */
-    async _restoreMonitor(metaWindow, saved_window_session) {
-        if (!this._isWindowUsable(metaWindow))
+    async _restoreMonitor(metaWindow, saved_window_session, isCurrent = () => true) {
+        if (!this._canMove(metaWindow, isCurrent))
             return null;
         const currentMonitorIndex = metaWindow.get_monitor();
         // -1 if the window has been recently unmanaged and does not have a monitor
@@ -292,17 +305,22 @@ export const MoveSession = class {
                 displayId = global.display.connect('window-entered-monitor',
                     (dsp, num, w) => {
                         if (w === metaWindow && num === toMonitorIndex)
-                            finish(this._isWindowUsable(metaWindow) ? metaWindow : null);
+                            finish(this._canMove(metaWindow, isCurrent) ? metaWindow : null);
                     });
                 unmanagingId = metaWindow.connect('unmanaging', () => finish(null));
                 timeoutId = GLib.timeout_add(GLib.PRIORITY_LOW, 1000, () => {
                     timeoutId = 0;
-                    finish(this._isWindowUsable(metaWindow) &&
+                    finish(this._canMove(metaWindow, isCurrent) &&
                         metaWindow.get_monitor() === toMonitorIndex ? metaWindow : null);
                     return GLib.SOURCE_REMOVE;
                 });
                 this._pendingMonitorWaits.set(metaWindow, finish);
                 try {
+                    if (!this._canMove(metaWindow, isCurrent) ||
+                        toMonitorIndex < 0 || toMonitorIndex >= global.display.get_n_monitors()) {
+                        finish(null);
+                        return;
+                    }
                     metaWindow.move_to_monitor(toMonitorIndex);
                 } catch (error) {
                     finish(null);
@@ -315,14 +333,15 @@ export const MoveSession = class {
     }
 
     createEnoughWorkspaceAndMoveWindows(metaWindow, saved_window_sessions) {
+        const mayMove = this._layoutGuard();
         return compositorOperations.run(
-            () => this._createEnoughWorkspaceAndMoveWindows(metaWindow, saved_window_sessions),
-            () => this._isWindowUsable(metaWindow));
+            () => this._createEnoughWorkspaceAndMoveWindows(metaWindow, saved_window_sessions, mayMove),
+            () => this._canMove(metaWindow, mayMove));
     }
 
-    async _createEnoughWorkspaceAndMoveWindows(metaWindow, saved_window_sessions) {
+    async _createEnoughWorkspaceAndMoveWindows(metaWindow, saved_window_sessions, isCurrent = () => true) {
         try {
-            if (UiHelper.ignoreWindows(metaWindow) || !this._isWindowUsable(metaWindow))
+            if (!this._canMove(metaWindow, isCurrent) || UiHelper.ignoreWindows(metaWindow))
                 return null;
 
             const saved_window_session = this._getOneMatchedSavedWindow(metaWindow, saved_window_sessions);
@@ -331,42 +350,43 @@ export const MoveSession = class {
             }
 
             if (saved_window_session.moved) {
-                return await this._restoreWindowStates(metaWindow, saved_window_session)
+                return await this._restoreWindowStates(metaWindow, saved_window_session, false, isCurrent)
                     ? saved_window_session
                     : null;
             }
 
-            if (!await this._restoreMonitor(metaWindow, saved_window_session) ||
-                !this._isWindowUsable(metaWindow))
+            if (!await this._restoreMonitor(metaWindow, saved_window_session, isCurrent) ||
+                !this._canMove(metaWindow, isCurrent))
                 return null;
 
             const desktop_number = saved_window_session.desktop_number;
-            if (!this._createEnoughWorkspace(desktop_number))
+            if (!this._createEnoughWorkspace(desktop_number, isCurrent))
                 return null;
             if (this._log.isDebug()) {
                 const shellApp = this._windowTracker.get_window_app(metaWindow);
                 this._log.debug(`CEWM: Moving ${shellApp?.get_name()} - ${metaWindow.get_title()} to workspace ${desktop_number} from ${metaWindow.get_workspace().index()}`);
             }
-            if (!this._changeWorkspace(metaWindow, desktop_number))
+            if (!this._changeWorkspace(metaWindow, desktop_number, isCurrent))
                 return null;
             return saved_window_session;
         } catch (error) {
-            this._log.error(error, metaWindow ? metaWindow.get_title() : 'This window may be destroyed.');
+            this._log?.error(error, 'Window disappeared while preparing its workspace');
         }
     }
 
     moveWindowByMetaWindow(metaWindow, saved_window_sessions, isCurrent = () => true, beforeMove = () => {}) {
+        const mayMove = this._layoutGuard(isCurrent);
         return compositorOperations.run(
             () => {
                 beforeMove();
-                return this._moveWindowByMetaWindow(metaWindow, saved_window_sessions);
+                return this._moveWindowByMetaWindow(metaWindow, saved_window_sessions, mayMove);
             },
-            () => isCurrent() && this._isWindowUsable(metaWindow));
+            () => this._canMove(metaWindow, mayMove));
     }
 
-    async _moveWindowByMetaWindow(metaWindow, saved_window_sessions) {
+    async _moveWindowByMetaWindow(metaWindow, saved_window_sessions, isCurrent = () => true) {
         try {
-            if (UiHelper.ignoreWindows(metaWindow) || !this._isWindowUsable(metaWindow))
+            if (!this._canMove(metaWindow, isCurrent) || UiHelper.ignoreWindows(metaWindow))
                 return false;
 
             const saved_window_session = this._getOneMatchedSavedWindow(metaWindow, saved_window_sessions);
@@ -375,14 +395,15 @@ export const MoveSession = class {
             }
 
             if (saved_window_session.moved) {
-                return await this._restoreWindowStates(metaWindow, saved_window_session);
+                return await this._restoreWindowStates(metaWindow, saved_window_session, false, isCurrent);
             } else {
-                if (!await this._restoreWindowStates(metaWindow, saved_window_session))
+                if (!await this._restoreWindowStates(metaWindow, saved_window_session, false, isCurrent) ||
+                    !this._canMove(metaWindow, isCurrent))
                     return false;
                 const desktop_number = saved_window_session.desktop_number;
                 // It's necessary to move window again to ensure an app goes to its own workspace.
                 // In a sort of situation, some apps probably just don't want to move when call createEnoughWorkspaceAndMoveWindows() from `Meta.Display::window-created` signal.
-                if (!this._createEnoughWorkspace(desktop_number))
+                if (!this._createEnoughWorkspace(desktop_number, isCurrent))
                     return false;
                 const shellApp = this._windowTracker.get_window_app(metaWindow);
                 const is_sticky = saved_window_session.window_state.is_sticky;
@@ -390,20 +411,24 @@ export const MoveSession = class {
                     this._log.debug(`The window '${shellApp.get_name()} - ${metaWindow.get_title()}' is already sticky on workspace ${desktop_number}`);
                 } else {
                     this._log.debug(`MWMW: Moving ${shellApp?.get_name()} - ${metaWindow.get_title()} to workspace ${desktop_number} from ${metaWindow.get_workspace().index()}`);
-                    if (!this._changeWorkspace(metaWindow, desktop_number))
+                    if (!this._changeWorkspace(metaWindow, desktop_number, isCurrent))
                         return false;
                 }
+                if (!this._canMove(metaWindow, isCurrent))
+                    return false;
                 saved_window_session.moved = true;
                 return true;
             }
         } catch (error) {
-            this._log.error(error, metaWindow ? metaWindow.get_title() : 'This window may be destroyed.');
+            this._log?.error(error, 'Window disappeared during layout restore');
             return false;
         }
     }
 
-    _changeWorkspace(metaWindow, desktop_number) {
-        if (!this._isWindowUsable(metaWindow) || !isValidWorkspaceIndex(desktop_number) ||
+    _changeWorkspace(metaWindow, desktop_number, isCurrent = () => true) {
+        if (!this._canMove(metaWindow, isCurrent))
+            return false;
+        if (!isValidWorkspaceIndex(desktop_number) ||
             desktop_number >= global.workspace_manager.n_workspaces)
             return false;
         if (metaWindow.get_workspace().index() === desktop_number)
@@ -412,7 +437,7 @@ export const MoveSession = class {
         // Restoration must never follow focus across workspaces. Activating each
         // newly launched window while several clients are mapping creates a
         // compositor-level focus/workspace storm on Wayland.
-        return this._isWindowUsable(metaWindow);
+        return this._canMove(metaWindow, isCurrent);
     }
 
     _getOneMatchedSavedWindow(metaWindow, saved_window_sessions) {
@@ -461,28 +486,29 @@ export const MoveSession = class {
      *
      * @see https://help.gnome.org/users/gnome-help/stable/shell-windows-maximize.html.en
      */
-    async _restoreWindowStates(metaWindow, saved_window_session, markToMoved = false) {
+    async _restoreWindowStates(metaWindow, saved_window_session, markToMoved = false, isCurrent = () => true) {
         try {
-            if (UiHelper.ignoreWindows(metaWindow) || !this._isWindowUsable(metaWindow))
+            if (!this._canMove(metaWindow, isCurrent) || UiHelper.ignoreWindows(metaWindow))
                 return false;
 
-            if (!await this._restoreMonitor(metaWindow, saved_window_session) ||
-                !this._restoreWindowState(metaWindow, saved_window_session) ||
-                !await this._restoreWindowGeometry(metaWindow, saved_window_session) ||
-                !this._restoreTiling(metaWindow, saved_window_session))
+            if (!await this._restoreMonitor(metaWindow, saved_window_session, isCurrent) ||
+                !this._restoreWindowState(metaWindow, saved_window_session, isCurrent) ||
+                !await this._restoreWindowGeometry(metaWindow, saved_window_session, isCurrent) ||
+                !this._restoreTiling(metaWindow, saved_window_session, isCurrent) ||
+                !this._canMove(metaWindow, isCurrent))
                 return false;
             if (markToMoved) {
                 saved_window_session.moved = true;
             }
             return true;
         } catch (error) {
-            this._log.error(error, metaWindow ? metaWindow.get_title() : 'This window may be destroyed.');
+            this._log?.error(error, 'Window disappeared while restoring its state');
             return false;
         }
     }
 
-    _restoreWindowState(metaWindow, saved_window_session) {
-        if (!this._isWindowUsable(metaWindow) || !saved_window_session?.window_state)
+    _restoreWindowState(metaWindow, saved_window_session, isCurrent = () => true) {
+        if (!this._canMove(metaWindow, isCurrent) || !saved_window_session?.window_state)
             return false;
         // window state
         const window_state = saved_window_session.window_state;
@@ -492,12 +518,17 @@ export const MoveSession = class {
                 metaWindow.make_above();
             }
         }
+        if (!this._canMove(metaWindow, isCurrent))
+            return false;
         if (window_state.is_sticky) {
             if (!metaWindow.is_on_all_workspaces()) {
                 this._log.debug(`Making ${metaWindow.get_title()} sticky`);
                 metaWindow.stick();
             }
         }
+
+        if (!this._canMove(metaWindow, isCurrent))
+            return false;
 
         const savedMetaMaximized = window_state.meta_maximized;
         if (shellVersion >= 49) {
@@ -520,17 +551,17 @@ export const MoveSession = class {
             }
         }
 
-        return this._isWindowUsable(metaWindow);
+        return this._canMove(metaWindow, isCurrent);
     }
 
     /**
      * @see https://help.gnome.org/users/gnome-help/stable/shell-windows-maximize.html.en
      */
-    async _restoreWindowGeometry(metaWindow, saved_window_session) {
-        if (!this._isWindowUsable(metaWindow) || !saved_window_session?.window_state)
+    async _restoreWindowGeometry(metaWindow, saved_window_session, isCurrent = () => true) {
+        if (!this._canMove(metaWindow, isCurrent) || !saved_window_session?.window_state)
             return false;
         if (metaWindow.is_fullscreen?.() || saved_window_session.fullscreen)
-            return this._isWindowUsable(metaWindow);
+            return this._canMove(metaWindow, isCurrent);
         let delay = false;
         const window_state = saved_window_session.window_state;
         const savedMetaMaximized = window_state.meta_maximized;
@@ -538,7 +569,7 @@ export const MoveSession = class {
         // reject or crash on move_resize_frame() while maximization is being
         // applied, so geometry is restored only for non-maximized windows.
         if (savedMetaMaximized)
-            return this._isWindowUsable(metaWindow);
+            return this._canMove(metaWindow, isCurrent);
         if (shellVersion >= 49) {
             if (!savedMetaMaximized) {
                 // It can't be resized if current window is in maximum mode, including vertically maximization along the left and right sides of the screen
@@ -555,36 +586,56 @@ export const MoveSession = class {
                 const currentMetaMaximized = metaWindow.get_maximized();
                 if (currentMetaMaximized) {
                     metaWindow.unmaximize(currentMetaMaximized);
-                    if (currentMetaMaximized !== Meta.MaximizeFlags.BOTH) {
-                        delay = true;
-                    }
+                    delay = true;
                 }
             }
         }
 
         if (delay) {
-            // Upstream fix: https://github.com/nlpsuge/gnome-shell-extension-another-window-session-manager/issues/25
-            // TODO Note that this is not a perfect solution to address the above issue.
+            // Keep the minimum animation settle delay, but require observed
+            // unmaximization before resizing. Never force a native resize when
+            // Mutter has not settled within the two-second budget.
             return new Promise(resolve => {
                 const previous = this._pendingGeometryRestores.get(metaWindow);
                 if (previous) {
                     GLib.Source.remove(previous.sourceId);
                     previous.resolve(false);
                 }
-                const sourceId = GLib.timeout_add(GLib.PRIORITY_LOW, 500, () => {
+                const deadline = GLib.get_monotonic_time() + 2 * 1000000;
+                const finish = result => {
                     this._pendingGeometryRestores.delete(metaWindow);
-                    resolve(this._moveResizeFrame(metaWindow, saved_window_session));
+                    resolve(result);
                     return GLib.SOURCE_REMOVE;
+                };
+                const sourceId = GLib.timeout_add(GLib.PRIORITY_LOW, 500, () => {
+                    try {
+                        if (!this._canMove(metaWindow, isCurrent) || metaWindow.is_fullscreen?.())
+                            return finish(false);
+                        if (GLib.get_monotonic_time() >= deadline)
+                            return finish(false);
+                        if (this._windowIsMaximized(metaWindow)) {
+                            return GLib.SOURCE_CONTINUE;
+                        }
+                        return finish(this._moveResizeFrame(metaWindow, saved_window_session, isCurrent));
+                    } catch (error) {
+                        this._log?.error(error, 'Window did not settle before geometry restore');
+                        return finish(false);
+                    }
                 });
                 this._pendingGeometryRestores.set(metaWindow, {sourceId, resolve});
             });
         } else {
-            return this._moveResizeFrame(metaWindow, saved_window_session);
+            return this._moveResizeFrame(metaWindow, saved_window_session, isCurrent);
         }
     }
 
-    _moveResizeFrame(metaWindow, saved_window_session) {
-        if (!this._isWindowUsable(metaWindow))
+    _windowIsMaximized(metaWindow) {
+        return shellVersion >= 49 ? metaWindow.is_maximized() : Boolean(metaWindow.get_maximized());
+    }
+
+    _moveResizeFrame(metaWindow, saved_window_session, isCurrent = () => true) {
+        if (!this._canMove(metaWindow, isCurrent) || this._windowIsMaximized(metaWindow) ||
+            metaWindow.is_fullscreen?.())
             return false;
         const window_position = saved_window_session.window_position;
         if (window_position?.provider === 'Meta') {
@@ -599,11 +650,11 @@ export const MoveSession = class {
             // For more info about the below issue see also: https://github.com/Leleat/Tiling-Assistant/blob/1e4176a9a7037ee5dd0612e4c9f9dbe45d4e67cf/tiling-assistant%40leleat-on-github/src/extension/tilingWindowManager.js#L186-L199
 
             const geometry = clampWindowGeometry(rectWorkArea, window_position);
-            if (!geometry)
+            if (!geometry || !this._canMove(metaWindow, isCurrent))
                 return false;
             metaWindow.move_resize_frame(
                 false, geometry.x, geometry.y, geometry.width, geometry.height);
-            return this._isWindowUsable(metaWindow);
+            return this._canMove(metaWindow, isCurrent);
         }
         return true;
     }
@@ -679,8 +730,9 @@ export const MoveSession = class {
         return autoMoveInterestingWindows;
     }
 
-    _createEnoughWorkspace(workspaceNumber) {
-        if (!isValidWorkspaceIndex(workspaceNumber))
+    _createEnoughWorkspace(workspaceNumber, isCurrent = () => true) {
+        const mayCreate = () => !this._destroyed && mayRestoreLayout() && isCurrent();
+        if (!mayCreate() || !isValidWorkspaceIndex(workspaceNumber))
             return false;
         let workspaceManager = global.workspace_manager;
 
@@ -691,6 +743,8 @@ export const MoveSession = class {
 
         // First, make all existing workspaces persistent
         for (let i = 0; i <= workspaceManager.n_workspaces - 1; i++) {
+            if (!mayCreate())
+                return false;
             let workspace = workspaceManager.get_workspace_by_index(i);
             if (!workspace._keepAliveId) {
                 workspace._keepAliveId = true;
@@ -700,7 +754,11 @@ export const MoveSession = class {
         // Second, make all newly added workspaces persistent, so they can not removed due to it does not contain any windows
         // And keep the last one non-persistent
         for (let i = workspaceManager.n_workspaces; i <= workspaceNumber; i++) {
+            if (!mayCreate())
+                return false;
             workspaceManager.append_new_workspace(false, 0);
+            if (!mayCreate())
+                return false;
             workspaceManager.get_workspace_by_index(i)._keepAliveId = true;
         }
         return workspaceManager.n_workspaces >= workspaceNumber + 1;

@@ -9,6 +9,10 @@ const queueModule = new vm.SourceTextModule(
 await queueModule.link(() => { throw Error('Unexpected dependency'); });
 await queueModule.evaluate();
 const {CompositorOperations, compositorOperations} = queueModule.namespace;
+const runtimeModule = new vm.SourceTextModule(
+    await readFile(new URL('runtimeSafety.js', base), 'utf8'), {context});
+await runtimeModule.link(() => { throw Error('Unexpected dependency'); });
+await runtimeModule.evaluate();
 const queue = new CompositorOperations();
 const order = [];
 let release;
@@ -33,6 +37,7 @@ const source = new vm.SourceTextModule(
     await readFile(new URL('moveSession.js', base), 'utf8'), {context});
 await source.link(async name => {
     if (name === './compositorOperations.js') return queueModule;
+    if (name === './runtimeSafety.js') return runtimeModule;
     const exports = name === './runtimeSafety.js' ? {mayRestoreApplications: () => true}
         : name === './restoreSafety.js' ? {WINDOW_RESTORE_INTERVAL_MS: 750}
         : name === './windowSafety.js' ? {clampWindowGeometry() {}, isValidWorkspaceIndex: () => true,

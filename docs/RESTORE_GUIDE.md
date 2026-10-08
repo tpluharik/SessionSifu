@@ -1,6 +1,15 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.31.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.32.
+
+### Layout safeguards in 3.5.32
+
+Cancellation and window lifetime are rechecked after asynchronous layout waits.
+Monitor changes invalidate older geometry requests and pause new layout/paired
+tiling for one second after the last change, without pausing app launches.
+Unmaximize retains its minimum 500 ms settle delay and must be observed complete
+within two seconds before resizing; unresolved records remain available for retry.
+These checks do not establish immunity to native compositor or driver hangs.
 
 ### Conservative scheduling in 3.5.31
 
