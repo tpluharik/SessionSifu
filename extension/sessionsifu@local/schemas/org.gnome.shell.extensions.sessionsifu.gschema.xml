@@ -103,6 +103,11 @@
       <default>''</default>
       <summary>Latest restore progress or recovery result</summary>
     </key>
+    <key name='restore-record-ledger' type="s">
+      <default>'{}'</default>
+      <summary>Hashed recovery records excluded from automatic document replay</summary>
+      <description>Superseded and already requested records remain available for explicit manual recovery. No document paths are stored in this ledger.</description>
+    </key>
     <key name='restore-at-startup-without-asking' type="b">
       <default>false</default>
       <summary>Restore at startup without asking</summary>

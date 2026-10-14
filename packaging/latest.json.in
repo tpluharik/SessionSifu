@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "SessionSifu 3.5.32 adds layout restore safeguards: rechecks cancellation and window lifetime after asynchronous waits, invalidates stale geometry after monitor changes with a one-second quiet period, and requires observed unmaximization before resize within a two-second deadline. Keeps unresolved records, conservative launch pacing and serialized compositor operations. Includes preceding scheduling, tiling, recovery and autostart fixes. Isolated tests do not prove native Wayland stability."
+  "notes": "SessionSifu 3.5.33 fixes GNOME LibreOffice document replay: per-window file ownership instead of historical process arguments, capture generations and durable manual-only recovery records, cross-queue/suite document deduplication, and deferred close cleanup. Original old records are privately archived and remain explicitly recoverable. Accepted document opens are distinguished from pending placement. Conservative native-operation pacing and shutdown protection are unchanged. Isolated tests do not establish native desktop stability."
 }

@@ -2,17 +2,19 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
+import {createHash} from 'node:crypto';
 
 const base = new URL('../extension/sessionsifu@local/', import.meta.url);
 let now = 0;
 let safe = true;
 let files = [];
 const removed = [];
+const recoveryArchives = new Map();
 let restoreBusy = 0;
 const timers = new Map();
 let timerId = 0;
 const context = vm.createContext({
-    console, Date, Map, Set, JSON,
+    console, Date, Map, Set, JSON, TextDecoder,
     global: {notify_error() {}, workspace_manager: {n_workspaces: 2},
         create_app_launch_context: () => ({})}, logError() {},
 });
@@ -23,10 +25,18 @@ const stubs = {
     'gi://Shell': {default: {AppState: {STOPPED: 0, STARTING: 1, RUNNING: 2}}},
     'gi://GioUnix': {default: {DesktopAppInfo: {new_from_filename: () => null}}},
     'gi://Gio': {default: {Settings: {sync() {}}, FileQueryInfoFlags: {NOFOLLOW_SYMLINKS: 0},
+        FileCreateFlags: {PRIVATE: 1, REPLACE_DESTINATION: 2},
         FileType: {REGULAR: 1}, File: {new_for_path: path => ({path,
+            query_exists: () => recoveryArchives.has(path),
+            replace_contents_bytes_async: (bytes, _etag, _backup, _flags, _cancel, callback) => {
+                recoveryArchives.set(path, bytes); callback({replace_contents_finish: () => true}, {});
+            },
             query_info: () => ({get_file_type: () => 1, get_attribute_boolean: () => true}),
         })}}},
     'gi://GLib': {default: {get_monotonic_time: () => now, build_filenamev: parts => parts.join('/'),
+        mkdir_with_parents: () => 0, Bytes: class {constructor(bytes) {return bytes;}},
+        ChecksumType: {SHA256: 1}, compute_checksum_for_string: (_type, value) =>
+            createHash('sha256').update(value).digest('hex'),
         get_home_dir: () => '/synthetic', get_user_name: () => 'test',
         get_user_runtime_dir: () => null,
         timeout_add: (_priority, delay, callback) => {
@@ -542,3 +552,175 @@ await cancelling;
 assert.equal(cancelledRetirements, 0);
 assert.equal(state.get('restore-active-application'), 'late.desktop');
 console.log('Restore queue regressions passed');
+
+// LibreOffice ownership: process argv is not a list of currently open windows.
+stubs['gi://GLib'].default.BookmarkFile = class { load_from_file() {} get_uris() { return []; } };
+stubs['gi://GLib'].default.get_user_data_dir = () => '/synthetic';
+const originalFileFactory = stubs['gi://Gio'].default.File.new_for_path;
+stubs['gi://Gio'].default.File.new_for_path = path => ({...originalFileFactory(path),
+    enumerate_children: () => {
+        let sent = false;
+        return {next_file: () => sent ? null : (sent = true, {
+            get_symlink_target: () => '/synthetic/current.odt',
+        }), close() {}};
+    },
+});
+const officeFiles = openFiles.namespace;
+const officeResolver = new officeFiles.OpenFileResolver();
+const saveSource = new vm.SourceTextModule(await readFile(new URL('saveSession.js', base), 'utf8'), {context});
+await saveSource.link(name => {
+    if (name === './openFiles.js') return openFiles;
+    const exports = name === './runtimeSafety.js' ? {runtimeSafety: {}}
+        : name === './constants.js' ? {shellVersion: 50}
+        : stubs[name] ?? (name.startsWith('gi://') ? {default: {}} : {});
+    return new vm.SyntheticModule(Object.keys(exports), function () {
+        for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
+    }, {context});
+});
+await saveSource.evaluate();
+const saveDetails = {pid: 123, desktop_file_id: 'org.libreoffice.LibreOffice.desktop',
+    wm_class: 'libreoffice-writer', window_title: 'current.odt — LibreOffice Writer'};
+const fakeSaver = Object.assign(Object.create(saveSource.namespace.SaveSession.prototype), {
+    _openFileResolver: officeResolver,
+});
+fakeSaver._setFieldsFromProcess(['date', 'time', 'zone', 'year', 'day', 'cpu', 'mem', 'pid',
+    'flatpak', '/synthetic/closed-old.odt'], saveDetails);
+assert.deepEqual(Array.from(saveDetails.open_files), ['/synthetic/current.odt'],
+    'The real saver must pass LibreOffice identity even through a wrapper executable');
+assert.deepEqual(Array.from(officeResolver.resolve(123,
+    ['/usr/bin/soffice.bin', '/synthetic/closed-old.odt'],
+    'current.odt — LibreOffice Writer')), ['/synthetic/current.odt']);
+assert.deepEqual(Array.from(officeFiles.sessionDocumentFiles({desktop_file_id: 'libreoffice-writer.desktop',
+    window_title: 'current.odt — LibreOffice Writer',
+    open_files: ['/synthetic/current.odt', '/synthetic/closed-old.odt']})), ['/synthetic/current.odt']);
+assert.equal(officeFiles.documentFilesForWindow(['/synthetic/a/report.odt', '/synthetic/b/report.odt'],
+    'report.odt — LibreOffice Writer').length, 0, 'Ambiguous paths must not be guessed');
+assert.equal(officeFiles.documentFilesForWindow(['/synthetic/report.odt'],
+    'report.odt.bak — LibreOffice Writer').length, 0);
+assert.deepEqual(Array.from(officeFiles.documentFilesForWindow(['/synthetic/report.odt'],
+    '*report — LibreOffice Writer')), ['/synthetic/report.odt']);
+
+restoreSessionObject.documentRequests.clear();
+let officeRequests = [];
+let blankOfficeRequests = 0;
+let officeState = 2;
+let observedWindows = [];
+let accepted = true;
+const officeApp = id => ({get_id: () => id, get_name: () => 'LibreOffice', get_state: () => officeState,
+    get_windows: () => observedWindows, get_app_info: () => ({get_id: () => id,
+        supports_files: () => true, supports_uris: () => false,
+        get_supported_types: () => ['application/vnd.oasis.opendocument.text'],
+        launch: paths => { officeRequests.push(...paths.map(file => file.path)); return accepted; },
+    }), launch: () => { blankOfficeRequests++; return true; },
+});
+const writer = officeApp('libreoffice-writer.desktop');
+const calc = officeApp('libreoffice-calc.desktop');
+const officeLauncher = () => Object.assign(make().restorer, {
+    _recordLedger: {}, _launchedFilesByApp: new Map(), _restoredApps: new Map(),
+    _defaultAppSystem: {get_running: () => [writer, calc]}, _getProperGpuPref: () => 0,
+});
+let office = officeLauncher();
+office.launch(writer, 0, ['/synthetic/current.odt']);
+officeLauncher().launch(writer, 0, ['/synthetic/current.odt']);
+officeLauncher().launch(calc, 0, ['/synthetic/current.odt']);
+assert.equal(officeRequests.length, 1, 'Cross-queue and suite launchers share document identities');
+now += 31 * 1000000;
+officeState = 1;
+officeLauncher().launch(calc, 0, ['/synthetic/current.odt']);
+assert.equal(officeRequests.length, 1, 'STARTING suite transactions cannot expire into duplicate launches');
+assert.equal(blankOfficeRequests, 0, 'Deduplicated suite requests must not open a blank window');
+officeState = 2;
+observedWindows = [{get_pid: () => 123, get_title: () => 'current.odt — LibreOffice Writer'}];
+officeLauncher().launch(writer, 0, ['/synthetic/current.odt']);
+assert.equal(officeRequests.length, 1, 'Confirmed live documents remain skipped after pending request expiry');
+observedWindows = [];
+officeState = 0;
+officeLauncher().launch(writer, 0, ['/synthetic/current.odt']);
+assert.equal(officeRequests.length, 2, 'Stopped applications cannot keep stale request holds');
+restoreSessionObject.documentRequests.clear();
+officeState = 2;
+accepted = false;
+office = officeLauncher();
+office.launch(writer, 0, ['/synthetic/current.odt'], {_recovery_key: 'a'.repeat(64)});
+assert.equal(office._recordLedger['a'.repeat(64)], undefined, 'Rejected opens must roll back the disposition');
+accepted = true;
+office.launch(writer, 0, ['/synthetic/current.odt'], {_recovery_key: 'b'.repeat(64)});
+assert.equal(office._recordLedger['b'.repeat(64)], 'document-requested');
+restoreSessionObject.documentRequests.clear();
+
+// Consecutive logins cannot promote a discarded old record; manual recovery
+// still includes it and does not consume the preserved historical bytes.
+const officeRecord = (title, id, generation) => ({desktop_file_id: 'libreoffice-writer.desktop',
+    windows_count: 1, window_title: title, window_id: id, pid: id, process_create_time: generation,
+    recovery_generation: generation, open_files: ['/synthetic/' + title]});
+files = [
+    {config: officeRecord('new.odt', 2, 'new-login'), modified: 200, path: '/state/new.json'},
+    {config: officeRecord('old.odt', 1, 'old-login'), modified: 100, path: '/state/old.json'},
+].map(item => ({...item, get_path: () => item.path,
+    get_parent: () => ({get_path: () => '/state/libreoffice-writer'}),
+    query_info: () => ({get_modification_date_time: () => ({to_unix: () => item.modified})}),
+}));
+removed.length = 0;
+const handledOffice = [];
+const officeRecovery = values => {
+    const instance = make(values);
+    Object.assign(instance.restorer, {
+        _defaultAppSystem: {lookup_app: () => ({get_app_info: () => ({should_show: () => true})})},
+        _loadSessionContents: async file => new TextEncoder().encode(JSON.stringify(file.config)),
+        _restoreQueuedEntry: async record => { handledOffice.push(record.window_title); return [true, false]; },
+        _waitBeforeNextRestore: async () => true,
+    });
+    return instance;
+};
+let recovery = officeRecovery();
+await recovery.restorer.restorePreviousSession(true, true);
+assert.deepEqual(handledOffice, ['new.odt']);
+const ledger = recovery.state.get('restore-record-ledger');
+assert.ok(Object.values(JSON.parse(ledger)).includes('manual-only'));
+assert.equal(recoveryArchives.size, 1, 'Superseded bytes are archived before the active record is consumed');
+files = files.filter(file => !removed.includes(file.path));
+recovery = officeRecovery({'restore-record-ledger': ledger});
+await recovery.restorer.restorePreviousSession(true, true);
+assert.deepEqual(handledOffice, ['new.odt'], 'Old record cannot resurface on next login');
+await recovery.restorer.restorePreviousSession(true, false);
+assert.deepEqual(handledOffice, ['new.odt', 'old.odt'], 'Preserved record remains manually restorable');
+assert.ok(!removed.includes('/state/old.json'), 'Manual recovery must not consume old records');
+const generations = safety.namespace.automaticRestoreGroups([
+    {modified: 2, sessionConfig: {...officeRecord('a.odt', 1, 'current'), windows_count: 10}},
+    {modified: 1, sessionConfig: officeRecord('b.odt', 2, 'previous')},
+], true);
+assert.equal(generations.groups[0].entries.length, 1);
+assert.equal(generations.discarded.length, 1);
+const manualMany = officeRecovery();
+manualMany.restorer._heldApplications = {};
+assert.equal(manualMany.restorer._automaticRestorePlan([
+    {sessionConfig: officeRecord('one.odt', 1, 'old')},
+    {sessionConfig: officeRecord('two.odt', 2, 'old')},
+], false).groups[0].entries.length, 2, 'Manual recovery cannot truncate historical documents to windows_count');
+
+// A document request survives layout failure without being automatically
+// relaunched after the queue checkpoint was cleared.
+handledOffice.length = 0;
+recovery = officeRecovery();
+recovery.restorer._restoreQueuedEntry = async record => {
+    handledOffice.push(record.window_title);
+    recovery.restorer._setRecordDisposition(record, 'document-requested');
+    return [false, false];
+};
+await recovery.restorer.restorePreviousSession(true, true);
+assert.deepEqual(handledOffice, ['old.odt']);
+assert.equal(recovery.state.get('last-automatic-restore-attempt'), 0);
+const pendingLedger = recovery.state.get('restore-record-ledger');
+recovery = officeRecovery({'restore-record-ledger': pendingLedger});
+await recovery.restorer.restorePreviousSession(true, true);
+assert.deepEqual(handledOffice, ['old.odt']);
+await recovery.restorer.restorePreviousSession(true, false);
+assert.deepEqual(handledOffice, ['old.odt', 'old.odt'], 'Layout-only retained records remain manually recoverable');
+
+const badLedger = officeRecovery({'restore-record-ledger': 'broken'});
+assert.equal(await badLedger.restorer.restorePreviousSession(true, true), false);
+assert.equal(await badLedger.restorer.restorePreviousSession(true, false), true,
+    'Malformed replay metadata cannot block explicit manual recovery');
+assert.equal(badLedger.state.get('restore-record-ledger'), 'broken', 'Manual fallback must not erase the bad metadata');
+stubs['gi://Gio'].default.File.new_for_path = originalFileFactory;
+console.log('LibreOffice ownership, suite deduplication, rejected opens and persistent manual recovery passed');

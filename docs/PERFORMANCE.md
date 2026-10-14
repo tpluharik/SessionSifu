@@ -1,5 +1,15 @@
 # Recall search performance
 
+## 3.5.33: avoid LibreOffice document replay
+
+GNOME restoration captures per-window document candidates and shares pending
+document identities across suite launchers and restore queues. Superseded records
+are archived once by content hash and excluded from automatic replay; an accepted
+document request is distinct from unfinished layout work. Deferred close cleanup
+uses byte comparisons rather than directory sweeps. Archives are deliberately
+not purged automatically. All launch/settle/native pacing remains unchanged.
+Regression fixtures cover these state transitions, not live desktop timing.
+
 ## 3.5.32: layout safety hardening
 
 Layout guards remain valid across every asynchronous monitor/geometry wait.

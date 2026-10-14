@@ -2,6 +2,25 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.5.33
+
+- Capture LibreOffice documents per window instead of replaying the shared
+  process's historical launch arguments or every descriptor in each window.
+  Ambiguous/missing documents remain available for manual review.
+- Track capture generations and persist hashed manual-only/replay dispositions.
+  Preserve private original-byte copies under `currentSession/manualRecovery`;
+  superseded records cannot resurface after newer records are consumed.
+- Deduplicate document requests across queues and LibreOffice launchers, check
+  confirmed live document ownership, and avoid duplicate blank suite windows.
+  Accepted document requests and unfinished layouts have separate recovery state.
+- Reconcile deferred close/class-migration cleanup only for unchanged, no-longer-
+  current records. Cancel closing-window saves and protect late completions.
+- Preserve explicit, non-consuming recovery of historical records, including
+  manual fallback for malformed replay metadata. Never purge old archives on login.
+- Add real-module/fake-file regressions for repeated logins, capture ownership,
+  suite requests, archive preservation, failed opens, close races and shutdown.
+  No native desktop restore or stability claim is implied by these tests.
+
 ## 3.5.32
 
 - Recheck restore validity and window lifetime after asynchronous monitor and

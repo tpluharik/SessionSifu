@@ -27,7 +27,6 @@ import {
     automaticRestoreGroups,
     deduplicatePreviousSessionEntries,
     interruptedRestoreApplications,
-    previousSessionIdentity,
     restoreCommandAllowed,
     remainingRestoreDelay,
 } from './restoreSafety.js';
@@ -121,6 +120,10 @@ export const restoreSessionObject = {
     // All launching apps by Shell.App#launch()
     restoringApps: new Map()
 }
+
+// Request suppression survives queue completion, but never a stopped process.
+// Exact document identities are shared by all LibreOffice desktop launchers.
+restoreSessionObject.documentRequests = new Map();
 
 export const RestoreSession = class {
 
@@ -314,7 +317,11 @@ export const RestoreSession = class {
                         return null;
 
                     const sessionConfig = FileUtils.getJsonObj(contents);
+                    sessionConfig._recovery_key = this._recoveryKey(contents);
+                    sessionConfig._recovery_contents = contents;
                     sessionConfig._file_path = file.get_path();
+                    sessionConfig._recovery_archive = file.get_path().startsWith(
+                        `${FileUtils.current_session_path}/manualRecovery/`);
                     let modified = 0;
                     try {
                         modified = file.query_info(
@@ -332,7 +339,16 @@ export const RestoreSession = class {
                     return null;
                 }
             }, () => mayRestoreApplications() && !this._destroyed);
-            const deduplicated = deduplicatePreviousSessionEntries(sessionEntries);
+            // Drop only ledger entries whose underlying records no longer exist.
+            const present = new Set(sessionEntries.map(entry => entry.sessionConfig._recovery_key));
+            for (const key of Object.keys(this._recordLedger))
+                if (!present.has(key)) delete this._recordLedger[key];
+            this._persistRecordLedger();
+            const candidates = automatic ? sessionEntries.filter(entry =>
+                !entry.sessionConfig._recovery_archive) : [...new Map(sessionEntries.map(entry =>
+                [entry.sessionConfig._recovery_key, entry])).values()];
+            const deduplicated = automatic ? deduplicatePreviousSessionEntries(candidates)
+                : {entries: candidates, duplicates: []};
             if (deduplicated.duplicates.length) {
                 this._log.warn(
                     `Skipped ${deduplicated.duplicates.length} duplicate previous-session ` +
@@ -341,6 +357,12 @@ export const RestoreSession = class {
 
             const restoreEntries = deduplicated.entries;
             const planned = this._automaticRestorePlan(restoreEntries, automatic);
+            if (automatic) {
+                for (const entry of [...planned.discarded, ...deduplicated.duplicates]) {
+                    await this._preserveRecoveryRecord(entry.sessionConfig);
+                    this._setRecordDisposition(entry.sessionConfig, 'manual-only');
+                }
+            }
             this._retained += planned.rejected.length + planned.discarded.length;
             if (planned.rejected.length || planned.discarded.length) {
                 this._log.warn(
@@ -354,15 +376,15 @@ export const RestoreSession = class {
             const retire = async sessionConfig => {
                 if (!removeAfterRestore || !mayRestoreApplications() || this._destroyed)
                     return;
+                // Manual recovery never consumes preserved historical records.
+                if (!automatic && (this._ledgerUnavailable || sessionConfig._recovery_archive ||
+                    this._manualRecordKeys.has(sessionConfig._recovery_key)))
+                    return;
                 const entry = retirements.get(sessionConfig);
                 if (!entry)
                     return;
                 await this._retireSessionEntry(entry);
-                const identity = previousSessionIdentity(sessionConfig);
-                for (const duplicate of deduplicated.duplicates) {
-                    if (previousSessionIdentity(duplicate.sessionConfig) === identity)
-                        await this._retireSessionEntry(duplicate);
-                }
+                // Superseded versions stay on disk for explicit manual recovery.
             };
             for (let groupIndex = 0; groupIndex < planned.groups.length; groupIndex++) {
                 if (!mayRestoreApplications() || this._destroyed)
@@ -441,6 +463,22 @@ export const RestoreSession = class {
         this._cmdAppIdMap?.clear();
         restoreActivity.begin();
         try {
+            this._automaticRestore = automatic;
+            this._ledgerUnavailable = false;
+            try {
+                const raw = this._settings.get_string('restore-record-ledger') || '{}';
+                if (raw.length > 512 * 1024) throw new Error('Recovery ledger exceeds its safety bound');
+                this._recordLedger = JSON.parse(raw);
+                if (!this._recordLedger || Array.isArray(this._recordLedger) ||
+                    typeof this._recordLedger !== 'object' || Object.keys(this._recordLedger).length > 4096)
+                    throw new Error('Invalid recovery ledger; automatic replay refused');
+            } catch (error) {
+                if (automatic) throw error;
+                this._recordLedger = {};
+                this._ledgerUnavailable = true;
+                this._log.warn('Invalid replay ledger; manual recovery remains non-consuming');
+            }
+            this._manualRecordKeys = new Set(Object.keys(this._recordLedger));
             if (!this._beginAutomaticRestore(automatic))
                 return false;
             this._progress('Preparing restore queue…');
@@ -700,7 +738,8 @@ export const RestoreSession = class {
                 ? this._defaultAppSystem.lookup_app(desktopFileId)
                 : null;
             const appInfo = shellApp?.get_app_info?.();
-            if ((automatic && this._heldApplications[desktopFileId?.toLowerCase()]) ||
+            if ((automatic && this._recordLedger?.[entry.sessionConfig._recovery_key]) ||
+                (automatic && this._heldApplications[desktopFileId?.toLowerCase()]) ||
                 !automaticRestoreDesktopIdAllowed(desktopFileId) ||
                 (automatic && !automaticRestoreTargetAllowed(
                     desktopFileId, appInfo?.get_executable?.(),
@@ -712,7 +751,10 @@ export const RestoreSession = class {
             }
             availableEntries.push(entry);
         }
-        const planned = automaticRestoreGroups(availableEntries, true);
+        const planned = automatic ? automaticRestoreGroups(availableEntries, true) : {
+            groups: groupRestoreEntries(availableEntries, session => session.desktop_file_id)
+                .map(entries => ({entries})), rejected: [], discarded: [],
+        };
         planned.rejected.push(...unavailableEntries);
         return planned;
     }
@@ -760,9 +802,21 @@ export const RestoreSession = class {
                 const appWasStableRunning =
                     shell_app.get_state() === Shell.AppState.RUNNING;
                 const appInfo = shell_app.get_app_info();
+                const documentPaths = OpenFiles.sessionDocumentFiles(session_config_object);
                 const restorableDocuments = OpenFiles.appInfoSupportsDocumentFiles(appInfo)
-                    ? OpenFiles.existingOpenFiles(session_config_object.open_files)
+                    ? OpenFiles.existingOpenFiles(documentPaths)
                     : [];
+                if (OpenFiles.isLibreOffice(`${desktop_file_id}\n${session_config_object.wm_class}`,
+                    session_config_object.cmd) && session_config_object.open_files?.length &&
+                    !restorableDocuments.length) {
+                    await this._preserveRecoveryRecord(session_config_object);
+                    this._setRecordDisposition(session_config_object, 'manual-only');
+                    this._log.warn('LibreOffice document is ambiguous or unavailable; record preserved for manual review');
+                    return [false, false];
+                }
+                if (restorableDocuments.length)
+                    await this._preserveRecoveryRecord(session_config_object);
+                if (this._destroyed || !mayRestoreApplications()) return [false, false];
                 const restoringShellAppData = restoreSessionObject.restoringApps.get(shell_app);
                 if (restoringShellAppData) {
                     if (!restoringShellAppData.saved_window_sessions.includes(session_config_object))
@@ -773,7 +827,7 @@ export const RestoreSession = class {
                     });
                 }
 
-                if (this._willLaunch(shell_app, session_config_object.open_files) &&
+                if (this._willLaunch(shell_app, documentPaths) &&
                     !await this._waitForLaunchTurn())
                     return [false, false];
                 const launchResult = await compositorOperations.run(
@@ -781,13 +835,15 @@ export const RestoreSession = class {
                         this._checkpointApplication(desktop_file_id);
                         const result = this.launch(shell_app,
                             session_config_object.desktop_number,
-                            session_config_object.open_files);
+                            documentPaths, session_config_object);
                         // Time queued behind capture is not a launch safety gap.
                         this._entryStartedAt = GLib.get_monotonic_time();
                         return result;
                     },
                     () => !this._destroyed && mayRestoreApplications());
                 [launched, running] = launchResult || [false, false];
+                if (launched && restorableDocuments.length)
+                    this._setRecordDisposition(session_config_object, 'document-requested');
                 if (launched) {
                     if (!running)
                         this._log.info(`${app_name} launched; preparing its saved window state`);
@@ -892,7 +948,94 @@ export const RestoreSession = class {
         }
     }
 
-    launch(shellApp, desktopNumber, openFiles = []) {
+    _recoveryKey(contents) {
+        return GLib.compute_checksum_for_string(GLib.ChecksumType.SHA256,
+            new TextDecoder().decode(contents), -1);
+    }
+
+    async _preserveRecoveryRecord(session) {
+        if (!ArrayBuffer.isView(session?._recovery_contents) ||
+            !/^[a-f0-9]{64}$/.test(session?._recovery_key ?? '') || session._recovery_archive) return;
+        const directory = `${FileUtils.current_session_path}/manualRecovery`;
+        if (GLib.file_test?.(directory, GLib.FileTest.IS_SYMLINK))
+            throw new Error('Refused a symlinked manual recovery directory');
+        if (GLib.mkdir_with_parents(directory, 0o700) !== 0)
+            throw new Error('Could not preserve manual recovery; automatic replay refused');
+        const file = Gio.File.new_for_path(`${directory}/${session._recovery_key}.json`);
+        if (GLib.file_test?.(file.get_path(), GLib.FileTest.IS_SYMLINK))
+            throw new Error('Refused a symlinked manual recovery record');
+        if (file.query_exists(null)) {
+            const contents = await this._loadSessionContents(file);
+            if (!contents || contents.length !== session._recovery_contents.length ||
+                !contents.every((byte, index) => byte === session._recovery_contents[index]))
+                throw new Error('Manual recovery archive changed; refusing to overwrite it');
+            return;
+        }
+        await new Promise((resolve, reject) => file.replace_contents_bytes_async(
+            new GLib.Bytes(session._recovery_contents), null, false,
+            Gio.FileCreateFlags.PRIVATE | Gio.FileCreateFlags.REPLACE_DESTINATION, null,
+            (source, result) => {
+                try {
+                    const finished = source.replace_contents_finish(result);
+                    if (!(Array.isArray(finished) ? finished[0] : finished))
+                        throw new Error('Manual recovery archive was not saved');
+                    resolve();
+                }
+                catch (error) { reject(error); }
+            }));
+    }
+
+    _persistRecordLedger() {
+        if (this._ledgerUnavailable) return;
+        if (Object.keys(this._recordLedger).length > 4096) {
+            if (!this._automaticRestore) return;
+            throw new Error('Recovery ledger full; automatic replay refused');
+        }
+        this._settings.set_string('restore-record-ledger', JSON.stringify(this._recordLedger));
+        Gio.Settings.sync();
+    }
+
+    _setRecordDisposition(session, state) {
+        if (!/^[a-f0-9]{64}$/.test(session?._recovery_key ?? '')) return;
+        this._recordLedger[session._recovery_key] = state;
+        this._persistRecordLedger();
+    }
+
+    _documentPaths(shellApp, paths) {
+        const info = shellApp.get_app_info();
+        if (!OpenFiles.appInfoSupportsDocumentFiles(info)) return [];
+        const libre = OpenFiles.isLibreOffice(`${shellApp.get_id?.() ?? ''}\n${info.get_executable?.() ?? ''}`);
+        const family = libre ? 'libreoffice' : shellApp.get_id?.() ?? shellApp;
+        const observed = new Set();
+        if (libre) {
+            const resolver = new OpenFiles.OpenFileResolver();
+            for (const app of new Set([shellApp, ...(this._defaultAppSystem.get_running?.() ?? [])])) {
+                if (!OpenFiles.isLibreOffice(app.get_id?.())) continue;
+                for (const window of app.get_windows?.() ?? []) {
+                    try {
+                        for (const path of resolver.resolve(window.get_pid(), [], window.get_title(), 'libreoffice'))
+                            observed.add(OpenFiles.normalizedDocumentPath(path));
+                    } catch (_error) { /* Disposed/ambiguous windows are not ownership proof. */ }
+                }
+            }
+        }
+        const requests = restoreSessionObject.documentRequests;
+        for (const [key, request] of requests) {
+            try {
+                const state = request.app.get_state();
+                if (state === Shell.AppState.STOPPED || (state !== Shell.AppState.STARTING &&
+                    GLib.get_monotonic_time() - request.started > 30 * 1000000))
+                    requests.delete(key);
+            } catch (_error) { requests.delete(key); }
+        }
+        if (requests.size >= 1024)
+            throw new Error('Too many pending document requests; manual retry remains available');
+        return OpenFiles.existingOpenFiles(paths).map(OpenFiles.normalizedDocumentPath)
+            .filter(path => !observed.has(path) && !requests.has(`${family}\n${path}`) &&
+                !(this._launchedFilesByApp.get(shellApp)?.has(path)));
+    }
+
+    launch(shellApp, desktopNumber, openFiles = [], sessionConfig = null) {
         if (this._destroyed || !mayRestoreApplications())
             return [false, false];
         desktopNumber = launchWorkspaceIndex(
@@ -900,21 +1043,44 @@ export const RestoreSession = class {
         const appInfo = shellApp.get_app_info();
         const launchedFiles = this._launchedFilesByApp.get(shellApp) ?? new Set();
         this._launchedFilesByApp.set(shellApp, launchedFiles);
-        const paths = (OpenFiles.appInfoSupportsDocumentFiles(appInfo)
-            ? OpenFiles.existingOpenFiles(openFiles)
-            : [])
-            .filter(path => !launchedFiles.has(path));
+        const paths = this._documentPaths(shellApp, openFiles);
         const files = paths.map(path => Gio.File.new_for_path(path));
         const canLaunchFiles = files.length > 0;
+        if (!canLaunchFiles && OpenFiles.appInfoSupportsDocumentFiles(appInfo) &&
+            OpenFiles.existingOpenFiles(openFiles).length)
+            return [true, true]; // Already observed/requested; never open an extra blank suite window.
         const launchFiles = () => {
             const context = global.create_app_launch_context(
                 DateUtils.get_current_time(),
                 desktopNumber);
             this._log.info(`Launching ${shellApp.get_name()} with ${files.length} saved file(s)`);
             this._lastLaunchStartedAt = GLib.get_monotonic_time();
-            const launched = appInfo.launch(files, context);
+            const previous = this._recordLedger?.[sessionConfig?._recovery_key];
+            this._setRecordDisposition(sessionConfig, 'document-requested');
+            let launched;
+            try { launched = appInfo.launch(files, context); }
+            catch (error) {
+                if (sessionConfig?._recovery_key) {
+                    if (previous) this._recordLedger[sessionConfig._recovery_key] = previous;
+                    else delete this._recordLedger[sessionConfig._recovery_key];
+                    this._persistRecordLedger();
+                }
+                throw error;
+            }
+            if (!launched && sessionConfig?._recovery_key) {
+                if (previous) this._recordLedger[sessionConfig._recovery_key] = previous;
+                else delete this._recordLedger[sessionConfig._recovery_key];
+                this._persistRecordLedger();
+            }
             if (launched)
-                paths.forEach(path => launchedFiles.add(path));
+                paths.forEach(path => {
+                    launchedFiles.add(path);
+                    const family = OpenFiles.isLibreOffice(`${shellApp.get_id?.() ?? ''}\n${appInfo.get_executable?.() ?? ''}`)
+                        ? 'libreoffice' : shellApp.get_id?.() ?? shellApp;
+                    restoreSessionObject.documentRequests.set(`${family}\n${path}`, {
+                        app: shellApp, started: GLib.get_monotonic_time(),
+                    });
+                });
             return launched;
         };
 
@@ -952,9 +1118,9 @@ export const RestoreSession = class {
 
     _willLaunch(shellApp, openFiles = []) {
         const appInfo = shellApp.get_app_info();
-        const launchedFiles = this._launchedFilesByApp.get(shellApp) ?? new Set();
-        const newDocuments = OpenFiles.appInfoSupportsDocumentFiles(appInfo) &&
-            OpenFiles.existingOpenFiles(openFiles).some(path => !launchedFiles.has(path));
+        const newDocuments = this._documentPaths(shellApp, openFiles).length > 0;
+        if (!newDocuments && OpenFiles.appInfoSupportsDocumentFiles(appInfo) &&
+            OpenFiles.existingOpenFiles(openFiles).length) return false;
         return newDocuments || (!this._restoredApps.has(shellApp) && !this._appIsRunning(shellApp));
     }
 

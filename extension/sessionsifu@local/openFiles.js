@@ -10,6 +10,40 @@ export const OPEN_FILE_LIMIT = 32;
 export const OPEN_FD_SCAN_LIMIT = 128;
 export const RECENT_FILE_SCAN_LIMIT = 512;
 
+export function isLibreOffice(identity, command = []) {
+    return /libreoffice|(^|[\/\n ])soffice(?:\.bin)?(?=$|[\n ])/i.test(
+        `${identity ?? ''}\n${String(command?.[0] ?? '')}`);
+}
+
+export function normalizedDocumentPath(path) {
+    return GLib.canonicalize_filename?.(path, null) ?? path;
+}
+
+// A shared process's argv and descriptors are candidates, not ownership proof.
+// Prefer an unambiguous full basename; extension-less LibreOffice titles are
+// accepted only at the start of the document title, never as substrings.
+export function documentFilesForWindow(paths, title) {
+    if (typeof title !== 'string') return [];
+    const clean = title.replace(/^[*•]\s*/, '');
+    const candidates = [...new Set(paths.filter(path => typeof path === 'string' &&
+        path.startsWith('/')).map(normalizedDocumentPath))];
+    const matches = (name) => clean === name ||
+        [' — ', ' – ', ' - '].some(separator => clean.startsWith(name + separator));
+    const exact = candidates.filter(path => matches(path.split('/').pop()));
+    if (exact.length) return exact.length === 1 ? exact : [];
+    const short = candidates.filter(path => {
+        const name = path.split('/').pop().replace(/\.[^.]+$/, '');
+        return name.length >= 3 && matches(name);
+    });
+    return short.length === 1 ? short : [];
+}
+
+export function sessionDocumentFiles(session) {
+    const files = Array.isArray(session?.open_files) ? session.open_files : [];
+    return isLibreOffice(`${session?.desktop_file_id ?? ''}\n${session?.wm_class ?? ''}`, session?.cmd)
+        ? documentFilesForWindow(files, session.window_title) : files;
+}
+
 export function appInfoRestoresOwnContent(appInfo) {
     if (!appInfo)
         return false;
@@ -209,10 +243,20 @@ export const OpenFileResolver = class {
         this._recentFiles = null;
     }
 
-    resolve(pid, commandLine, windowTitle) {
+    resolve(pid, commandLine, windowTitle, identity = '') {
         if (!this._descriptorFilesByPid.has(pid))
             this._descriptorFilesByPid.set(pid, listOpenFiles(pid));
 
+        if (isLibreOffice(identity, commandLine)) {
+            const observed = documentFilesForWindow(this._descriptorFilesByPid.get(pid), windowTitle);
+            if (observed.length) return observed;
+            this._recentFiles ??= loadRecentFiles();
+            return documentFilesForWindow([
+                ...this._descriptorFilesByPid.get(pid),
+                ...commandLineFiles(commandLine),
+                ...this._recentFiles.map(item => item.path),
+            ], windowTitle);
+        }
         const candidates = [
             ...this._descriptorFilesByPid.get(pid),
             ...commandLineFiles(commandLine),

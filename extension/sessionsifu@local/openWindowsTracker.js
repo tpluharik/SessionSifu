@@ -12,6 +12,7 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as SaveSession from './saveSession.js';
 import * as RestoreSession from './restoreSession.js';
 import * as RuntimeSafety from './runtimeSafety.js';
+import {restoreActivity} from './recallActivity.js';
 import * as MoveSession from './moveSession.js';
 
 import * as Autoclose from './ui/autoclose.js';
@@ -87,6 +88,11 @@ export const OpenWindowsTracker = class {
         this._saveSessionByBatchTimeoutId = 0;
         this._windowsWithSaveSignals = new WeakSet();
         this._windowSessionRecords = new WeakMap();
+        this._closedWindows = new WeakSet();
+        this._pendingCleanup = new Map();
+        this._signals.push([restoreActivity.connect('changed', (_activity, active) => {
+            if (!active) this._flushPendingCleanup();
+        }), restoreActivity]);
 
         // Also cover reboots requested outside GNOME's confirmation dialog.
         this._prepareShutdownId = Gio.DBus.system.signal_subscribe(
@@ -321,6 +327,7 @@ export const OpenWindowsTracker = class {
 
     async _prepareToSaveWindowSession(window) {
         try {
+            if (this._closedWindows?.has(window)) return;
             if (!RuntimeSafety.mayRestoreApplications())
                 return;
             if (!this._settings.get_boolean('stash-and-restore-states')
@@ -402,20 +409,28 @@ export const OpenWindowsTracker = class {
 
     _connectSignalsToCleanUpSessionFile(window, sessionDirectory, sessionName) {
         try {
+            if (this._closedWindows?.has(window)) {
+                this._cleanUpSessionFileByWindow(window, sessionDirectory, sessionName);
+                return;
+            }
             const previous = this._windowSessionRecords.get(window);
             const record = {sessionDirectory, sessionName};
             this._windowSessionRecords.set(window, record);
             if (previous) {
                 // A WM_CLASS change must not leave a second record for the
                 // same native window. Register closing callbacks only once.
-                if (previous.sessionDirectory !== sessionDirectory && this._mayCleanUp())
-                    FileUtils.removeFile(`${previous.sessionDirectory}/${previous.sessionName}`);
+                if (previous.sessionDirectory !== sessionDirectory)
+                    this._cleanUpSessionFileByWindow(window, previous.sessionDirectory, previous.sessionName);
                 return;
             }
 
             let unmanagingId = window.connect('unmanaging', () => {
                 window.disconnect(unmanagingId);
                 unmanagingId = 0;
+                this._closedWindows ??= new WeakSet();
+                this._closedWindows.add(window);
+                this._windowsAboutToSaveSet?.delete(window);
+                this._cancelRunningSave(window);
                 const current = this._windowSessionRecords.get(window);
                 if (current)
                     this._cleanUpSessionFileByWindow(
@@ -431,6 +446,10 @@ export const OpenWindowsTracker = class {
                     if (app.state === Shell.AppState.STOPPED) {
                         app.disconnect(appId);
                         appId = 0;
+                        this._closedWindows ??= new WeakSet();
+                        this._closedWindows.add(window);
+                        this._windowsAboutToSaveSet?.delete(window);
+                        this._cancelRunningSave(window);
                         const current = this._windowSessionRecords.get(window);
                         if (current)
                             this._cleanUpSessionFileByWindow(
@@ -445,9 +464,22 @@ export const OpenWindowsTracker = class {
     }
 
     _cleanUpSessionFileByWindow(window, sessionDirectory, sessionName) {
-        if (!window || !this._mayCleanUp()) return;
-
+        if (!window || !RuntimeSafety.mayRestoreApplications() ||
+            Autoclose.autocloseObject.sessionClosedByUser || this._meta_is_restarting) return;
         const sessionFilePath = `${sessionDirectory}/${sessionName}`;
+        if (RestoreSession.restoreSessionObject.activeRestorer) {
+            try {
+                const file = Gio.File.new_for_path(sessionFilePath);
+                if (file.query_info('standard::size', Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null)
+                    .get_size() > 16 * 1024 * 1024) return;
+                const [ok, bytes] = file.load_contents(null);
+                if (ok) {
+                    this._pendingCleanup ??= new Map();
+                    this._pendingCleanup.set(sessionFilePath, {bytes, window});
+                }
+            } catch (_error) { /* Missing/unreadable data is never deleted. */ }
+            return;
+        }
         if (!GLib.file_test(sessionFilePath, GLib.FileTest.EXISTS)) return;
 
         // A STOPPED window-backed Shell.App may already be disposed. Do not
@@ -457,6 +489,22 @@ export const OpenWindowsTracker = class {
         FileUtils.removeFile(sessionFilePath);
         // Delete only the record belonging to this window. Sweeping the
         // directory can erase other windows still waiting in a restore queue.
+    }
+
+    _flushPendingCleanup() {
+        if (!this._mayCleanUp()) return;
+        for (const [path, {bytes: expected, window}] of this._pendingCleanup ?? []) {
+            try {
+                const owner = this._windowSessionRecords.get(window);
+                if (!this._closedWindows?.has(window) && owner &&
+                    `${owner.sessionDirectory}/${owner.sessionName}` === path) continue;
+                const [ok, current] = Gio.File.new_for_path(path).load_contents(null);
+                if (ok && current.length === expected.length &&
+                    current.every((byte, index) => byte === expected[index]) && this._mayCleanUp())
+                    FileUtils.removeFile(path);
+            } catch (_error) { /* Preserve changed, missing or unreadable records. */ }
+        }
+        this._pendingCleanup?.clear();
     }
 
     _mayCleanUp() {

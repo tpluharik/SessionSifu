@@ -1,8 +1,17 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.5.32. It separates shipped
+This roadmap describes the product after version 3.5.33. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
+
+## LibreOffice document recovery — 3.5.33
+
+- Match document files to individual LibreOffice windows, not historical process argv.
+- Keep superseded generations and accepted-open records out of automatic replay.
+- Preserve private archive copies and explicit, non-consuming manual recovery.
+- Share pending request identities across suite launchers and restore queues.
+- Reconcile deferred close cleanup without deleting changed/live/shutdown records.
+- Validate with isolated fakes; no live desktop restart is claimed.
 
 ## Layout restore safeguards — 3.5.32
 

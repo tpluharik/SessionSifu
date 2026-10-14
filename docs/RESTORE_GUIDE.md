@@ -1,6 +1,38 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.32.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.33.
+
+### LibreOffice document recovery in 3.5.33 (GNOME)
+
+Document candidates must unambiguously match their individual window titles.
+The shared process's original argv is not treated as its current document list;
+legacy saved file lists are filtered by the same ownership rule before reopening.
+Ambiguous or missing documents are retained for manual review, not replaced by
+a misleading blank-window launch. Filename/title inference is not an authoritative
+LibreOffice document API and may leave uncertain records unresolved.
+
+Automatic previous-desktop recovery selects the newest capture generation per
+application. Superseded records and already requested documents receive durable,
+hashed dispositions, so consuming newer records or failing placement cannot
+promote old files into the next login queue. Pending requests are shared across
+LibreOffice launchers and queues; confirmed live documents are reused.
+
+Original record bytes are copied privately to
+`~/.config/sessionsifu/currentSession/manualRecovery/`. These archives are excluded
+from automatic login recovery and are never automatically purged. Use **Restore
+previous desktop now** for explicit recovery; it includes retained generations
+and archives, without truncating them to the historical `windows_count`. This is
+a broad manual recovery action: review the saved records first, because it can
+request older documents as well as the latest desktop. Exact duplicate records
+and already observed/requested documents are suppressed. Historical copies are
+not consumed by that action. Named sessions retain their existing selection UI.
+
+The replay ledger is bounded to 4,096 record hashes/512 KiB and contains no paths.
+Invalid or over-capacity replay metadata fails closed for automatic restoration;
+explicit manual recovery remains available. Keep or remove archive files only
+through a deliberate user decision; SessionSifu does not discard them to make room.
+Closing-window writes are cancelled; deferred cleanup compares bytes and protects
+newer/current records and shutdown snapshots. Native-operation pacing is unchanged.
 
 ### Layout safeguards in 3.5.32
 
@@ -105,7 +137,7 @@ actual launch requests; reusing a running app does not trigger that launch gap.
 Applications with an enabled XDG autostart entry are left to the desktop's
 login manager, preventing SessionSifu from racing that launcher and opening a
 second instance. They remain available in explicit manual restores.
-Previous-desktop records are deduplicated and capped at the newest recorded
+Automatic previous-desktop records are deduplicated and capped at the newest recorded
 window count, with a defensive maximum of 32 records per application. Excess
 and unavailable records remain on disk. A launched application has up to
 30 seconds to become running with a window; timeouts retain its records and
@@ -117,8 +149,10 @@ If automatic retry protection is active after a desktop restart, use
 in the GNOME top-bar menu. This bypasses only the automatic retry timer; the
 application, selection and compositor safety checks remain active.
 
-Successfully handled previous-session records are retired after the restore.
-Records that could not be handled remain available for another attempt. This
+Successfully handled active previous-session records are retired after the restore;
+their preserved historical archive copies remain manual-only. Superseded and
+document-requested records never become automatic retries solely because a
+layout failed. Records that could not be handled remain available for manual review. This
 prevents old successful entries from accumulating into a large duplicate launch
 burst on a later login. A record updated during recovery is not deleted.
 Version 3.5.29 also protects records throughout logout/reboot/power-off and

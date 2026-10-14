@@ -114,7 +114,19 @@ export function automaticRestoreGroups(entries, completeQueue = false) {
     const discarded = [];
     const groups = [...byApplication.entries()].map(([key, applicationEntries]) => {
         applicationEntries.sort((left, right) =>
+            (Number.isSafeInteger(right.sessionConfig.recovery_generation_started_at)
+                ? right.sessionConfig.recovery_generation_started_at : (right.modified ?? 0) * 1000) -
+            (Number.isSafeInteger(left.sessionConfig.recovery_generation_started_at)
+                ? left.sessionConfig.recovery_generation_started_at : (left.modified ?? 0) * 1000) ||
             (right.modified ?? 0) - (left.modified ?? 0));
+        const generation = applicationEntries[0]?.sessionConfig?.recovery_generation;
+        if (typeof generation === 'string' && generation.length) {
+            const older = applicationEntries.filter(entry =>
+                entry.sessionConfig.recovery_generation !== generation);
+            discarded.push(...older);
+            applicationEntries = applicationEntries.filter(entry =>
+                entry.sessionConfig.recovery_generation === generation);
+        }
         // Crash-recovery folders can contain old records whose titles changed
         // between saves. The newest record's windows_count is a safer bound
         // than treating every historical title as a currently open window.

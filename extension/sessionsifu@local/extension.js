@@ -20,7 +20,7 @@ import * as Log from './utils/log.js';
 import * as FileUtils from './utils/fileUtils.js';
 import {prefsUtilsInit, prefsUtilsDestroy} from './utils/prefsUtils.js';
 import {
-    beginShutdown, cancelShutdown, mayRestoreApplications,
+    beginShutdown, cancelShutdown, mayRestoreApplications, runtimeSafety,
     configureLayoutSafety, beginMonitorChange,
 } from './runtimeSafety.js';
 import {restoreActivity} from './recallActivity.js';
@@ -52,6 +52,8 @@ export default class SessionSifuExtension extends Extension {
             }),
             source => GLib.Source.remove(source));
         cancelShutdown();
+        runtimeSafety.recoveryGeneration = GLib.uuid_string_random();
+        runtimeSafety.recoveryGenerationStartedAt = Date.now();
         configureLayoutSafety(() => GLib.get_monotonic_time() / 1000);
         this._monitorsChangedId = Main.layoutManager.connect(
             'monitors-changed', () => beginMonitorChange());

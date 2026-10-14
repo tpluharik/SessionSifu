@@ -1,3 +1,12 @@
+sessionsifu (3.5.33-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Capture LibreOffice files per window and deduplicate suite restore requests.
+  * Preserve old generations and accepted-open records for manual recovery.
+  * Reconcile deferred close cleanup while protecting newer and shutdown state.
+  * Add isolated regression coverage and publish the signed GNOME update.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Wed, 14 Oct 2026 13:33:00 +0200
+
 sessionsifu (3.5.32-1~ppa1~resolute1) resolute; urgency=medium
 
   * Guard layout work across cancellation, window lifetime and monitor changes.

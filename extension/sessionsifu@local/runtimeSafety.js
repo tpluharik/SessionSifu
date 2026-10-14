@@ -3,6 +3,8 @@
 
 export const runtimeSafety = {
     shutdownInProgress: false,
+    recoveryGeneration: '',
+    recoveryGenerationStartedAt: 0,
 };
 
 // No recurring timer: layout callers check the quiet period before touching

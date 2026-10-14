@@ -20,6 +20,7 @@ import {PrefsUtils} from './utils/prefsUtils.js';
 import * as StringUtils from './utils/stringUtils.js';
 import { shellVersion } from './constants.js';
 import * as OpenFiles from './openFiles.js';
+import {runtimeSafety} from './runtimeSafety.js';
 
 function _stableSessionState(sessionConfig) {
     const payload = JSON.parse(JSON.stringify(sessionConfig));
@@ -387,6 +388,8 @@ export const SaveSession = class {
         sessionConfigObject.wm_class = metaWindow.get_wm_class();
         sessionConfigObject.wm_class_instance = metaWindow.get_wm_class_instance();
         sessionConfigObject.windows_count = runningShellApp.get_n_windows();
+        sessionConfigObject.recovery_generation = runtimeSafety.recoveryGeneration;
+        sessionConfigObject.recovery_generation_started_at = runtimeSafety.recoveryGenerationStartedAt;
         sessionConfigObject.fullscreen = metaWindow.is_fullscreen();
         sessionConfigObject.minimized = metaWindow.minimized;
         sessionConfigObject.compositor_type = 'Wayland';
@@ -627,7 +630,8 @@ export const SaveSession = class {
             ? this._openFileResolver.resolve(
                 sessionConfigObject.pid,
                 sessionConfigObject.cmd,
-                sessionConfigObject.window_title)
+                sessionConfigObject.window_title,
+                `${sessionConfigObject.desktop_file_id}\n${sessionConfigObject.wm_class}`)
             : [];
     }
 
