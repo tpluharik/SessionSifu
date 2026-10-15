@@ -16,7 +16,8 @@ SessionSifu preserves work continuity. **Save** named projects or automatic
 snapshots, **Resume** selected applications, documents and window layouts, and
 **Find** past context in an optional encrypted local visual timeline.
 
-Version 3.5.33 combines the Ubuntu 26.04/GNOME Shell 50 integration with an
+Version 3.5.34 supports Ubuntu 26.04/GNOME Shell 50 and Ubuntu 26.10/GNOME
+Shell 51. Version 3.5.34 combines the GNOME integration with an
 encrypted, per-window OCR activity timeline across GNOME, Windows, macOS, KDE
 Plasma 6 and other Linux desktops. Czech and English OCR data ships with the
 installer and verified update. Recall previews support two-finger panning,
@@ -26,7 +27,7 @@ per-capture completeness, and redacts recognized private/protected contexts.
 Adaptive capture intervals reduce battery and electricity use, suspend visual
 Recall in low-power states, reuse unchanged OCR data and avoid unnecessary
 preview or hidden-interface refreshes.
-Version 3.5.33 fixes GNOME LibreOffice document replay: it captures files per
+The release retains the 3.5.33 fixes for GNOME LibreOffice document replay: it captures files per
 window, distinguishes accepted opens from pending placement, and deduplicates
 requests across restore queues and suite launchers. Superseded records are
 manual-only, with private original-byte archives preserved for explicit recovery.
@@ -160,14 +161,14 @@ privacy boundary.
 
 | Edition | Initial supported target | Restoration level |
 | --- | --- |
-| GNOME full integration | Ubuntu 26.04, GNOME Shell 50 | Applications, documents, workspaces, monitors, geometry and window state on Wayland/X11 |
+| GNOME full integration | Ubuntu 26.04/GNOME 50 and Ubuntu 26.10/GNOME 51 | Applications, documents, workspaces, monitors, geometry and window state on supported desktops |
 | GNOME portable | Other current GNOME/Linux desktops | Applications and documents; geometry when the compositor exposes it through X11 tools |
 | KDE Plasma | Plasma 6 on Wayland or X11 | Applications, documents, geometry and virtual desktops when `kdotool` or `wmctrl` is available |
 | Windows | Windows 10/11 x64 | Applications, documents and Win32 window geometry/state |
 | macOS | macOS 12+, Apple silicon and Intel | Applications, documents and accessible window geometry after user permission |
 
 GNOME Shell extensions are version-sensitive. SessionSifu metadata deliberately
-declares Shell 50 rather than claiming untested compatibility with other major
+declares Shell 50 and 51 rather than claiming compatibility with other major
 GNOME releases. The portable GNOME edition exists for those systems without
 loading private Shell code.
 
@@ -215,13 +216,13 @@ depend on the application's own crash-recovery behavior.
 
 ## Install or upgrade
 
-### GNOME 50 full integration
+### GNOME 50/51 full integration
 
-Download `sessionsifu_3.5.33_all.deb` from the matching GitHub Release, or build it
+Download `sessionsifu_3.5.34_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_3.5.33_all.deb
+sudo apt install ./sessionsifu_3.5.34_all.deb
 ```
 
 The Ubuntu 26.04 PPA is active at `ppa:tpluharik77/sessionsifu` and its amd64
@@ -245,13 +246,13 @@ separate `gnome-shell-extensions` collection is not required.
 On Ubuntu 24.04, the package now installs without trying to replace GNOME Shell
 46. The GTK manager, local encrypted data, update repair and portable-safe
 features remain usable there. The bundled top-bar/window integration declares
-GNOME Shell 50 explicitly and therefore stays inactive until the system is on a
+GNOME Shell 50 and 51 explicitly and therefore stays inactive until the system is on a
 compatible GNOME release; SessionSifu never forces a desktop-shell upgrade.
 
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.5.33_all.deb
+sudo apt install ./dist/sessionsifu_3.5.34_all.deb
 ```
 
 After installation:
@@ -265,11 +266,11 @@ After installation:
 
 ### Windows, macOS, KDE and portable GNOME
 
-The 3.5.33 release workflow builds these self-contained portable artifacts:
+The 3.5.34 release workflow builds these self-contained portable artifacts:
 
-- `SessionSifu-3.5.33-macos-arm64.zip`;
-- `SessionSifu-3.5.33-macos-x64.zip`; and
-- `SessionSifu-3.5.33-linux-x64.tar.gz`.
+- `SessionSifu-3.5.34-macos-arm64.zip`;
+- `SessionSifu-3.5.34-macos-x64.zip`; and
+- `SessionSifu-3.5.34-linux-x64.tar.gz`.
 
 In 3.5.27, the Windows x64 build passed its tests, but its public archive was withheld
 because no production Authenticode certificate was available. SessionSifu does
@@ -453,7 +454,7 @@ required to load a replaced GNOME Shell extension on Wayland.
 The Debian package remains the supported initial installation method because it
 provides SessionSifu's runtime dependencies.
 
-The signed stable channel serves 3.5.33, including conservative restore scheduling,
+The signed stable channel serves 3.5.34, including conservative restore scheduling,
 paired tiling hardening,
 shutdown-record protection, LibreOffice window migration and the 3.5.28
 autostart duplicate-launch fix. Its
@@ -683,7 +684,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.5.33_all.deb
+dist/sessionsifu_3.5.34_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -741,7 +742,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Publishing and distribution](docs/PUBLISHING.md)
 - [Documentation index](docs/README.md)
 
-The current 3.5.33 release includes verified Czech and English fast Tesseract
+The current 3.5.34 release includes verified Czech and English fast Tesseract
 models in the Debian package, signed in-app update and portable artifacts. Mixed
 Czech/English desktop text therefore works without installing a separate
 language package, while recognition stays completely local. Recall search is

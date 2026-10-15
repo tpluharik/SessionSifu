@@ -55,7 +55,7 @@ Suggests: ydotool
 Description: restore GNOME applications, workspaces and window layouts
  SessionSifu records running applications and window state, then relaunches
  applications and reconstructs workspaces, monitors, geometry and state. It
- includes rolling snapshots, document restoration, a GNOME Shell 50 extension,
+ includes rolling snapshots, document restoration, a GNOME Shell 50/51 extension,
  a GTK 4 manager and an optional private local visual timeline. The manager and
  portable-safe functions install on Ubuntu 24.04; shell integration requires
- GNOME 50.
+ GNOME 50 or 51.

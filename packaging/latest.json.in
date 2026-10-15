@@ -7,5 +7,5 @@
   "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_@VERSION@_all.deb",
   "sha256": "@SHA256@",
   "size": @SIZE@,
-  "notes": "SessionSifu 3.5.33 fixes GNOME LibreOffice document replay: per-window file ownership instead of historical process arguments, capture generations and durable manual-only recovery records, cross-queue/suite document deduplication, and deferred close cleanup. Original old records are privately archived and remain explicitly recoverable. Accepted document opens are distinguished from pending placement. Conservative native-operation pacing and shutdown protection are unchanged. Isolated tests do not establish native desktop stability."
+  "notes": "SessionSifu 3.5.34 supports Ubuntu 26.10 / GNOME Shell 51 alongside GNOME 50, replaces removed St widget properties, and distinguishes actual extension runtime state from its enabled preference. Activation success requires a live API check; installed compatibility fixes awaiting fresh login are shown accurately. Log out and back in once to load updated cached GNOME metadata. No validation bypass, forced logout or restore is performed. Includes prior LibreOffice/manual recovery fixes and conservative restore pacing."
 }

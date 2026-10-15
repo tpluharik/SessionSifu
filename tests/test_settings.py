@@ -332,4 +332,70 @@ assert [item.args[0] for item in run.call_args_list] == [
     ["gnome-extensions", "enable", "sessionsifu@local"],
 ]
 
-print("settings schema lookup test passed")
+# GNOME's enabled preference can be true while its actual state is incompatible.
+with mock.patch.object(module.Gio, "bus_get_sync") as get_bus:
+    connection = get_bus.return_value
+    connection.call_sync.return_value = module.GLib.Variant("(a{sv})", ({
+        "state": module.GLib.Variant("d", 4.0), "enabled": module.GLib.Variant("b", True),
+    },))
+    assert module.extension_state()[0] == "incompatible"
+    get_bus.assert_called_with(module.Gio.BusType.SESSION, None)
+    assert connection.call_sync.call_args.args[3] == "GetExtensionInfo"
+    assert connection.call_sync.call_args.args[6] == module.Gio.DBusCallFlags.NONE
+for native, expected in [(1, "enabled"), (2, "disabled"), (3, "error"), (4, "incompatible"), (6, "disabled")]:
+    with mock.patch.object(module, "_shell_extension_info", return_value={"state": native, "enabled": True}):
+        assert module.extension_state()[0] == expected
+with mock.patch.object(module, "_shell_extension_info", return_value={"state": 3, "error": "Synthetic startup error"}):
+    assert "Synthetic startup error" in module.extension_state()[1]
+for output, expected in [("Enabled: Yes\nState: OUT OF DATE", "incompatible"),
+                         ("State: ENABLED", "enabled"), ("State: ERROR", "error"), ("", "unavailable")]:
+    with mock.patch.object(module, "_shell_extension_info", side_effect=module.GLib.Error("Synthetic API failure")):
+        with mock.patch.object(module.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, output, "")) as run:
+            assert module.extension_state()[0] == expected
+            assert run.call_args.kwargs["env"]["LC_ALL"] == "C"
+            assert run.call_args.kwargs["timeout"] == 5
+
+# A successful enable command must not produce a false connected/success banner.
+with mock.patch.object(module, "extension_state", side_effect=[("disabled", ""), ("incompatible", "Synthetic incompatible Shell")]):
+    with mock.patch.object(module, "extension_needs_update", return_value=False):
+        with mock.patch.object(module, "live_extension_current", return_value=False):
+            with mock.patch.object(module.subprocess, "run", return_value=started):
+                ok, message = module.enable_extension()
+assert not ok and "incompatible" in message
+with mock.patch.object(module, "extension_state", return_value=("disabled", "")):
+    with mock.patch.object(module, "extension_needs_update", return_value=False):
+        with mock.patch.object(module, "live_extension_current", return_value=True):
+            with mock.patch.object(module.subprocess, "run", return_value=started):
+                assert module.enable_extension() == (True, "Extension enabled and connected.")
+
+with mock.patch.object(module, "extension_state", return_value=("incompatible", "GNOME rejected old metadata")):
+    with mock.patch.object(module, "extension_needs_update", return_value=True):
+        with mock.patch.object(module, "extension_bundle", return_value=pathlib.Path("/synthetic/fixed.zip")):
+            with mock.patch.object(module.subprocess, "run", return_value=started) as run:
+                ok, message = module.enable_extension()
+                assert ok and "Log out and back in" in message
+                assert run.call_count == 1, "Do not invoke a deprecated reload or claim a live activation"
+
+with tempfile.TemporaryDirectory() as root_dir:
+    root_path = pathlib.Path(root_dir)
+    metadata_path = root_path / "gnome-shell/extensions" / module.UUID / "metadata.json"
+    metadata_path.parent.mkdir(parents=True)
+    fixed_metadata = {"version-name": module.CURRENT_VERSION, "shell-version": ["50", "51"]}
+    bundle_path = root_path / "extension.zip"
+    with module.zipfile.ZipFile(bundle_path, "w") as archive:
+        archive.writestr("metadata.json", json.dumps(fixed_metadata))
+    with mock.patch.object(module.GLib, "get_user_data_dir", return_value=root_dir):
+        with mock.patch.object(module, "extension_bundle", return_value=bundle_path):
+            metadata_path.write_text(json.dumps({**fixed_metadata, "shell-version": ["50"]}))
+            assert module.extension_needs_update(), "Detect compatibility updates without a version bump"
+            metadata_path.write_text(json.dumps(fixed_metadata))
+            with mock.patch.object(module, "_shell_extension_info", return_value={"state": 4, "shell-version": ["50"]}):
+                assert not module.extension_needs_update(), "Do not repeatedly reinstall an already corrected payload"
+                assert module.extension_restart_pending(), "Cached metadata requires one fresh login"
+            with mock.patch.object(module, "_shell_extension_info", return_value={"state": 1, "shell-version": ["50", "51"]}):
+                assert not module.extension_needs_update()
+                assert not module.extension_restart_pending()
+            metadata_path.write_text(json.dumps({**fixed_metadata, "version-name": "999.0.0"}))
+            assert not module.extension_needs_update(), "Never downgrade a newer installed extension"
+
+print("settings schema, GNOME compatibility state and verified activation tests passed")

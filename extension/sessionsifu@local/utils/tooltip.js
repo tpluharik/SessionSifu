@@ -154,7 +154,7 @@ export const Tooltip = class Tooltip {
             if (this.custom) {
                 this._bin.child = this.custom;
             } else {
-                this._bin.child = new St.BoxLayout({vertical: false});
+                this._bin.child = new St.BoxLayout({orientation: Clutter.Orientation.HORIZONTAL});
 
                 if (this.gicon) {
                     this._bin.child.icon = new St.Icon({

@@ -1,5 +1,5 @@
 Package: sessionsifu
-Version: 3.5.33
+Version: 3.5.34
 Section: gnome
 Priority: optional
 Architecture: all
@@ -11,7 +11,7 @@ Description: save and restore GNOME desktop layouts
  SessionSifu records running applications and window state, then relaunches
  applications and reconstructs their workspaces, monitors, geometry and state.
  It includes rolling automatic snapshots, recent-document restoration, a
-  GNOME Shell 50 full-integration backend, GTK 4 manager, top-bar indicator and
+  GNOME Shell 50/51 full-integration backend, GTK 4 manager, top-bar indicator and
   verified user-local updates. The manager and portable-safe functions install
-  on Ubuntu 24.04/GNOME 46; full shell integration activates on GNOME 50.
+  on Ubuntu 24.04/GNOME 46; full shell integration activates on GNOME 50 or 51.
   Companion portable builds support KDE Plasma, general GNOME, Windows and macOS.

@@ -267,7 +267,7 @@ const RunningApplicationListWindow = GObject.registerClass({
                 reactive: true,
                 x_align: Clutter.ActorAlign.CENTER,
                 y_align: Clutter.ActorAlign.CENTER,
-                vertical: true,
+                orientation: Clutter.Orientation.VERTICAL,
                 accessible_role: Atk.Role.DIALOG,
             });
 
@@ -329,7 +329,7 @@ const RunningApplicationListWindow = GObject.registerClass({
             // this.contentLayout = this.dialogLayout.contentLayout;
             // this.buttonLayout = this.dialogLayout.buttonLayout;
             this.contentLayout = new St.BoxLayout({
-                vertical: true,
+                orientation: Clutter.Orientation.VERTICAL,
                 style_class: 'modal-dialog-content-box',
                 y_expand: true,
                 x_align: Clutter.ActorAlign.CENTER,

@@ -2,6 +2,18 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.5.34
+
+- Support Ubuntu 26.10 / GNOME Shell 51 alongside GNOME 50; replace removed St
+  widget `vertical` properties with explicit Clutter orientations.
+- Read GNOME's actual extension state, distinguishing incompatible/error states
+  from the independent enabled preference. Require a live API check before
+  reporting a successful activation. Distinguish installed compatibility fixes
+  awaiting login from genuinely unsupported versions; do not invoke GNOME's
+  deprecated metadata reload method or bypass version validation.
+- Add regression coverage for OUT OF DATE with Enabled: Yes, error states,
+  fallback command localization/timeouts and unverified enable requests.
+
 ## 3.5.33
 
 - Capture LibreOffice documents per window instead of replaying the shared

@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""SessionSifu full-integration GUI and command-line client for GNOME 50."""
+"""SessionSifu full-integration GUI and command-line client for GNOME 50/51."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.5.33"
+CURRENT_VERSION = "3.5.34"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -1241,23 +1241,57 @@ def call(method: str, parameters: GLib.Variant | None = None, timeout: int = 500
     ).unpack()[0]
 
 
+def _shell_extension_info() -> dict:
+    """Read the actual Shell state, not its independent enabled preference."""
+    reply = Gio.bus_get_sync(Gio.BusType.SESSION, None).call_sync(
+        "org.gnome.Shell.Extensions", "/org/gnome/Shell/Extensions",
+        "org.gnome.Shell.Extensions", "GetExtensionInfo",
+        GLib.Variant("(s)", (UUID,)), GLib.VariantType("(a{sv})"),
+        Gio.DBusCallFlags.NONE, 1500, None,
+    )
+    return reply.unpack()[0]
+
+
 def extension_state() -> tuple[str, str]:
+    try:
+        info = _shell_extension_info()
+        if not info:
+            return ("pending" if extension_scheduled() else "missing"), "Extension is not loaded by GNOME Shell."
+        state = {
+            1: "enabled", 2: "disabled", 3: "error", 4: "incompatible",
+            5: "pending", 6: "disabled", 99: "missing",
+        }.get(info.get("state"), "unavailable")
+        message = str(info.get("error") or "").strip()
+        if state == "incompatible":
+            message = "This extension does not support the running GNOME Shell. Update the GNOME integration."
+        elif state == "error" and not message:
+            message = "GNOME could not start the extension; check the GNOME Shell log."
+        return state, message
+    except GLib.Error:
+        pass  # Restricted/unavailable Shell API: use bounded, unlocalized CLI output.
     try:
         completed = subprocess.run(
             ["gnome-extensions", "info", UUID],
             check=False,
             capture_output=True,
             text=True,
+            timeout=5,
+            env={**os.environ, "LC_ALL": "C"},
         )
-    except OSError as error:
+    except (OSError, subprocess.TimeoutExpired) as error:
         return "unavailable", str(error)
 
     message = (completed.stderr or completed.stdout).strip()
     if completed.returncode != 0:
         return ("pending" if extension_scheduled() else "missing"), message
-    if "STATE: ENABLED" in completed.stdout.upper():
-        return "enabled", message
-    return "disabled", message
+    match = re.search(r"^\s*State:\s*(.+)$", completed.stdout, re.IGNORECASE | re.MULTILINE)
+    state = {
+        "ENABLED": "enabled", "ACTIVE": "enabled", "DISABLED": "disabled",
+        "INACTIVE": "disabled", "INITIALIZED": "disabled", "ERROR": "error",
+        "OUT OF DATE": "incompatible", "DOWNLOADING": "pending",
+        "UNINSTALLED": "missing",
+    }.get(match.group(1).strip().upper() if match else "", "unavailable")
+    return state, message or "GNOME did not return a usable extension state."
 
 
 def extension_bundle() -> Path | None:
@@ -1289,7 +1323,28 @@ def extension_needs_update() -> bool:
     if installed is None:
         return False
     try:
-        return version_tuple(installed) < version_tuple(CURRENT_VERSION)
+        if version_tuple(installed) != version_tuple(CURRENT_VERSION):
+            return version_tuple(installed) < version_tuple(CURRENT_VERSION)
+        # A compatibility-only local update can retain the application version.
+        # The per-user copy takes precedence over the system extension.
+        bundle = extension_bundle()
+        if bundle is not None:
+            with zipfile.ZipFile(bundle) as archive:
+                entry = archive.getinfo("metadata.json")
+                if entry.file_size > 65536:
+                    return False
+                bundled = json.loads(archive.read(entry))
+            metadata = json.loads((Path(GLib.get_user_data_dir()) / "gnome-shell/extensions" /
+                                   UUID / "metadata.json").read_text())
+            if bundled.get("version-name") != CURRENT_VERSION:
+                return False
+            supported = set(bundled.get("shell-version", []))
+            if not supported.issubset(metadata.get("shell-version", [])):
+                return True
+            return False
+        return False
+    except (OSError, KeyError, TypeError, zipfile.BadZipFile, json.JSONDecodeError):
+        return False
     except ValueError:
         return True
 
@@ -1348,12 +1403,29 @@ def reload_extension() -> tuple[bool, str]:
     return False, "GNOME accepted the reload but has not connected yet. Log out and back in once if it does not appear."
 
 
+def extension_restart_pending() -> bool:
+    """Distinguish an installed compatibility fix from cached old metadata."""
+    try:
+        loaded = _shell_extension_info()
+        metadata = json.loads((Path(GLib.get_user_data_dir()) / "gnome-shell/extensions" /
+                               UUID / "metadata.json").read_text())
+        return (loaded.get("state") == 4 and
+                not set(metadata.get("shell-version", [])).issubset(loaded.get("shell-version", [])))
+    except (GLib.Error, OSError, ValueError, TypeError):
+        return False
+
+
 def enable_extension() -> tuple[bool, str]:
     state, state_message = extension_state()
     installed = False
     updating = extension_needs_update()
     if state == "unavailable":
         return False, state_message
+    if state == "incompatible" and not updating:
+        if extension_restart_pending():
+            schedule_extension_enable()
+            return True, "Compatibility update installed. Log out and back in once to start it."
+        return False, state_message or "Update SessionSifu for this GNOME Shell version."
     if state == "pending" and not updating:
         return True, "Extension is ready. Log out and back in once to start it."
     if state == "missing" or updating:
@@ -1370,6 +1442,11 @@ def enable_extension() -> tuple[bool, str]:
             message = (completed.stderr or completed.stdout).strip()
             return False, message or "Could not install the GNOME Shell extension."
         installed = True
+        if state in {"incompatible", "error"}:
+            # GNOME's advertised ReloadExtension method is deprecated and does
+            # not refresh metadata. Never bypass version validation to hide it.
+            schedule_extension_enable()
+            return True, "Extension updated. Log out and back in once to refresh GNOME compatibility."
         if updating and state == "enabled":
             reloaded, message = reload_extension()
             return reloaded, (
@@ -1397,7 +1474,15 @@ def enable_extension() -> tuple[bool, str]:
             schedule_extension_enable()
             return True, "Extension installed. Log out and back in once to start it."
         return False, message
-    return True, "Extension installed and enabled." if installed else "Extension enabled."
+    if live_extension_current():
+        return True, "Extension enabled and connected."
+    actual_state, actual_message = extension_state()
+    if actual_state in {"incompatible", "error"}:
+        return False, actual_message or "GNOME rejected the extension."
+    if installed:
+        schedule_extension_enable()
+        return True, "Extension installed. Log out and back in once to start it."
+    return False, "Enable requested, but the GNOME integration is not responding yet. Check its status or reload it."
 
 
 def tree_model_row_count(model: Gtk.TreeModel) -> int:
@@ -3957,15 +4042,20 @@ class ManagerWindow(Adw.ApplicationWindow):
         except GLib.Error:
             pass
         live = ping_message is not None
-        integration_current = ping_message == f"SessionSifu {CURRENT_VERSION} is ready"
-
-        state, _state_message = extension_state()
+        state, state_message = extension_state()
+        integration_current = (ping_message == f"SessionSifu {CURRENT_VERSION} is ready" and state == "enabled")
         integration_update = extension_needs_update()
+        restart_pending = state == "incompatible" and extension_restart_pending()
         self.status_row.set_subtitle(
             "Update GNOME integration, then log out and back in" if integration_update else
+            "Compatibility update installed; log out and back in once" if restart_pending else
+            "Incompatible with this GNOME Shell; update SessionSifu" if state == "incompatible" else
+            f"GNOME integration failed: {state_message}" if state == "error" else
+            "Installed but not enabled" if state == "disabled" else
+            "API responding; GNOME extension status unavailable" if live and state == "unavailable" else
             "An older integration is running; reload it to activate capture" if live and not integration_current else
             "Enabled and connected" if live else
-            "Enabled; starting GNOME integration" if state == "enabled" else
+            "Enabled but not responding; reload GNOME integration" if state == "enabled" else
             "Installed but not enabled" if state == "disabled" else
             "Installed; log out and back in once" if state == "pending" else
             "Ready to install for this login" if state == "missing" else
@@ -3975,14 +4065,14 @@ class ManagerWindow(Adw.ApplicationWindow):
             "emblem-ok-symbolic" if live and integration_current else "dialog-warning-symbolic"
         )
         self.enable_button.set_visible(
-            integration_update or (not live and state != "pending")
+            integration_update or (not integration_current and state != "pending" and not restart_pending)
         )
         self.enable_button.set_label(
             "Update Integration" if integration_update else
-            "Reload Integration" if live and not integration_current else
+            "Reload Integration" if (live or state == "enabled") and not integration_current else
             "Install & Enable" if state == "missing" else "Enable"
         )
-        self.enable_button.set_sensitive(state != "unavailable")
+        self.enable_button.set_sensitive(state != "unavailable" and (state != "incompatible" or integration_update))
 
         history = self._history_rows() if live and integration_current else []
         if not history:

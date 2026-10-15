@@ -1,8 +1,17 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.5.33. It separates shipped
+This roadmap describes the product after version 3.5.34. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
+
+## GNOME 51 compatibility — 3.5.34
+
+- Support Ubuntu 26.10/GNOME 51 alongside Ubuntu 26.04/GNOME 50.
+- Use supported St widget orientations instead of the removed vertical property.
+- Distinguish GNOME runtime state from its enabled preference and verify API readiness.
+- Show pending-login status for cached compatibility metadata; never bypass validation.
+- Preserve recovery records, restore pacing and all opt-in settings.
+- Local regression/package checks do not establish live GNOME 51 restore stability.
 
 ## LibreOffice document recovery — 3.5.33
 

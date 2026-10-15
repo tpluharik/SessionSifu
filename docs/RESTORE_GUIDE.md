@@ -1,6 +1,11 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.33.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.34.
+
+GNOME full integration supports Shell 50 and 51. On Ubuntu 26.10/GNOME 51,
+an existing enabled preference can coexist with cached incompatible metadata.
+After installing the compatible update, log out and back in once when the manager
+shows pending-login status. No automatic logout or validation bypass is performed.
 
 ### LibreOffice document recovery in 3.5.33 (GNOME)
 
