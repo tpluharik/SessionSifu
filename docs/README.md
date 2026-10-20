@@ -23,6 +23,8 @@ This index describes the current 3.5.35 behavior. Start with the main
 
 - [Distribution security](DISTRIBUTION_SECURITY.md) — installation ownership,
   safe uninstall, caller boundaries, authoritative build/signing and renewal.
+- [3.5.35 release verification](RELEASE_3.5.35_VERIFICATION.md) — exact public
+  hashes, hosted-build attestation, signed channel bridge and store exceptions.
 
 - [Architecture](ARCHITECTURE.md) — GNOME/portable components, storage,
   capture/search pipeline and release channel.

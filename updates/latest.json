@@ -1,11 +1,11 @@
 {
-  "version": "3.5.34",
+  "version": "3.5.35",
   "channel": "stable",
-  "issued_at": "2026-10-15T19:23:44Z",
-  "expires_at": "2026-11-29T19:23:44Z",
+  "issued_at": "2026-10-20T15:37:21Z",
+  "expires_at": "2026-12-04T15:37:21Z",
   "minimum_version": "2.5.0",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.34_all.deb",
-  "sha256": "4305f396ed5906db997f0c73cc91e1c12ac48bbbbfa65bcb17ca22f26686ef95",
-  "size": 3829424,
-  "notes": "SessionSifu 3.5.34 supports Ubuntu 26.10 / GNOME Shell 51 alongside GNOME 50, replaces removed St widget properties, and distinguishes actual extension runtime state from its enabled preference. Activation success requires a live API check; installed compatibility fixes awaiting fresh login are shown accurately. Log out and back in once to load updated cached GNOME metadata. No validation bypass, forced logout or restore is performed. Includes prior LibreOffice/manual recovery fixes and conservative restore pacing."
+  "size": 3838002,
+  "sha256": "e606c3b9a801a554c30e7399e51fde9298708e2801c04c5a43dc59a7f94223ca",
+  "notes": "Distribution hardening. All channels use the same CI-built Debian bytes. Recovery data is preserved; log in afresh to activate extension changes.",
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.35_all.deb"
 }

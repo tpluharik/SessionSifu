@@ -1,0 +1,11 @@
+{
+  "version": "3.5.35",
+  "channel": "stable",
+  "issued_at": "2026-10-20T15:37:21Z",
+  "expires_at": "2026-12-04T15:37:21Z",
+  "minimum_version": "3.5.35",
+  "size": 3838002,
+  "sha256": "e606c3b9a801a554c30e7399e51fde9298708e2801c04c5a43dc59a7f94223ca",
+  "notes": "Distribution hardening. All channels use the same CI-built Debian bytes. Recovery data is preserved; log in afresh to activate extension changes.",
+  "package_url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.35/sessionsifu_3.5.35_all.deb"
+}
