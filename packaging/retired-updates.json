@@ -1,0 +1,228 @@
+{
+  "schema": 1,
+  "source_commit": "5d0bf45e158172483b618c03eaf3b5bd2d798a59",
+  "cutoff_utc": "2026-08-29T00:00:00Z",
+  "grace_days": 7,
+  "artifacts": [
+    {
+      "path": "updates/sessionsifu_1.1.0_all.deb",
+      "size": 204470,
+      "sha256": "5df77f6bb100c51148bfb9bda26572d10ad719e73b431a449cf212f6be99d17c"
+    },
+    {
+      "path": "updates/sessionsifu_1.1.1_all.deb",
+      "size": 207988,
+      "sha256": "10c34074972c7066e7e30408583808469cea32b6a49d02960a9dc1cb5819928b"
+    },
+    {
+      "path": "updates/sessionsifu_1.2.0_all.deb",
+      "size": 211774,
+      "sha256": "ee86ec54bfc001bce180701199931ca74a393a7631eaeec203f4dc6ee78b7cc7"
+    },
+    {
+      "path": "updates/sessionsifu_1.2.1_all.deb",
+      "size": 215464,
+      "sha256": "a803d9e42ae1fc8c9aec6dd904560da273e969eac6c188311f6c09b0c0b55640"
+    },
+    {
+      "path": "updates/sessionsifu_1.2.2_all.deb",
+      "size": 218980,
+      "sha256": "604aa02cf1a85b558a5efba0f72195e320ae8bb5e252b403d17cd0f122ca0f78"
+    },
+    {
+      "path": "updates/sessionsifu_1.2.3_all.deb",
+      "size": 222076,
+      "sha256": "761e908e1fee3cf5c4fbd2ed1b444ef1c1dafed0442f56d55c0a288c4d8fea5f"
+    },
+    {
+      "path": "updates/sessionsifu_1.3.0_all.deb",
+      "size": 223390,
+      "sha256": "2a86eaf1612030c70d9666e41f14d0f52fce4942588275636ae8d80ca8b0c1e1"
+    },
+    {
+      "path": "updates/sessionsifu_1.3.1_all.deb",
+      "size": 223726,
+      "sha256": "32fdf28bad6b6335d58442359985514907b5c266fbd8e18fcd2d822ea571f78a"
+    },
+    {
+      "path": "updates/sessionsifu_2.0.0_all.deb",
+      "size": 229704,
+      "sha256": "0b790bf39a256c40f9ff74f214ae316a98dd997c2ae9de440578a7509c026724"
+    },
+    {
+      "path": "updates/sessionsifu_2.1.0_all.deb",
+      "size": 238690,
+      "sha256": "a4a385b10f47a24dd65100c32f8b940096090295d834f851a00196600f8abc60"
+    },
+    {
+      "path": "updates/sessionsifu_2.2.0_all.deb",
+      "size": 241788,
+      "sha256": "54ce48ac1ddb692bf6734dd22d14a6b1183abf56c52e11bb724a24586330448c"
+    },
+    {
+      "path": "updates/sessionsifu_2.2.1_all.deb",
+      "size": 243112,
+      "sha256": "40356627df0767e6bb1c1d75fca2afa53ca8d7b525cdc09daeefb2f59979393c"
+    },
+    {
+      "path": "updates/sessionsifu_2.3.0_all.deb",
+      "size": 246966,
+      "sha256": "7dc357052a8b8167c0ddb3d355ca762c062cdf55908528cfc8f2dffcfda6d976"
+    },
+    {
+      "path": "updates/sessionsifu_2.3.1_all.deb",
+      "size": 248676,
+      "sha256": "688fa92b4d3a3d2914724b04cf8090cf04b850cf73ff27cf725af006f3d3c330"
+    },
+    {
+      "path": "updates/sessionsifu_2.3.2_all.deb",
+      "size": 248992,
+      "sha256": "f5190b7c2eaf29a28c114be171a7e401914d8d8278179f4ec550ae30e233a68d"
+    },
+    {
+      "path": "updates/sessionsifu_2.3.3_all.deb",
+      "size": 249916,
+      "sha256": "c8ad9cd3300419ba1bc2aa9dabdb734db9b285ce3f6fc1a9fbc9e349fda3efdb"
+    },
+    {
+      "path": "updates/sessionsifu_2.4.0_all.deb",
+      "size": 254320,
+      "sha256": "b8f0df5ec600fca4776852d1fe84d0b6ac7a80eb51e7dc44848f7ff6b3c4c3f8"
+    },
+    {
+      "path": "updates/sessionsifu_2.5.0_all.deb",
+      "size": 265306,
+      "sha256": "6bbb6bfebe7aabc2a49b1e2344c9359c9cdaf2affbc4efb0afaf20e4708de44e"
+    },
+    {
+      "path": "updates/sessionsifu_2.5.1_all.deb",
+      "size": 266638,
+      "sha256": "e511f00e64c9993e9eacf136044c5cf2752e73f6140de7021a67954707c26d31"
+    },
+    {
+      "path": "updates/sessionsifu_2.5.2_all.deb",
+      "size": 267600,
+      "sha256": "47601f89e393a11842ea6b45685cde861e6a2b381ab2258d16f04e98f8bdcb32"
+    },
+    {
+      "path": "updates/sessionsifu_3.0.1_all.deb",
+      "size": 279752,
+      "sha256": "4f222370d0f37f2ffd412d4c516c30b227c775e190d33febf1e7d6eeb54b9732"
+    },
+    {
+      "path": "updates/sessionsifu_3.0.2_all.deb",
+      "size": 280364,
+      "sha256": "7085316b400d877c9ef2d22f11cf1d76070261523cc68d07e9c9cc91a8678116"
+    },
+    {
+      "path": "updates/sessionsifu_3.1.0_all.deb",
+      "size": 282898,
+      "sha256": "dc3bd7632f092131621458974c319b22170f11a38ba4480245771378245ff258"
+    },
+    {
+      "path": "updates/sessionsifu_3.1.1_all.deb",
+      "size": 283158,
+      "sha256": "aea857a11cdc38c58a1dc639038bcbc313757b6147ab52058b8a795373eba946"
+    },
+    {
+      "path": "updates/sessionsifu_3.1.2_all.deb",
+      "size": 287646,
+      "sha256": "29868fbed11fc0a2a47e657d604a7975dd3ecd579297f967395111bb57ee8612"
+    },
+    {
+      "path": "updates/sessionsifu_3.1.3_all.deb",
+      "size": 288416,
+      "sha256": "a0ea8022a6a85d795430ec6e4e4de8982eeea7c23d2bdbf8da698069991a314c"
+    },
+    {
+      "path": "updates/sessionsifu_3.1.4_all.deb",
+      "size": 288998,
+      "sha256": "9b832058fc5e98097cc9925ff515228a09ac5318d69493754b7fb983d776624d"
+    },
+    {
+      "path": "updates/sessionsifu_3.1.5_all.deb",
+      "size": 289414,
+      "sha256": "000562059f1d94d97e9a269b2a2624986e16c4f7403fcd92475505db73da34b7"
+    },
+    {
+      "path": "updates/sessionsifu_3.1.6_all.deb",
+      "size": 291196,
+      "sha256": "988ac7404eadaec3bce23c9c263dcc094e5027638ee11f4c766a0bcd3ffb55dc"
+    },
+    {
+      "path": "updates/sessionsifu_3.1.7_all.deb",
+      "size": 293880,
+      "sha256": "36c64143e2343feacdff2d701ad7e6ffd87e026d06659aaff35cb45dbe7462df"
+    },
+    {
+      "path": "updates/sessionsifu_3.1.8_all.deb",
+      "size": 295820,
+      "sha256": "407595b8cee2463971f520e10e6925c186284f1e4edc7405532a9e68fbf08e89"
+    },
+    {
+      "path": "updates/sessionsifu_3.1.9_all.deb",
+      "size": 3694432,
+      "sha256": "4c2a52420f6ca795b910a9bfea7134ce5c1a9957ff05552fb76705f3b3acadca"
+    },
+    {
+      "path": "updates/sessionsifu_3.2.0_all.deb",
+      "size": 3699132,
+      "sha256": "74844d4dedeea7ceea9940612dbe5d3cc83dc6a113c9d72994d6d347cdc2e76d"
+    },
+    {
+      "path": "updates/sessionsifu_3.2.1_all.deb",
+      "size": 3701168,
+      "sha256": "c3f36a1aacac27a2d22199eb3d2b3fafdb650beac1840234080e7ea9f53924f3"
+    },
+    {
+      "path": "updates/sessionsifu_3.2.2_all.deb",
+      "size": 3700618,
+      "sha256": "0bfa08d007baa4a65a967c0b8129fecb48e7c104d5ea72b39015adeae8d01706"
+    },
+    {
+      "path": "updates/sessionsifu_3.2.3_all.deb",
+      "size": 3701592,
+      "sha256": "16bb5a72e5ebd39162209075e857421f67463d8a4a761ed43e1beeccc5947f50"
+    },
+    {
+      "path": "updates/sessionsifu_3.3.0_all.deb",
+      "size": 3715676,
+      "sha256": "0733d0f74c2f37a9bd0768f2cc86c876c305537466db9cb30701303e368920ba"
+    },
+    {
+      "path": "updates/sessionsifu_3.4.0_all.deb",
+      "size": 3725304,
+      "sha256": "ccbe6af300b2596563e52b0e72029d5e6ccc0e9e0fe2bb4b3892561e10ca3261"
+    },
+    {
+      "path": "updates/sessionsifu_3.4.1_all.deb",
+      "size": 3725984,
+      "sha256": "7b3b5aae15b828d2a0800707faf1aeabd4348ce8d15318cd172bb21e1f8905a8"
+    },
+    {
+      "path": "updates/sessionsifu_3.5.0_all.deb",
+      "size": 3729952,
+      "sha256": "a0376eb93e504e3a0d6f1e6e382864211cfa91d66a2892d354ed06f8982ec895"
+    },
+    {
+      "path": "updates/sessionsifu_3.5.2_all.deb",
+      "size": 3733126,
+      "sha256": "c7712c429a900183d174e79c83edce8a494935d2f47ed91de1c74917266d6e6e"
+    },
+    {
+      "path": "updates/sessionsifu_3.5.3_all.deb",
+      "size": 3736198,
+      "sha256": "cc86ca257845ff38dd34040489ba800fbde48225aea2cb81986be02156c8e5e4"
+    },
+    {
+      "path": "updates/sessionsifu_3.5.4_all.deb",
+      "size": 3738378,
+      "sha256": "73dc0497baae434019246abb4afcfe361e23d19b454978613303736387c4fd35"
+    },
+    {
+      "path": "updates/sessionsifu_3.5.5_all.deb",
+      "size": 3737806,
+      "sha256": "dd510f4ab244d13c8901d755dbe95a92e4e4f40a9a41aee0562446a5b01153a4"
+    }
+  ]
+}

@@ -17,6 +17,31 @@ is transmitted for OCR.
 
 ## Data inventory
 
+New GNOME saves in 3.5.35 redact recognized secret command flags and token URL
+parameters after resolving document ownership. Commands requiring credentials
+are not replayed as redacted placeholders. This is heuristic protection, not a
+guarantee that every possible application secret is recognized. Older session
+and manual recovery bytes are deliberately not rewritten and can contain old
+credentials. Keep exported archives and backups private.
+
+## Uninstall without deleting recovery data
+
+Preview the user-local program removal with
+`sessionsifu --remove-user-install --dry-run`, then run
+`sessionsifu --remove-user-install` to retire the listed program files and
+disable this extension. Files are moved into a private, recoverable
+`~/.local/share/sessionsifu/uninstall-backups/program-*` directory with a mapping
+manifest. Sessions, `currentSession/manualRecovery`, Recall ciphertext, capsule
+data and preferences are not removed or rewritten. APT removal does not itself
+clean arbitrary home directories. A managed user copy reconciles at startup;
+disable the extension explicitly if an immediate capture stop is required.
+
+Legacy ownership can be adopted explicitly using `--install-ownership standalone`
+or, while the system package is installed, `--install-ownership apt-backed`.
+See [distribution security](DISTRIBUTION_SECURITY.md) for the exact boundaries.
+
+## Data inventory details
+
 New optional surfaces in 3.4.0 follow the same local-only boundary:
 
 - semantic search is off by default, loads only an explicit local model in

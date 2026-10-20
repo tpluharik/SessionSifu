@@ -21,6 +21,7 @@ import * as StringUtils from './utils/stringUtils.js';
 import { shellVersion } from './constants.js';
 import * as OpenFiles from './openFiles.js';
 import {runtimeSafety} from './runtimeSafety.js';
+import {sanitizeCommand} from './commandPrivacy.js';
 
 function _stableSessionState(sessionConfig) {
     const payload = JSON.parse(JSON.stringify(sessionConfig));
@@ -633,6 +634,11 @@ export const SaveSession = class {
                 sessionConfigObject.window_title,
                 `${sessionConfigObject.desktop_file_id}\n${sessionConfigObject.wm_class}`)
             : [];
+        // Resolve ownership using the original argv, then persist only sanitized
+        // metadata. Ordinary document paths and switches remain unchanged.
+        const command = sanitizeCommand(sessionConfigObject.cmd);
+        sessionConfigObject.cmd = command.argv;
+        sessionConfigObject.command_requires_input = command.requiresInput;
     }
 
     destroy() {

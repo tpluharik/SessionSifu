@@ -568,8 +568,11 @@ stubs['gi://Gio'].default.File.new_for_path = path => ({...originalFileFactory(p
 const officeFiles = openFiles.namespace;
 const officeResolver = new officeFiles.OpenFileResolver();
 const saveSource = new vm.SourceTextModule(await readFile(new URL('saveSession.js', base), 'utf8'), {context});
+const commandPrivacy = new vm.SourceTextModule(await readFile(new URL('commandPrivacy.js', base), 'utf8'), {context});
+await commandPrivacy.link(() => { throw Error('Unexpected command privacy dependency'); });
 await saveSource.link(name => {
     if (name === './openFiles.js') return openFiles;
+    if (name === './commandPrivacy.js') return commandPrivacy;
     const exports = name === './runtimeSafety.js' ? {runtimeSafety: {}}
         : name === './constants.js' ? {shellVersion: 50}
         : stubs[name] ?? (name.startsWith('gi://') ? {default: {}} : {});
@@ -587,6 +590,11 @@ fakeSaver._setFieldsFromProcess(['date', 'time', 'zone', 'year', 'day', 'cpu', '
     'flatpak', '/synthetic/closed-old.odt'], saveDetails);
 assert.deepEqual(Array.from(saveDetails.open_files), ['/synthetic/current.odt'],
     'The real saver must pass LibreOffice identity even through a wrapper executable');
+fakeSaver._setFieldsFromProcess(['date', 'time', 'zone', 'year', 'day', 'cpu', 'mem', 'pid',
+    'flatpak', '/synthetic/current.odt', '--token=private-value'], saveDetails);
+assert.equal(saveDetails.command_requires_input, true);
+assert.ok(!JSON.stringify(saveDetails).includes('private-value'), 'Actual persisted saver fields contain no token');
+assert.deepEqual(Array.from(saveDetails.open_files), ['/synthetic/current.odt'], 'Redaction must not affect LibreOffice document ownership');
 assert.deepEqual(Array.from(officeResolver.resolve(123,
     ['/usr/bin/soffice.bin', '/synthetic/closed-old.odt'],
     'current.odt — LibreOffice Writer')), ['/synthetic/current.odt']);

@@ -1,6 +1,6 @@
 # Session restoration workflow
 
-This guide describes the restoration behavior shipped in SessionSifu 3.5.34.
+This guide describes the restoration behavior shipped in SessionSifu 3.5.35.
 
 GNOME full integration supports Shell 50 and 51. On Ubuntu 26.10/GNOME 51,
 an existing enabled preference can coexist with cached incompatible metadata.

@@ -59,7 +59,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt  # noqa: E402
 
 
 APP_ID = "org.gnome.SessionSifu"
-CURRENT_VERSION = "3.5.34"
+CURRENT_VERSION = "3.5.35"
 UUID = "sessionsifu@local"
 SCHEMA_ID = "org.gnome.shell.extensions.sessionsifu"
 DBUS_NAME = "org.gnome.Shell.Extensions.SessionSifu"
@@ -74,7 +74,7 @@ RECALL_SHORTCUT_PATH = (
 )
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$")
 UPDATE_MANIFEST_URL = (
-    "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/latest.json"
+    "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/stable-v2.json"
 )
 UPDATE_SIGNATURE_URL = f"{UPDATE_MANIFEST_URL}.sig"
 UPDATE_REPOSITORY_PREFIX = "/tpluharik/SessionSifu/"
@@ -777,18 +777,24 @@ def version_tuple(version: str) -> tuple[int, int, int]:
     return tuple(int(part) for part in match.groups())
 
 
+def allowed_update_url(url: str, version: str) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != 'https' or parsed.query or parsed.fragment or parsed.netloc != parsed.hostname:
+        return False
+    package = f'sessionsifu_{version}_all.deb'
+    if parsed.hostname == 'github.com':
+        return parsed.path == f'/tpluharik/SessionSifu/releases/download/v{version}/{package}'
+    if parsed.hostname == 'raw.githubusercontent.com':
+        return bool(re.fullmatch(r'/tpluharik/SessionSifu/(?:main|v\d+\.\d+\.\d+|[0-9a-f]{40})/updates/' + re.escape(package), parsed.path))
+    return False
+
+
 def parse_update_manifest(contents: bytes | str) -> dict:
     if isinstance(contents, bytes):
         contents = contents.decode("utf-8")
     manifest = json.loads(contents)
     version_tuple(manifest["version"])
-    package_url = urllib.parse.urlparse(manifest["package_url"])
-    if (
-        package_url.scheme != "https"
-        or package_url.hostname != "raw.githubusercontent.com"
-        or not package_url.path.startswith(UPDATE_REPOSITORY_PREFIX)
-        or not package_url.path.endswith(".deb")
-    ):
+    if not allowed_update_url(manifest['package_url'], manifest['version']):
         raise ValueError("Update package must be stored in the SessionSifu GitHub repository")
     if not re.fullmatch(r"[0-9a-f]{64}", manifest["sha256"]):
         raise ValueError("Update manifest has an invalid SHA-256 digest")
@@ -884,8 +890,9 @@ def download_update(manifest: dict, timeout: int = 20) -> Path:
             final_url = urllib.parse.urlparse(response.geturl())
             if (
                 final_url.scheme != "https"
-                or final_url.hostname != "raw.githubusercontent.com"
-                or not final_url.path.startswith(UPDATE_REPOSITORY_PREFIX)
+                or (not allowed_update_url(response.geturl(), manifest['version']) and not (
+                    urllib.parse.urlparse(manifest['package_url']).hostname == 'github.com' and
+                    final_url.hostname in {'release-assets.githubusercontent.com', 'objects.githubusercontent.com'}))
             ):
                 raise ValueError("GitHub redirected the update to an untrusted location")
             with temporary.open("wb") as output:
@@ -1069,7 +1076,160 @@ def install_user_payload(
         local_app,
         0o755,
     )
+    previous_receipt = read_install_receipt(user_data_dir)
+    system = system_install_info()
+    mode = previous_receipt.get('mode') or (
+        'apt-backed' if system.get('installed') is True else
+        'standalone' if system.get('installed') is False else 'legacy')
+    _atomic_write_text(json.dumps({
+        'schema': 1, 'version': (json.loads((source_extension / 'metadata.json').read_text()).get('version-name', CURRENT_VERSION)
+                                if (source_extension / 'metadata.json').is_file() else CURRENT_VERSION), 'mode': mode,
+        'system_version_at_install': system.get('version'),
+    }, sort_keys=True) + '\n', user_data_dir / 'sessionsifu/install-state.json', 0o600)
     return local_app
+
+
+def read_install_receipt(user_data_dir: Path | None = None) -> dict:
+    root = user_data_dir or Path(GLib.get_user_data_dir())
+    path = root / 'sessionsifu/install-state.json'
+    try:
+        if path.is_symlink() or path.stat().st_size > 4096:
+            return {}
+        value = json.loads(path.read_text())
+        if value.get('schema') != 1 or value.get('mode') not in {'apt-backed', 'standalone', 'legacy'}:
+            return {}
+        return value
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {}
+
+
+def system_install_info() -> dict:
+    """Bounded, once-per-start/install check; never called by capture workers."""
+    try:
+        result = subprocess.run(
+            ['dpkg-query', '-W', '-f=${db:Status-Status}\\n${Version}', 'sessionsifu'],
+            capture_output=True, text=True, check=False, timeout=2,
+        )
+        if result.returncode == 1:
+            return {'installed': False}
+        lines = result.stdout.splitlines()
+        if result.returncode == 0 and len(lines) == 2:
+            return {'installed': lines[0] == 'installed', 'version': lines[1]}
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return {'installed': None}  # A failed query is NOT proof of uninstall.
+
+
+def install_reconciliation(receipt: dict, system: dict, newer=None) -> str:
+    if receipt.get('mode') == 'standalone':
+        return 'standalone'
+    if not receipt or receipt.get('mode') == 'legacy':
+        return 'legacy'  # Never guess ownership of pre-receipt installations.
+    if system.get('installed') is False:
+        return 'system-removed'
+    if system.get('installed') is not True:
+        return 'unknown'
+    if newer is None:
+        try:
+            result = subprocess.run(
+                ['dpkg', '--compare-versions', system['version'], 'gt', receipt.get('version', CURRENT_VERSION)],
+                capture_output=True, check=False, timeout=2,
+            )
+            newer = result.returncode == 0
+        except (OSError, subprocess.TimeoutExpired, KeyError):
+            newer = False
+    return 'system-newer' if newer else 'current'
+
+
+def user_install_targets(user_data_dir=None, user_config_dir=None, user_bin_dir=None) -> list[Path]:
+    data = user_data_dir or Path(GLib.get_user_data_dir())
+    config = user_config_dir or Path(GLib.get_user_config_dir())
+    binary = user_bin_dir or Path.home() / '.local/bin'
+    # Fixed program-only allowlist. Never derive paths from an editable receipt,
+    # and never include sessionsifu config/Recall/currentSession/manualRecovery.
+    return [
+        binary / 'sessionsifu', data / 'sessionsifu/app',
+        data / 'sessionsifu/sessionsifu@local.shell-extension.zip',
+        data / 'sessionsifu/tessdata', data / 'gnome-shell/extensions' / UUID,
+        data / 'applications/org.gnome.SessionSifu.desktop',
+        data / 'icons/hicolor/scalable/apps/org.gnome.SessionSifu.svg',
+        config / 'autostart/org.gnome.SessionSifu.desktop',
+        config / 'autostart/_sessionsifu-restore-session.desktop',
+        config / 'autostart/_sessionsifu-restore-previous.desktop',
+        data / 'sessionsifu/install-state.json',
+    ]
+
+
+def remove_user_install(*, dry_run=True, disable=True, user_data_dir=None,
+                        user_config_dir=None, user_bin_dir=None) -> dict:
+    data = user_data_dir or Path(GLib.get_user_data_dir())
+    targets = user_install_targets(user_data_dir, user_config_dir, user_bin_dir)
+    selected = []
+    for path in targets:
+        if any(parent.is_symlink() for parent in (path, *path.parents)):
+            raise ValueError('Refusing a symlinked program-install path')
+        if path.exists():
+            selected.append(path)
+    result = {'paths': [str(path) for path in selected], 'dry_run': dry_run, 'data_preserved': True}
+    if dry_run:
+        return result
+    backup_root = data / 'sessionsifu/uninstall-backups'
+    if any(parent.is_symlink() for parent in (backup_root, *backup_root.parents)):
+        raise ValueError('Refusing a symlinked backup path')
+    backup_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    backup = Path(tempfile.mkdtemp(prefix='program-', dir=backup_root))
+    moved = []
+    try:
+        for index, path in enumerate(selected):
+            target = backup / str(index)
+            os.replace(path, target)
+            moved.append((path, target))
+        _atomic_write_text(json.dumps({'schema': 1, 'paths': [
+            {'original': str(path), 'backup': str(target)} for path, target in moved
+        ]}, indent=2) + '\n', backup / 'manifest.json', 0o600)
+    except Exception:
+        for path, target in reversed(moved):
+            os.replace(target, path)
+        raise
+    if disable:
+        config = shell_settings()
+        config.set_strv('enabled-extensions', [value for value in config.get_strv('enabled-extensions') if value != UUID])
+        disabled = list(config.get_strv('disabled-extensions'))
+        if UUID not in disabled:
+            config.set_strv('disabled-extensions', disabled + [UUID])
+        Gio.Settings.sync()
+    result['backup'] = str(backup)
+    return result
+
+
+def reconcile_user_install() -> str:
+    installed = Path(GLib.get_user_data_dir()) / 'sessionsifu/app/sessionsifu'
+    if Path(__file__).absolute() != installed.absolute():
+        return ''
+    receipt = read_install_receipt()
+    system = system_install_info()
+    if not receipt:
+        # Historical installations lack ownership. Record a conservative legacy
+        # mode and offer explicit adoption; never silently disable user-only installs.
+        _atomic_write_text(json.dumps({'schema': 1, 'mode': 'legacy', 'version': CURRENT_VERSION}) + '\n',
+                           installed.parent.parent / 'install-state.json', 0o600)
+    action = install_reconciliation(receipt, system)
+    if action in {'system-newer', 'system-removed'}:
+        remove_user_install(dry_run=False, disable=action == 'system-removed')
+        return ('System package superseded the user copy. Log out and back in once.' if action == 'system-newer'
+                else 'System package removed; managed user program retired. Recovery data preserved.')
+    if action == 'legacy':
+        return 'Legacy user installation: select --install-ownership apt-backed or standalone; recovery data is preserved.'
+    return ''
+
+
+def set_install_ownership(mode: str) -> None:
+    if mode not in {'apt-backed', 'standalone'}:
+        raise ValueError('Unknown installation ownership')
+    if mode == 'apt-backed' and system_install_info().get('installed') is not True:
+        raise ValueError('APT ownership requires a currently installed sessionsifu package')
+    _atomic_write_text(json.dumps({'schema': 1, 'mode': mode, 'version': CURRENT_VERSION}) + '\n',
+                       Path(GLib.get_user_data_dir()) / 'sessionsifu/install-state.json', 0o600)
 
 
 def install_user_update(package: Path, expected_version: str) -> Path:
@@ -3152,6 +3312,18 @@ class ManagerWindow(Adw.ApplicationWindow):
         self.update_button.connect("clicked", self._update_clicked)
         self.update_row.add_suffix(self.update_button)
         update_group.add(self.update_row)
+        self.ownership_row = Adw.ActionRow(
+            title='Choose installation ownership',
+            subtitle='Follow system package updates or keep an independent user installation. Recovery data stays intact.',
+        )
+        self.ownership_row.set_visible(
+            Path(__file__).absolute() == (Path(GLib.get_user_data_dir()) / 'sessionsifu/app/sessionsifu').absolute()
+            and read_install_receipt().get('mode', 'legacy') == 'legacy')
+        for label, mode in [('Follow system updates', 'apt-backed'), ('Keep standalone', 'standalone')]:
+            choice = Gtk.Button(label=label, valign=Gtk.Align.CENTER)
+            choice.connect('clicked', self._choose_install_ownership, mode)
+            self.ownership_row.add_suffix(choice)
+        update_group.add(self.ownership_row)
         content.append(update_group)
         self._available_update: dict | None = None
         self._installed_update: Path | None = None
@@ -4148,6 +4320,24 @@ class ManagerWindow(Adw.ApplicationWindow):
             self._session_rows_widgets.append(row)
 
 
+    def _choose_install_ownership(self, _button, mode):
+        self.ownership_row.set_sensitive(False)
+        def worker():
+            try:
+                set_install_ownership(mode)
+                message = 'Installation ownership saved. Recovery data and restore settings are unchanged.'
+                success = True
+            except (OSError, ValueError) as error:
+                message, success = str(error), False
+            def finished():
+                self.update_row.set_subtitle(message)
+                self.ownership_row.set_visible(not success)
+                self.ownership_row.set_sensitive(True)
+                return GLib.SOURCE_REMOVE
+            GLib.idle_add(finished)
+        threading.Thread(target=worker, daemon=True).start()
+
+
 class SessionSifuApplication(Adw.Application):
     def __init__(self, recall_search: bool = False, capsules: bool = False):
         self.recall_search = recall_search
@@ -4168,6 +4358,20 @@ class SessionSifuApplication(Adw.Application):
             window.present_capsules()
         else:
             window.present()
+        if not getattr(self, '_reconciliation_started', False):
+            self._reconciliation_started = True
+            def reconcile():
+                try:
+                    message = reconcile_user_install()
+                except (OSError, ValueError) as error:
+                    message = f'Installation reconciliation needs review: {error}'
+                if message:
+                    def notify():
+                        if hasattr(window, 'update_row'):
+                            window.update_row.set_subtitle(message)
+                        return GLib.SOURCE_REMOVE
+                    GLib.idle_add(notify)
+            threading.Thread(target=reconcile, daemon=True).start()
 
 
 def autostart() -> int:
@@ -4404,6 +4608,9 @@ def main() -> int:
     parser.add_argument("--save", metavar="NAME")
     parser.add_argument("--restore", metavar="NAME")
     parser.add_argument("--list", action="store_true")
+    parser.add_argument('--remove-user-install', action='store_true', help='Retire user-local program files; preserve all recovery data')
+    parser.add_argument('--dry-run', action='store_true', help='Preview user-install removal without changing anything')
+    parser.add_argument('--install-ownership', choices=['apt-backed', 'standalone'], help='Explicitly adopt a legacy user installation')
     parser.add_argument("--recall-search", action="store_true")
     parser.add_argument("--capsules", action="store_true", help="open Workspace Capsule setup")
     parser.add_argument("--export-archive", type=Path, help="export encrypted sessions and Recall history")
@@ -4446,6 +4653,16 @@ def main() -> int:
     parser.add_argument("--preview-quality", default="storage", help=argparse.SUPPRESS)
     parser.add_argument("--window-only", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.remove_user_install:
+        print(json.dumps(remove_user_install(dry_run=args.dry_run), indent=2))
+        return 0
+    if args.install_ownership:
+        try:
+            set_install_ownership(args.install_ownership)
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+        return 0
 
     if args.compress_recall_preview:
         return compress_recall_preview(
@@ -4520,6 +4737,11 @@ def main() -> int:
         print(json.dumps(import_gnome_archive(args.import_archive, getpass.getpass("Archive passphrase: "))))
         return 0
     if args.autostart:
+        message = reconcile_user_install()
+        if message:
+            print(message, file=sys.stderr)
+            if not Path(__file__).exists():
+                return 0
         return autostart()
     if args.save:
         print(call("SaveSession", GLib.Variant("(s)", (args.save,))))

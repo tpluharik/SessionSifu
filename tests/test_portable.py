@@ -365,7 +365,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
         self.assertEqual(restored.session_protocol["managed_window_ids"], ["1"])
-        self.assertEqual(VERSION, "3.5.34")
+        self.assertEqual(VERSION, "3.5.35")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_experimental_wayland_detection_is_opt_in_and_fail_closed(self) -> None:
@@ -909,7 +909,7 @@ class PortableTests(unittest.TestCase):
             controller.save_named("Work")
             api = LocalApi(controller)
             status = api.dispatch({"method": "status"})
-            self.assertEqual(status["version"], "3.5.34")
+            self.assertEqual(status["version"], "3.5.35")
             preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
             self.assertEqual(preview["applications"][0]["application"], "Editor")
             with self.assertRaises(ValueError):
@@ -1024,6 +1024,19 @@ class PortableTests(unittest.TestCase):
             ],
         }).encode()
         checksums = f"{checksum}  SessionSifu-9.0.0-linux-x64.tar.gz\n".encode()
+        from datetime import datetime, timedelta, timezone
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives import serialization
+        from sessionsifu_portable import update_trust
+        key = Ed25519PrivateKey.generate()
+        now = datetime.now(timezone.utc)
+        signed = json.dumps({'schema': 1, 'version': '9.0.0', 'channel': 'stable',
+            'issued_at': now.isoformat(), 'expires_at': (now + timedelta(days=30)).isoformat(),
+            'artifacts': {'SessionSifu-9.0.0-linux-x64.tar.gz': {
+                'sha256': checksum, 'size': len(bundle),
+                'url': json.loads(release)['assets'][0]['browser_download_url'],
+            }}}).encode()
+        signature = key.sign(signed)
 
         class Response:
             def __init__(self, payload, url):
@@ -1045,6 +1058,10 @@ class PortableTests(unittest.TestCase):
             url = request.full_url
             if url == portable_update.RELEASE_API:
                 return Response(release, url)
+            if url == portable_update.SIGNED_INDEX:
+                return Response(signed, url)
+            if url == portable_update.SIGNED_INDEX + '.sig':
+                return Response(signature, url)
             if url.endswith("SHA256SUMS"):
                 return Response(checksums, url)
             return Response(bundle, url)
@@ -1054,11 +1071,20 @@ class PortableTests(unittest.TestCase):
             mock.patch("sessionsifu_portable.update.platform.system", return_value="Linux"),
             mock.patch("sessionsifu_portable.update.platform.machine", return_value="x86_64"),
             mock.patch("sessionsifu_portable.update.urllib.request.urlopen", side_effect=open_url),
+            mock.patch.object(update_trust, 'PUBLIC_KEY', key.public_key().public_bytes(
+                serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)),
         ):
             update = portable_update.check_portable_update()
             self.assertIsNotNone(update)
             path = portable_update.download_portable_update(update, Path(directory))
             self.assertEqual(path.read_bytes(), bundle)
+            checksums = f'{checksum}  release-artifacts/SessionSifu-9.0.0-linux-x64.tar.gz\n'.encode()
+            self.assertEqual(portable_update.download_portable_update(update, Path(directory)).read_bytes(), bundle)
+            good_signature = signature
+            signature = b'0' * 64
+            with self.assertRaisesRegex(ValueError, 'signature'):
+                portable_update.download_portable_update(update, Path(directory))
+            signature = good_signature
 
             bad_release = json.loads(release)
             bad_release["assets"][0]["browser_download_url"] = "https://example.com/update.tar.gz"
@@ -1074,7 +1100,7 @@ class PortableTests(unittest.TestCase):
             controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
             controller.save_named("Work")
             mcp = ReadOnlyMcp(controller)
-            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.34")
+            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.35")
             self.assertTrue(mcp.call("restore_preview", {"name": "Work"}))
             with self.assertRaises(ValueError):
                 mcp.call("restore_execute", {"name": "Work"})

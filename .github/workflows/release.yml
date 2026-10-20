@@ -20,16 +20,22 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
       - name: Install portable core
-        run: python -m pip install "./portable[gui]"
+        run: |
+          python -m pip install --require-hashes -r packaging/requirements.lock
+          python -m pip install --no-deps --no-build-isolation ./portable
       - name: Install Linux OCR test runtime
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr
       - name: Run portable tests
         run: python tests/test_portable.py
+      - name: Run signed metadata regressions
+        run: python tests/test_update_trust.py
       - name: Run audit fault-injection tests
         run: python tests/test_audit_regressions.py
       - name: Run offscreen Qt worker and capture tests
@@ -65,11 +71,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
       - name: Install bundle dependencies
-        run: python -m pip install "./portable[gui,build]"
+        run: |
+          python -m pip install --require-hashes -r packaging/requirements.lock
+          python -m pip install --no-deps --no-build-isolation ./portable
       - name: Build desktop bundle
         run: python packaging/build-portable.py --target ${{ matrix.target }} --arch ${{ matrix.arch }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -79,82 +89,74 @@ jobs:
           if-no-files-found: error
 
   windows-bundle:
-    name: Build and sign Windows x64
+    name: Build unsigned Windows x64
     needs: portable-tests
     runs-on: windows-2025
-    environment: release
+    outputs:
+      artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
       - name: Install bundle dependencies
-        run: python -m pip install "./portable[gui,build]"
+        run: |
+          python -m pip install --require-hashes -r packaging/requirements.lock
+          python -m pip install --no-deps --no-build-isolation ./portable
       - name: Build Windows bundle
         run: python packaging/build-portable.py --target windows --arch x64
-      - name: Sign Windows executable
-        id: sign_windows
-        shell: pwsh
-        env:
-          WINDOWS_CERTIFICATE_PFX_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        run: |
-          $certificatePresent = `
-            -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PFX_BASE64) -and `
-            -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)
-          if (-not $certificatePresent) {
-            "signed=false" >> $env:GITHUB_OUTPUT
-            Write-Warning 'Windows bundle is unsigned and will be retained only as a development artifact; tagged releases withhold it.'
-            exit 0
-          }
-
-          $certificatePath = Join-Path $env:RUNNER_TEMP 'sessionsifu-authenticode.pfx'
-          try {
-            [IO.File]::WriteAllBytes(
-              $certificatePath,
-              [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_PFX_BASE64)
-            )
-            $signTool = Get-ChildItem `
-              "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
-              Sort-Object FullName -Descending |
-              Select-Object -First 1
-            if (-not $signTool) { throw 'signtool.exe was not found on the Windows runner.' }
-
-            $executable = 'build\pyinstaller-windows-x64\dist\SessionSifu\SessionSifu.exe'
-            & $signTool.FullName sign /fd SHA256 /td SHA256 `
-              /tr http://timestamp.digicert.com `
-              /f $certificatePath /p $env:WINDOWS_CERTIFICATE_PASSWORD $executable
-            if ($LASTEXITCODE -ne 0) { throw 'Authenticode signing failed.' }
-
-            $signature = Get-AuthenticodeSignature $executable
-            if ($signature.Status -ne 'Valid') {
-              throw "Authenticode verification failed: $($signature.Status)"
-            }
-            "signed=true" >> $env:GITHUB_OUTPUT
-
-            $version = (Select-String `
-              -Path 'portable\sessionsifu_portable\__init__.py' `
-              -Pattern '^VERSION = "([^"]+)"$').Matches[0].Groups[1].Value
-            if ([string]::IsNullOrWhiteSpace($version)) {
-              throw 'Could not read the portable SessionSifu version.'
-            }
-            $archive = "dist\portable\SessionSifu-$version-windows-x64.zip"
-            Remove-Item $archive -Force
-            Compress-Archive `
-              -Path 'build\pyinstaller-windows-x64\dist\SessionSifu' `
-              -DestinationPath $archive -CompressionLevel Optimal
-          }
-          finally {
-            if (Test-Path $certificatePath) {
-              Remove-Item $certificatePath -Force
-            }
-          }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: github.ref_type != 'tag' || steps.sign_windows.outputs.signed == 'true'
+        id: unsigned
+        with:
+          name: Unsigned-SessionSifu-Windows-x64
+          path: build/pyinstaller-windows-x64/dist/SessionSifu/**
+          if-no-files-found: error
+
+  windows-sign:
+    name: Sign Windows in isolated service job
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: windows-bundle
+    runs-on: windows-2025
+    environment: release
+    steps:
+      # Deliberately no checkout, pip, PyInstaller, project code or PFX fallback.
+      - name: Submit exact workflow artifact to SignPath
+        id: sign
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: SignPath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ needs.windows-bundle.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+      - name: Verify signed artifact without executing it
+        if: steps.sign.conclusion == 'success'
+        shell: pwsh
+        run: |
+          $executables = @(Get-ChildItem signed -Recurse -Filter SessionSifu.exe)
+          if ($executables.Count -ne 1) { throw 'Expected exactly one signed executable.' }
+          if ((Get-AuthenticodeSignature $executables[0].FullName).Status -ne 'Valid') { throw 'Authenticode verification failed.' }
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version.' }
+          New-Item -ItemType Directory -Force release-content/SessionSifu, release-assets | Out-Null
+          Copy-Item -Recurse signed/* release-content/SessionSifu/
+          Compress-Archive -Path release-content/SessionSifu -DestinationPath "release-assets/SessionSifu-$version-windows-x64.zip"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.sign.conclusion == 'success'
         with:
           name: SessionSifu-Windows-x64
-          path: dist/portable/*
+          path: release-assets/*
           if-no-files-found: error
+      - name: Explain withheld Windows publication
+        if: vars.SIGNPATH_ORGANIZATION_ID == ''
+        shell: pwsh
+        run: Write-Warning 'SignPath is not provisioned. Windows and Chocolatey publication remain withheld; no signing key is exported to a runner.'
 
   gnome-package:
     name: Build GNOME Debian package
@@ -162,16 +164,24 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
       - name: Install GNOME build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y desktop-file-utils dpkg-dev gjs gir1.2-adw-1 gir1.2-gdkpixbuf-2.0 gir1.2-gtk-4.0 gir1.2-gtop-2.0 gnome-shell libglib2.0-bin nodejs python3-cryptography python3-gi python3-keyring python3-pil tesseract-ocr zip
+          sudo apt-get install -y desktop-file-utils dpkg-dev gjs gir1.2-adw-1 gir1.2-gdkpixbuf-2.0 gir1.2-gtk-4.0 gir1.2-gtop-2.0 gnome-shell libglib2.0-bin nodejs python3-cryptography python3-gi python3-keyring python3-pil python3-yaml tesseract-ocr zip
       - name: Build and validate Debian package
         run: ./packaging/build-deb.sh
+      - name: Archive expired legacy update bytes without rewriting history
+        run: python3 packaging/archive-retired-updates.py --output "dist/SessionSifu-${GITHUB_REF_NAME#v}-legacy-user-updates.tar.gz"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: SessionSifu-GNOME-Debian
-          path: dist/sessionsifu_*_all.deb
+          path: |
+            dist/sessionsifu_*_all.deb
+            dist/*GNOME-Debian.spdx.json
+            dist/*legacy-user-updates.tar.gz
           if-no-files-found: error
 
   ubuntu24-package-compatibility:
@@ -180,10 +190,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
       - name: Install package build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y desktop-file-utils dpkg-dev gjs gnome-settings-daemon-common gnome-shell gir1.2-adw-1 gir1.2-gdkpixbuf-2.0 gir1.2-gtk-4.0 gir1.2-gtop-2.0 libglib2.0-bin nodejs python3-cryptography python3-gi python3-keyring python3-pil python3-pyatspi tesseract-ocr zip
+          sudo apt-get install -y desktop-file-utils dpkg-dev gjs gnome-settings-daemon-common gnome-shell gir1.2-adw-1 gir1.2-gdkpixbuf-2.0 gir1.2-gtk-4.0 gir1.2-gtop-2.0 libglib2.0-bin nodejs python3-cryptography python3-gi python3-keyring python3-pil python3-pyatspi python3-yaml tesseract-ocr zip
       - name: Build and verify Ubuntu 24.04-compatible dependency metadata
         run: |
           ./packaging/build-deb.sh
@@ -198,15 +210,21 @@ jobs:
   release:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [portable-bundles, windows-bundle, gnome-package, ubuntu24-package-compatibility]
+    needs: [portable-bundles, windows-sign, gnome-package, ubuntu24-package-compatibility]
     runs-on: ubuntu-26.04
+    environment: release
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           path: release-artifacts
+          pattern: SessionSifu-*
           merge-multiple: true
       - name: Generate package-manager submissions
         run: |
@@ -222,7 +240,11 @@ jobs:
             --artifact-dir release-artifacts \
             --output-dir release-artifacts \
             --commit "$GITHUB_SHA"
-          sha256sum release-artifacts/* > release-artifacts/SHA256SUMS
+          (cd release-artifacts && sha256sum * > SHA256SUMS)
+      - name: Attest exact release artifacts
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: release-artifacts/*
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -238,6 +260,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"

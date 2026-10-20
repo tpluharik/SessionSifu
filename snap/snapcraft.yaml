@@ -1,7 +1,7 @@
 name: sessionsifu
 title: SessionSifu
 base: core24
-version: "3.5.34"
+version: "3.5.35"
 summary: Restore desktop applications, files and window layouts
 description: |
   SessionSifu saves desktop sessions and restores applications, documents,
@@ -10,6 +10,8 @@ description: |
   OCR and bounded retention. This snap contains the portable KDE Plasma and
   general GNOME edition; Ubuntu 26.04 users can use the PPA for full GNOME Shell
   50 integration.
+  This is a classic-confinement snap: it is not sandboxed and has the desktop
+  access of a normal application running as your user.
 grade: stable
 confinement: classic
 license: GPL-3.0-or-later
@@ -32,13 +34,11 @@ parts:
   sessionsifu:
     plugin: python
     source: portable
-    python-packages:
-      - cryptography==46.0.5
-      - dbus-next==0.2.3
-      - keyring==25.7.0
-      - Pillow==12.3.0
-      - psutil==7.2.2
-      - PySide6==6.11.2
+    override-pull: |
+      craftctl default
+      cp "$CRAFT_PROJECT_DIR/packaging/runtime-requirements.lock" "$CRAFT_PART_SRC/requirements-release.lock"
+    python-requirements:
+      - requirements-release.lock
     stage-packages:
       # Classic snaps cannot use the interpreter from the core24 base. Bundle
       # Python explicitly so the launcher and virtual environment are portable.

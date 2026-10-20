@@ -2,6 +2,29 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.5.35
+
+- Record installation ownership and reconcile APT-backed user copies once at
+  startup. Preserve standalone/legacy installations and all personal recovery
+  data. Add dry-run and recoverable program-only user uninstall with rollback.
+- Authenticate external Recall capture/list/delete callers asynchronously,
+  with bounded concurrency/rate limits and teardown-safe pending requests.
+- Redact recognized command credentials after document ownership resolution;
+  never replay redacted commands. Preserve original historical recovery bytes.
+- Isolate Windows service signing and Snap publishing from untrusted builds;
+  remove exportable PFX fallback, hash-lock release dependencies and disable
+  persisted checkout credentials. Add exact per-platform inventories and OIDC
+  artifact attestations, with accurate signing/confinement disclosures.
+- Use one authoritative CI Debian artifact across release/in-app channels;
+  retain a legacy feed bridge, add signed portable inventories and accept the
+  known legacy checksum prefix. Separate signing from tests/builds and support
+  manifest renewal without rebuilding or weakening expiry checks.
+- Remove the unused bundled uinput-rule template and archive only expired
+  legacy update payloads after a rollback grace interval; keep Git history.
+- Add isolated ownership, rollback, privacy, caller, signature, URL, document
+  and release-policy regressions. Capture timers, worker limits, compositor
+  serialization, layout guards and conservative restore pacing are unchanged.
+
 ## 3.5.34
 
 - Support Ubuntu 26.10 / GNOME Shell 51 alongside GNOME 50; replace removed St

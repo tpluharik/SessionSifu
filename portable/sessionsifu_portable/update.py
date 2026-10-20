@@ -13,8 +13,10 @@ import urllib.parse
 import urllib.request
 
 from . import VERSION
+from .update_trust import verify_release_index
 
 RELEASE_API = "https://api.github.com/repos/tpluharik/SessionSifu/releases/latest"
+SIGNED_INDEX = 'https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/portable-stable.json'
 MAX_METADATA = 512 * 1024
 MAX_CHECKSUMS = 256 * 1024
 MAX_BUNDLE = 250 * 1024 * 1024
@@ -33,6 +35,8 @@ class PortableUpdate:
     checksums_url: str
     release_url: str
     size: int
+    manifest_url: str = ''
+    signature_url: str = ''
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -108,6 +112,8 @@ def check_portable_update(timeout: int = 8) -> PortableUpdate | None:
         checksums_url=_github_asset_url(checksums.get("browser_download_url")),
         release_url=release_url,
         size=size,
+        manifest_url=SIGNED_INDEX,
+        signature_url=SIGNED_INDEX + '.sig',
     )
 
 
@@ -115,7 +121,8 @@ def _download(url: str, limit: int, timeout: int) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": f"SessionSifu/{VERSION}"})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         final = urllib.parse.urlparse(response.geturl())
-        if final.scheme != "https" or final.hostname not in TRUSTED_DOWNLOAD_HOSTS:
+        if final.scheme != "https" or (final.hostname not in TRUSTED_DOWNLOAD_HOSTS and not (
+                url in {SIGNED_INDEX, SIGNED_INDEX + '.sig'} and response.geturl() == url)):
             raise ValueError("GitHub redirected the update to an untrusted location")
         payload = response.read(limit + 1)
     if len(payload) > limit:
@@ -124,15 +131,28 @@ def _download(url: str, limit: int, timeout: int) -> bytes:
 
 
 def download_portable_update(update: PortableUpdate, destination: Path, timeout: int = 30) -> Path:
+    if not update.manifest_url or not update.signature_url:
+        raise ValueError('A signed release manifest is required')
+    if update.manifest_url != SIGNED_INDEX or update.signature_url != SIGNED_INDEX + '.sig':
+        raise ValueError('Release index must use the pinned SessionSifu signing channel')
+    signed = verify_release_index(
+        _download(update.manifest_url, MAX_CHECKSUMS, timeout),
+        _download(update.signature_url, 64, timeout), update.version)
+    artifact = signed['artifacts'].get(update.asset_name, {})
+    if (artifact.get('size') != update.size or artifact.get('url') != update.asset_url or
+            not re.fullmatch(r'[0-9a-f]{64}', str(artifact.get('sha256', '')))):
+        raise ValueError('Release asset does not match the signed inventory')
     checksums = _download(update.checksums_url, MAX_CHECKSUMS, timeout).decode("utf-8")
     expected = ""
     for line in checksums.splitlines():
         parts = line.split(None, 1)
-        if len(parts) == 2 and parts[1].lstrip("*") == update.asset_name:
+        if len(parts) == 2 and parts[1].lstrip("*") in {update.asset_name, f'release-artifacts/{update.asset_name}'}:
             expected = parts[0].casefold()
             break
     if not re.fullmatch(r"[0-9a-f]{64}", expected):
         raise ValueError("Release checksum for this portable bundle is unavailable")
+    if expected != artifact['sha256']:
+        raise ValueError('Release checksum differs from the authenticated inventory')
     destination.mkdir(parents=True, exist_ok=True)
     target = destination / update.asset_name
     request = urllib.request.Request(

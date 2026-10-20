@@ -4,6 +4,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 import * as Log from './log.js';
+import {managedExtensionDisposition} from '../installOwnership.js';
 
 
 export let current_extension_path = null;
@@ -52,8 +53,6 @@ export const current_session_summary_path = GLib.build_filenamev([current_sessio
 export const autostart_restore_desktop_file_path = GLib.build_filenamev([user_config, '/autostart/_sessionsifu-restore-session.desktop']);
 export const autostart_restore_previous_desktop_file_path = GLib.build_filenamev([user_config, '/autostart/_sessionsifu-restore-previous.desktop']);
 
-export let desktop_template_path_ydotool_uinput_rules;
-export const system_udev_rules_path_ydotool_uinput_rules = '/etc/udev/rules.d/60-sessionsifu-ydotool-uinput.rules';
 
 // Some constants rely on extension metadata,
 // we put them all here and initialize them from extension.js
@@ -62,8 +61,29 @@ export function init(extensionObject) {
     current_extension_path = extensionObject.path;
     current_extension_version = String(extensionObject.metadata['version-name'] ?? 'unknown');
     desktop_template_path = GLib.build_filenamev([extensionObject.path, '/template/template.desktop']);
-    desktop_template_path_ydotool_uinput_rules = GLib.build_filenamev([extensionObject.path, '/template/60-sessionsifu-ydotool-uinput.rules']);
 
+}
+
+export function installOwnershipState(extensionObject) {
+    const userExtension = GLib.build_filenamev([data_dir, 'gnome-shell', 'extensions', 'sessionsifu@local']);
+    if (extensionObject.path !== userExtension) return 'allow';
+    function readSmall(path) {
+        const file = Gio.File.new_for_path(path);
+        const info = file.query_info('standard::size,standard::is-symlink', Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null);
+        if (info.get_is_symlink() || info.get_size() > 4096) return {};
+        return JSON.parse(new TextDecoder().decode(file.load_contents(null)[1]));
+    }
+    let receipt;
+    try { receipt = readSmall(`${data_dir}/sessionsifu/install-state.json`); }
+    catch (_) { return 'allow'; } // Legacy/user-only installations remain usable.
+    if (receipt.mode !== 'apt-backed') return 'allow';
+    const present = GLib.file_test('/usr/bin/sessionsifu', GLib.FileTest.IS_EXECUTABLE);
+    let metadata = {};
+    if (present) {
+        try { metadata = readSmall('/usr/share/gnome-shell/extensions/sessionsifu@local/metadata.json'); }
+        catch (_) { /* A transient package operation is not proof of removal. */ }
+    }
+    return managedExtensionDisposition(receipt, present, metadata['version-name'], extensionObject.metadata['version-name']);
 }
 
 export async function loadSummary() {

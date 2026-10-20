@@ -1,13 +1,16 @@
 #!/bin/sh
 set -eu
+if [ -n "${SESSIONSIFU_UPDATE_SIGNING_KEY:-}" ]; then
+    echo 'Signing keys must not be present during builds/tests. Build without the key; sign verified CI artifacts separately.' >&2
+    exit 2
+fi
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 extension_dir="$project_dir/extension/sessionsifu@local"
 dist_dir="$project_dir/dist"
 updates_dir="$project_dir/updates"
-version="3.5.34"
+version="3.5.35"
 package="$dist_dir/sessionsifu_${version}_all.deb"
-update_package="$updates_dir/sessionsifu_${version}_all.deb"
 stage=$(mktemp -d /tmp/sessionsifu-package.XXXXXX)
 trap 'rm -rf -- "$stage"' EXIT HUP INT TERM
 chmod 0755 "$stage"
@@ -20,6 +23,8 @@ desktop-file-validate "$project_dir/app/org.gnome.SessionSifu.Autostart.desktop"
 glib-compile-schemas --strict "$extension_dir/schemas"
 GSETTINGS_BACKEND=memory SESSIONSIFU_SCHEMA_DIR="$extension_dir/schemas" \
     python3 "$project_dir/tests/test_settings.py" "$project_dir"
+GSETTINGS_BACKEND=memory SESSIONSIFU_SCHEMA_DIR="$extension_dir/schemas" \
+    python3 "$project_dir/tests/test_distribution_security.py"
 
 find "$extension_dir" -type f -name '*.js' -exec node --check {} \;
 gjs -m "$project_dir/tests/open-files-smoke.js"
@@ -35,6 +40,8 @@ node --experimental-vm-modules "$project_dir/tests/window-tiling-safety-smoke.mj
 node --experimental-vm-modules "$project_dir/tests/recall-lifecycle-smoke.mjs"
 node --experimental-vm-modules "$project_dir/tests/power-policy-smoke.mjs"
 gjs -m "$project_dir/tests/security-smoke.js"
+gjs -m "$project_dir/tests/distribution-security-smoke.js"
+GIO_USE_VFS=local SESSIONSIFU_PRIVATE_BUS_TEST=1 dbus-run-session -- gjs -m "$project_dir/tests/dbus-manager-calls-smoke.js"
 gjs -m "$project_dir/tests/recall-activity-smoke.js"
 gjs -m "$project_dir/tests/recall-privacy-smoke.js"
 mkdir -m 0700 "$stage/cache-test-runtime"
@@ -42,6 +49,7 @@ XDG_RUNTIME_DIR="$stage/cache-test-runtime" \
     gjs -m "$project_dir/tests/recall-workspace-cache-smoke.js" "$stage/cache-test-runtime"
 python3 "$project_dir/tests/test_static.py" "$project_dir"
 python3 "$project_dir/tests/test_portable.py"
+python3 "$project_dir/tests/test_update_trust.py"
 python3 "$project_dir/tests/test_recall_engine.py"
 python3 "$project_dir/tests/test_audit_regressions.py"
 python3 "$project_dir/tests/test_marketplace.py"
@@ -113,24 +121,8 @@ find "$stage" -type d -exec chmod 0755 {} \;
 mkdir -p "$dist_dir"
 dpkg-deb --build --root-owner-group "$stage" "$package"
 python3 "$project_dir/tests/test_user_update_package.py" "$project_dir" "$package"
-if [ -n "${SESSIONSIFU_UPDATE_SIGNING_KEY:-}" ]; then
-    test -f "$SESSIONSIFU_UPDATE_SIGNING_KEY"
-    mkdir -p "$updates_dir"
-    install -m 0644 "$package" "$update_package"
-    update_sha=$(sha256sum "$update_package" | cut -d ' ' -f 1)
-    update_size=$(stat -c %s "$update_package")
-    issued_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    expires_at=$(date -u -d '+45 days' +%Y-%m-%dT%H:%M:%SZ)
-    sed \
-        -e "s/@VERSION@/$version/g" \
-        -e "s/@SHA256@/$update_sha/g" \
-        -e "s/@SIZE@/$update_size/g" \
-        -e "s/@ISSUED_AT@/$issued_at/g" \
-        -e "s/@EXPIRES_AT@/$expires_at/g" \
-        "$project_dir/packaging/latest.json.in" > "$updates_dir/latest.json"
-    openssl pkeyutl -sign -inkey "$SESSIONSIFU_UPDATE_SIGNING_KEY" -rawin \
-        -in "$updates_dir/latest.json" -out "$updates_dir/latest.json.sig"
-    chmod 0644 "$updates_dir/latest.json.sig"
-    printf '%s\n' "$updates_dir/latest.json"
-fi
+python3 "$project_dir/tests/test_release_manifests.py" "$project_dir" "$package"
+python3 "$project_dir/packaging/create-artifact-sbom.py" \
+    --version "$version" --name "SessionSifu-$version-GNOME-Debian" \
+    --deb "$package" --output "$dist_dir/SessionSifu-$version-GNOME-Debian.spdx.json"
 printf '%s\n' "$package"

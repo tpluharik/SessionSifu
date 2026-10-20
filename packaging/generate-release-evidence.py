@@ -76,7 +76,19 @@ def main() -> int:
         "creationInfo": {"created": created, "creators": ["Tool: SessionSifu generate-release-evidence.py"]},
         "packages": packages,
         "relationships": relationships,
+        "comment": "Project overview only. Per-platform SPDX files inventory actual delivered bytes and the exact build environment, including transitive packages.",
     }
+    sbom['externalDocumentRefs'] = []
+    for index, path in enumerate(sorted(args.artifact_dir.glob('*.spdx.json'))):
+        document = json.loads(path.read_text())
+        reference = f'DocumentRef-Platform-{index}'
+        sbom['externalDocumentRefs'].append({
+            'externalDocumentId': reference, 'spdxDocument': document['documentNamespace'],
+            'checksum': {'algorithm': 'SHA256', 'checksumValue': digest(path)},
+        })
+        sbom['relationships'].append({'spdxElementId': 'SPDXRef-Package-SessionSifu',
+                                      'relationshipType': 'DESCRIBED_BY',
+                                      'relatedSpdxElement': f'{reference}:SPDXRef-DOCUMENT'})
     artifacts = []
     for path in sorted(args.artifact_dir.iterdir()):
         if path.is_file() and path.name not in {"SHA256SUMS"}:

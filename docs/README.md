@@ -2,7 +2,7 @@
 
 - [3.5.24 stability/performance audit and recovery](STABILITY_AUDIT.md)
 
-This index describes the current 3.5.34 behavior. Start with the main
+This index describes the current 3.5.35 behavior. Start with the main
 [README](../README.md) for installation and compatibility.
 
 ## Using SessionSifu
@@ -20,6 +20,9 @@ This index describes the current 3.5.34 behavior. Start with the main
   exclusions, retention and deletion.
 
 ## Design and assurance
+
+- [Distribution security](DISTRIBUTION_SECURITY.md) — installation ownership,
+  safe uninstall, caller boundaries, authoritative build/signing and renewal.
 
 - [Architecture](ARCHITECTURE.md) — GNOME/portable components, storage,
   capture/search pipeline and release channel.

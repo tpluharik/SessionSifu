@@ -27,7 +27,7 @@ export async function run() {
     );
 
     const [message] = reply.deepUnpack();
-    if (message !== 'SessionSifu 3.5.34 is ready')
+    if (message !== 'SessionSifu 3.5.35 is ready')
         throw new Error(`Unexpected D-Bus response: ${message}`);
 }
 

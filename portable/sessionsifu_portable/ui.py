@@ -1749,7 +1749,7 @@ class MainWindow(QMainWindow):
             if destination:
                 self._perform(
                     lambda: self.controller.download_update(Path(destination)),
-                    "Verified portable update downloaded. Close SessionSifu before replacing this bundle.",
+                    "Signature and checksum verified. Close SessionSifu before replacing this bundle.",
                 )
 
         self._background.submit(self.controller.check_update, finished)

@@ -45,6 +45,9 @@ export default class SessionSifuExtension extends Extension {
     }
 
     enable() {
+        const ownership = FileUtils.installOwnershipState(this);
+        if (ownership !== 'allow')
+            throw new Error(`SessionSifu ${ownership}: managed user recording paused. Open the manager to reconcile; saved recovery data is preserved.`);
         compositorOperations.configureWatchdog(
             (callback, delay) => GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
                 callback();

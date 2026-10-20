@@ -52,8 +52,8 @@ for native_widget_file in [extension / "ui/autoclose.js", extension / "utils/too
 assert "orientation: Clutter.Orientation.VERTICAL" in (extension / "ui/autoclose.js").read_text()
 assert "orientation: Clutter.Orientation.HORIZONTAL" in (extension / "utils/tooltip.js").read_text()
 assert metadata["settings-schema"] == "org.gnome.shell.extensions.sessionsifu"
-assert metadata["version-name"] == "3.5.34"
-assert metadata["version"] == 68
+assert metadata["version-name"] == "3.5.35"
+assert metadata["version"] == 69
 autostart_source = (extension / "ui" / "autostart.js").read_text()
 file_utils_source = (extension / "utils" / "fileUtils.js").read_text()
 assert "extensionObject.metadata['version-name']" in file_utils_source
@@ -91,8 +91,9 @@ assert 'mkdir -p "$stage/usr/share/glib-2.0/schemas"' in build_script
 assert "org.gnome.shell.extensions.sessionsifu.gschema.xml" in build_script
 assert "sessionsifu@local.shell-extension.zip" in build_script
 assert "org.gnome.SessionSifu.svg" in build_script
-assert '"$updates_dir/latest.json"' in build_script
-assert 'version="3.5.34"' in build_script
+assert 'Signing keys must not be present during builds/tests' in build_script
+assert 'openssl pkeyutl -sign' not in build_script
+assert 'version="3.5.35"' in build_script
 package_control = (root / "packaging" / "control").read_text()
 assert "python3-pyatspi" in package_control
 assert "gnome-settings-daemon-common" in package_control
@@ -167,7 +168,8 @@ assert "this._savingIcon.stop()" in source_text
 assert "recallActivity.begin()" in source_text
 assert "get_boolean('show-indicator') ||" in source_text
 assert "saveRecallAsync" in source_text
-assert "listRecall(\n                query, this._settings.get_strv('recall-excluded-apps')" in source_text
+assert 'ListRecallAsync([query], invocation)' in source_text
+assert 'CaptureRecallNowAsync(_parameters, invocation)' in source_text
 assert "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding" in source_text
 assert "sessionsifu-recall/" in source_text
 assert "changed::recall-search-shortcut'" in source_text
@@ -193,7 +195,7 @@ assert "(?:-\\d{3})?" in source_text
 assert "iso.slice(20, 23)" in source_text
 
 app_source = (root / "app" / "sessionsifu").read_text()
-assert 'CURRENT_VERSION = "3.5.34"' in app_source
+assert 'CURRENT_VERSION = "3.5.35"' in app_source
 assert 'if _module_path in sys.path:' in app_source
 assert 'sys.path.remove(_module_path)' in app_source
 assert 'sys.path.insert(0, _module_path)' in app_source

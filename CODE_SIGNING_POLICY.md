@@ -5,7 +5,9 @@ repository. Windows code signing is intended to let users verify the publisher
 and the exact automated build that produced a release; it is not a substitute
 for source review, malware scanning or the project security policy.
 
-Free code signing provided by SignPath.io, certificate by SignPath Foundation.
+The workflow supports SignPath service signing. Foundation approval, certificate
+provisioning and production policy configuration are external prerequisites;
+this document does not claim they have been completed.
 
 ## Project and privacy statement
 
@@ -77,9 +79,17 @@ Authenticode verification of the Windows executable.
 
 ## Key custody and compromise response
 
-The production private key is held by the signing service and is not exported
+When provisioned, the production Windows private key is held by the signing service and is not exported
 to the repository, maintainer workstation or GitHub runner. The CI API token is
 limited to submitting requests for this project and signing policy.
+
+Builds run in a different job, without the release environment. The signing job
+has no checkout, package installation, PyInstaller or project-code execution.
+It consumes the exact unsigned workflow artifact and verifies the returned
+Authenticode signature without running the executable. The exportable PFX
+fallback was removed in 3.5.35; missing service configuration withholds Windows
+and dependent Chocolatey assets. Linux Ed25519 update signing is separate and
+does not inherit these Windows-service custody claims.
 
 Suspected credential, account or build-pipeline compromise pauses releases.
 The maintainer revokes the affected token, disables the signing policy, records

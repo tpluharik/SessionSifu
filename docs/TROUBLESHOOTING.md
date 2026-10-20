@@ -4,7 +4,7 @@
 
 GNOME's enabled preference is not proof that an extension is running. A GNOME
 50-only installation can report `Enabled: Yes` and `State: OUT OF DATE` together
-after upgrading to Ubuntu 26.10 / GNOME 51. Version 3.5.34 supports
+after upgrading to Ubuntu 26.10 / GNOME 51. Version 3.5.35 supports
 GNOME 50 and 51 and replaces removed St widget orientation properties.
 
 The manager distinguishes incompatible/startup-error states and verifies the
@@ -16,7 +16,7 @@ version validation, force a logout or trigger a restore.
 
 ## An application opens twice after login
 
-Update SessionSifu to 3.5.34. Automatic previous-desktop recovery now detects
+Update SessionSifu to 3.5.35. Automatic previous-desktop recovery now detects
 enabled XDG autostart entries and leaves those applications to the desktop
 login manager. Explicit manual restores can still launch them. If duplication
 continues, check for multiple differently named files in `~/.config/autostart`
@@ -372,7 +372,7 @@ origin, size and SHA-256. Never bypass a signature, expiry or rollback error.
 Versions 2.4 and older need one manual 2.5 package installation because they do
 not understand the signed update channel.
 
-The signed stable channel offers 3.5.34, including GNOME 51 compatibility, LibreOffice recovery fixes, layout safety guards and conservative restore scheduling,
+The signed stable channel offers 3.5.35, including GNOME 51 compatibility, LibreOffice recovery fixes, layout safety guards and conservative restore scheduling,
 paired tiling hardening,
 the 3.5.28 autostart fix and shutdown/LibreOffice recovery corrections.
 A source commit or version bump

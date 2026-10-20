@@ -1,3 +1,12 @@
+sessionsifu (3.5.35-1~ppa1~resolute1) resolute; urgency=medium
+
+  * Add ownership-aware user-program retirement with recovery preservation.
+  * Redact command secrets and authorize external Recall control asynchronously.
+  * Isolate signing/publishing, hash-lock builds and attest exact release bytes.
+  * Add signed-channel bridge, renewal and isolated security regressions.
+
+ -- Tomas Pluharik <tpluharik@gmail.com>  Tue, 20 Oct 2026 12:00:00 +0200
+
 sessionsifu (3.5.34-1~ppa1~resolute1) resolute; urgency=medium
 
   * Support GNOME Shell 51 and Ubuntu 26.10 alongside GNOME Shell 50.

@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PORTABLE = ROOT / "portable"
-VERSION = "3.5.34"
+VERSION = "3.5.35"
 
 
 def parse_args() -> argparse.Namespace:
@@ -106,6 +106,11 @@ def main() -> int:
         archive = Path(shutil.make_archive(base, "gztar", root_dir=built.parent, base_dir=built.name))
         if archive != artifact:
             archive.replace(artifact)
+    subprocess.run([
+        sys.executable, str(ROOT / 'packaging/create-artifact-sbom.py'),
+        '--version', VERSION, '--name', f'SessionSifu-{VERSION}-{target}-{args.arch}',
+        '--root', str(built), '--output', str(output / f'SessionSifu-{VERSION}-{target}-{args.arch}.spdx.json'),
+    ], check=True)
     print(artifact)
     return 0
 

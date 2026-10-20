@@ -786,6 +786,11 @@ export const RestoreSession = class {
         let launched = false;
         let running = false;
         try {
+            if (session_config_object.command_requires_input && !session_config_object.desktop_file_id) {
+                await this._preserveRecoveryRecord(session_config_object);
+                this._log.warn('Saved command needs credentials; use manual recovery. No redacted command was executed');
+                return [false, false];
+            }
             if (!mayRestoreApplications() || this._destroyed)
                 return [launched, running];
 
@@ -879,6 +884,11 @@ export const RestoreSession = class {
             // https://gjs-docs.gnome.org/gio20~2.0/gio.subprocesslauncher#method-set_environ
             // TODO Support snap apps
             const cmd = session_config_object.cmd;
+            if (session_config_object.command_requires_input || cmd?.some(arg => String(arg).includes('[REDACTED]'))) {
+                await this._preserveRecoveryRecord(session_config_object);
+                this._log.warn('Command credentials require manual input; redacted argv was not executed');
+                return [false, false];
+            }
             if (cmd && cmd.length) {
                 if (!restoreCommandAllowed(cmd)) {
                     const message = `Refused to launch unsafe Shell helper ${app_name}`;

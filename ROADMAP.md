@@ -1,8 +1,18 @@
 # SessionSifu roadmap
 
-This roadmap describes the product after version 3.5.34. It separates shipped
+This roadmap describes the product after version 3.5.35. It separates shipped
 behavior from future work; it is not a release-date promise. Privacy and
 operating-system security boundaries take precedence over feature parity.
+
+## Distribution security — 3.5.35
+
+- Preserve recovery data during ownership-aware user program retirement.
+- Authenticate portable update metadata and external Recall control requests.
+- Isolate signing/publishing, lock dependencies and attest exact CI artifacts.
+- Retain legacy channel compatibility and renew signed metadata without builds.
+- Keep capture frequency, worker bounds, restore pacing and layout guards.
+- External signing-service/store credentials and isolated key custody remain
+  provisioning requirements, not features inferred from a successful build.
 
 ## GNOME 51 compatibility — 3.5.34
 

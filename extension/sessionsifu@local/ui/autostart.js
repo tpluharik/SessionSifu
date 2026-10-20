@@ -25,6 +25,7 @@ import * as RecallRecorder from '../recallRecorder.js';
 import * as Log from '../utils/log.js';
 import {PrefsUtils} from '../utils/prefsUtils.js';
 import * as FileUtils from '../utils/fileUtils.js';
+import {ManagerCalls} from '../managerCalls.js';
 
 
 let _requiredToRestorePrevious = false;
@@ -159,6 +160,7 @@ const AutostartService = GObject.registerClass(
             this._restorePreviousSourceId = 0;
             this._idleIdOpenRestoreSessionDialog = 0;
             this._lastOperationUs = new Map();
+            this._managerCalls = new ManagerCalls();
 
             this._settings = PrefsUtils.getSettings();
             if (/^(Preparing restore|Processing application|Processing window)/.test(
@@ -334,12 +336,21 @@ const AutostartService = GObject.registerClass(
             return `Restoring selected applications from '${snapshotName}'`;
         }
 
-        ListRecall(query) {
-            return JSON.stringify(RecallRecorder.listRecall(
-                query, this._settings.get_strv('recall-excluded-apps')));
+        _managerCall(invocation, operation, work) {
+            this._managerCalls.invoke(invocation, operation, work);
         }
 
-        CaptureRecallNow() {
+        ListRecallAsync([query], invocation) {
+            // Browsing existing history remains possible when recording is off.
+            this._managerCall(invocation, 'list-recall', () => JSON.stringify(RecallRecorder.listRecall(
+                String(query).slice(0, 4096), this._settings.get_strv('recall-excluded-apps'))));
+        }
+
+        CaptureRecallNowAsync(_parameters, invocation) {
+            this._managerCall(invocation, 'capture-recall', () => this._captureRecallNow());
+        }
+
+        _captureRecallNow() {
             if (!this._allowOperation('capture-recall', 1000))
                 return 'ERROR: Recall capture rate limit exceeded';
             if (!this._settings.get_boolean('recall-enabled'))
@@ -348,7 +359,11 @@ const AutostartService = GObject.registerClass(
             return 'Saving a private local Recall entry';
         }
 
-        DeleteRecall() {
+        DeleteRecallAsync(_parameters, invocation) {
+            this._managerCall(invocation, 'delete-recall', () => this._deleteRecall());
+        }
+
+        _deleteRecall() {
             if (!this._allowOperation('delete-recall', 3000))
                 return 'ERROR: Recall delete rate limit exceeded';
             const removed = RecallRecorder.deleteRecall();
@@ -479,6 +494,7 @@ const AutostartService = GObject.registerClass(
         }
 
         _disable() {
+            this._managerCalls.close();
             RestoreSession.restoreSessionObject.activeRestorer?.cancel();
             if (this._continuousSaver) {
                 this._continuousSaver.destroy();

@@ -20,6 +20,7 @@ Build-Depends:
  python3-keyring,
  python3-pil,
  python3-pyatspi,
+ python3-yaml,
  tesseract-ocr,
  zip
 Standards-Version: 4.7.2

@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the 3.5.34 runtime and release layout. User-facing
+This document describes the 3.5.35 runtime and release layout. User-facing
 steps live in the [session restoration guide](RESTORE_GUIDE.md) and
 [Privacy Recall guide](RECALL_GUIDE.md).
 
@@ -68,11 +68,13 @@ safe interchange format. Version 2.5 validates argument count, byte length,
 control characters and executable availability, then calls `Gio.Subprocess`
 directly. Saved text is never reconstructed as shell syntax.
 
-The session D-Bus is a same-user interface rather than an authorization
-boundary. Any process permitted to use that bus and name can request operations.
-Recall opt-ins and file modes reduce accidental disclosure but do not defend
-against malware already executing as the same user. The complete data inventory
-is in [PRIVACY.md](PRIVACY.md).
+The session D-Bus is a same-user interface, not complete same-user malware
+isolation. Since 3.5.35 external Recall capture/list/delete calls additionally
+require the live manager's connection identity with asynchronous, bounded
+authorization and rate limits. History remains readable by the manager while
+recording is disabled. Other control methods retain their documented same-user
+boundary. See [distribution security](DISTRIBUTION_SECURITY.md) and
+[PRIVACY.md](PRIVACY.md).
 
 ## GNOME Shell extension
 
