@@ -7,5 +7,5 @@
   "size": 3838002,
   "sha256": "e606c3b9a801a554c30e7399e51fde9298708e2801c04c5a43dc59a7f94223ca",
   "notes": "Distribution hardening. All channels use the same CI-built Debian bytes. Recovery data is preserved; log in afresh to activate extension changes.",
-  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/main/updates/sessionsifu_3.5.35_all.deb"
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/eff2dc9e1b58275315b423cc0514c9694d334e69/updates/sessionsifu_3.5.35_all.deb"
 }

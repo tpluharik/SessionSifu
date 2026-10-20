@@ -60,6 +60,15 @@ indexes expire at `2026-12-04T15:37:21Z` and can be renewed without rebuilding.
 The old feed retains minimum client 2.5.0 and raw repository delivery; the v2
 feed requires 3.5.35 and targets the immutable release asset.
 
+The publication commit is `eff2dc9e1b58275315b423cc0514c9694d334e69`;
+its tree was verified byte-identical to the locally signed publication tree
+before a lease-checked, non-forced API publication. A subsequent metadata-only
+change pins the legacy package URL to that exact commit: the main-branch raw
+edge stalled on this network, while the commit-pinned URL downloaded all
+3,838,002 bytes and matched the authoritative SHA-256. The v2 public package
+download passed independently. No package rebuild or artifact replacement was
+performed to work around delivery.
+
 Builds/tests ran without key access through the release-key environment variable.
 Manifest preparation was separate from a direct OpenSSL signing step. The
 existing maintainer key was used for this release: isolated-machine/account and
