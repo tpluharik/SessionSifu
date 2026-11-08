@@ -109,7 +109,8 @@ CI produces the single authoritative Debian artifact. Offline preparation verifi
 version, digest and provenance before generating unsigned metadata; the separate
 OpenSSL signing step neither builds nor runs project tests. The legacy raw-channel
 copy must be byte-identical to the CI release asset. A bridge retains the old
-`latest.json` feed while 3.5.35+ uses `stable-v2.json` with restricted release URLs.
+`latest.json` feed while 3.5.35+ uses `stable-v2.json` with restricted release
+asset or immutable, byte-identical repository-mirror URLs.
 Portable bundles authenticate `portable-stable.json` before trusting release
 checksums; known historical checksum directory prefixes remain supported.
 

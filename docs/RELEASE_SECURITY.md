@@ -54,8 +54,14 @@ working key as an automated release step. Never upload the key to CI.
 5. Commit the signed indexes and their signatures together. The legacy
    `updates/sessionsifu_3.5.35_all.deb` copy must be byte-identical to the CI
    release artifact. Older clients keep using `latest.json`; bridge clients
-   use `stable-v2.json` and authenticated release asset URLs. Verify the public
+   use `stable-v2.json` and authenticated release asset or immutable mirror URLs. Verify the public
    signatures, package hashes/sizes and all three feeds after pushing.
+
+If GitHub's release-download gateway is unavailable, an already-supported,
+commit-pinned raw repository mirror may deliver the exact attested Debian bytes.
+Verify its public size/hash first, then re-sign the changed feed; do not relax
+URL, signature, lifetime or checksum checks. Allow the raw-content cache to
+refresh before testing older clients with their unchanged production timeouts.
 
 Historical pre-3.5.35 tag/in-app differences are documented in the
 [3.5.27 verification record](RELEASE_3.5.27_VERIFICATION.md); they do not describe
