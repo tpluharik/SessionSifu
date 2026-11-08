@@ -62,11 +62,12 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
-      - name: Install portable core
+      - name: Configure native source build
         # cryptography has no Intel macOS wheel; avoid a bundled libssl collision.
         # Configuration is a no-op on every other platform.
+        run: python packaging/configure-native-build.py
+      - name: Install portable core
         run: |
-          python packaging/configure-native-build.py
           python -m pip install --require-hashes -r packaging/python-build-requirements.lock
           python -m pip install --no-build-isolation --require-hashes -r packaging/requirements.lock
           python -m pip install --no-deps --no-build-isolation ./portable
@@ -121,9 +122,10 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
+      - name: Configure native source build
+        run: python packaging/configure-native-build.py
       - name: Install bundle dependencies
         run: |
-          python packaging/configure-native-build.py
           python -m pip install --require-hashes -r packaging/python-build-requirements.lock
           python -m pip install --no-build-isolation --require-hashes -r packaging/requirements.lock
           python -m pip install --no-deps --no-build-isolation ./portable
