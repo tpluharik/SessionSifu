@@ -11,6 +11,8 @@ def render(root=ROOT, *, semantic=False):
     data = tomllib.loads((root / "portable/pyproject.toml").read_text())
     project = data["project"]
     requirements = list(project["dependencies"]) + list(data["build-system"]["requires"])
+    requirements.extend(line.strip() for line in (root / "packaging/build-requirements.in").read_text().splitlines()
+                        if line.strip() and not line.lstrip().startswith("#"))
     for extra in ("gui", "build"):
         requirements.extend(project["optional-dependencies"].get(extra, []))
     if semantic:

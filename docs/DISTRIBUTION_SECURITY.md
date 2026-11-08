@@ -28,6 +28,15 @@ by those release locks; print their additional inputs with
 environment separately. Advisory counts are not exploitability assessments:
 reachability and alias deduplication remain review tasks.
 
+Cryptography no longer publishes Intel macOS wheels. That supported application
+bundle is built from the digest-verified 50.0.2 source distribution and tested
+on an Intel runner. CI bootstraps hash-locked Maturin/CFFI/setuptools/wheel inputs
+and disables implicit Python build isolation/resolution. The native compiler,
+Rust toolchain and system OpenSSL remain runner-provided inputs, represented by
+build evidence rather than a claim of bit-for-bit reproducible native builds.
+Source installs on Intel Macs require cryptography's upstream build prerequisites;
+downloaded application bundles do not require users to install compilers.
+
 Snap credential replacement, isolated key custody and signing-service
 provisioning remain external prerequisites; expiry automation is unchanged.
 

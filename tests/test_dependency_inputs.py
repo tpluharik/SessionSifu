@@ -23,6 +23,9 @@ class DependencyInputsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "portable").mkdir()
+            (root / "packaging").mkdir()
+            (root / "packaging/build-requirements.in").write_text(
+                (ROOT / "packaging/build-requirements.in").read_text())
             source = (ROOT / "portable/pyproject.toml").read_text()
             source = source.replace('"psutil==7.2.2"', '"psutil==7.2.2", "synthetic-new-input==1.0"')
             (root / "portable/pyproject.toml").write_text(source)
@@ -34,11 +37,12 @@ class DependencyInputsTests(unittest.TestCase):
         self.assertIn("needs: [dependency-audit, portable-bundles", workflow)
         self.assertIn("--disable-pip --require-hashes --strict", workflow)
         self.assertIn('path: "*dependency-audit.json"', workflow)
-        for lock in ("requirements.lock", "runtime-requirements.lock", "audit-requirements.lock"):
+        for lock in ("requirements.lock", "runtime-requirements.lock", "audit-requirements.lock", "python-build-requirements.lock"):
             contents = (ROOT / "packaging" / lock).read_text()
             self.assertIn("--hash=sha256:", contents)
         self.assertIn("cryptography==50.0.2", (ROOT / "packaging/requirements.lock").read_text())
         self.assertIn("pillow==13.0.0", (ROOT / "packaging/runtime-requirements.lock").read_text())
+        self.assertIn("maturin==1.16.0", inputs.render())
 
 
 if __name__ == "__main__":
