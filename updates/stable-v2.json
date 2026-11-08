@@ -7,5 +7,5 @@
   "size": 3841266,
   "sha256": "c5b0814691f10529a9ffa74a82f18f4f24746fd144046f1a7d436e5870e4698a",
   "notes": "Security update: patched portable dependencies, bounded Recall image decoding and complete dependency audits. Recovery data and restore scheduling are unchanged.",
-  "package_url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.36/sessionsifu_3.5.36_all.deb"
+  "package_url": "https://raw.githubusercontent.com/tpluharik/SessionSifu/9d1cc93b6236aacc58fefadb011a34eb37424300/updates/sessionsifu_3.5.36_all.deb"
 }
