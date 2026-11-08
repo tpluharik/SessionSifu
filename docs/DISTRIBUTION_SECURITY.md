@@ -34,6 +34,10 @@ on an Intel runner. CI bootstraps hash-locked Maturin/CFFI/setuptools/wheel inpu
 and disables implicit Python build isolation/resolution. The native compiler,
 Rust toolchain and system OpenSSL remain runner-provided inputs, represented by
 build evidence rather than a claim of bit-for-bit reproducible native builds.
+Intel builds link cryptography's OpenSSL statically, refuse dynamic libssl/crypto
+dependencies before bundling, and run the frozen binary with both Python TLS and
+AES-GCM/Ed25519 plus the bounded image worker. This prevents Python's older
+bundled libssl from shadowing the library used to build cryptography.
 Source installs on Intel Macs require cryptography's upstream build prerequisites;
 downloaded application bundles do not require users to install compilers.
 

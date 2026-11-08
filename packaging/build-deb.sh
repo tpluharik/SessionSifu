@@ -54,6 +54,7 @@ python3 "$project_dir/tests/test_recall_engine.py"
 python3 "$project_dir/tests/test_audit_regressions.py"
 python3 "$project_dir/tests/test_image_security.py"
 python3 "$project_dir/tests/test_dependency_inputs.py"
+python3 "$project_dir/tests/test_native_build.py"
 python3 "$project_dir/tools/dependency-inputs.py" --check
 python3 "$project_dir/tests/test_marketplace.py"
 python3 "$project_dir/tests/test_docs.py" "$project_dir"

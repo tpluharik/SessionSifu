@@ -7,6 +7,7 @@ import argparse
 import importlib.util
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -40,6 +41,11 @@ def main() -> int:
     target = args.target or {"Windows": "windows", "Darwin": "macos"}.get(platform.system(), "linux")
     if importlib.util.find_spec("PyInstaller") is None:
         raise SystemExit("Install portable[gui,build] before building a desktop bundle")
+    if target == "macos" and args.arch in {"x64", "x86_64"}:
+        binding = importlib.util.find_spec("cryptography.hazmat.bindings._rust")
+        linked = subprocess.check_output(["otool", "-L", binding.origin], text=True)
+        if re.search(r"lib(?:ssl|crypto)[^\s]*\.dylib", linked):
+            raise SystemExit("Intel cryptography must link OpenSSL statically before bundling")
 
     output = ROOT / "dist" / "portable"
     work = ROOT / "build" / f"pyinstaller-{target}-{args.arch}"

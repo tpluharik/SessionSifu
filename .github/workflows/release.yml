@@ -63,10 +63,15 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install portable core
+        # cryptography has no Intel macOS wheel; avoid a bundled libssl collision.
+        # Configuration is a no-op on every other platform.
         run: |
+          python packaging/configure-native-build.py
           python -m pip install --require-hashes -r packaging/python-build-requirements.lock
           python -m pip install --no-build-isolation --require-hashes -r packaging/requirements.lock
           python -m pip install --no-deps --no-build-isolation ./portable
+      - name: Verify native build configuration regressions
+        run: python tests/test_native_build.py
       - name: Install Linux OCR test runtime
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr
@@ -118,6 +123,7 @@ jobs:
           python-version: "3.13"
       - name: Install bundle dependencies
         run: |
+          python packaging/configure-native-build.py
           python -m pip install --require-hashes -r packaging/python-build-requirements.lock
           python -m pip install --no-build-isolation --require-hashes -r packaging/requirements.lock
           python -m pip install --no-deps --no-build-isolation ./portable

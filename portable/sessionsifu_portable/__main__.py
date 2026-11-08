@@ -75,9 +75,18 @@ def parser() -> argparse.ArgumentParser:
 def main() -> int:
     # Packaging smoke test: temporary synthetic pixels, no controller/user state.
     if sys.argv[1:] == ["--image-worker-smoke-test"]:
+        import ssl
         import tempfile
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
         from PIL import Image
         from .recall import _prepare_untrusted_ocr_image
+        cipher = AESGCM(b"x" * 32)
+        nonce = b"n" * 12
+        assert cipher.decrypt(nonce, cipher.encrypt(nonce, b"recovery", b"test"), b"test") == b"recovery"
+        key = Ed25519PrivateKey.generate()
+        key.public_key().verify(key.sign(b"update"), b"update")
+        assert ssl.OPENSSL_VERSION
         with tempfile.TemporaryDirectory(prefix="sessionsifu-image-smoke-") as directory:
             source = Path(directory) / "synthetic.jpg"
             Image.new("RGB", (60, 40), "white").save(source)
