@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import multiprocessing
 from cryptography.exceptions import InvalidTag
 import csv
 import contextlib
@@ -36,6 +37,86 @@ try:
     from PIL import Image, ImageFilter, ImageOps
 except ImportError:  # pragma: no cover - source checkout fallback
     Image = ImageFilter = ImageOps = None
+
+# Keep this small boundary in both engines: legacy GNOME updaters copy only
+# recall_engine.py, so importing a new mandatory support module would break them.
+MAX_PREVIEW_PIXELS = 32 * 1024 * 1024
+MAX_PREVIEW_EDGE = 16384
+MAX_DECODED_PREVIEW_BYTES = 128 * 1024 * 1024
+IMAGE_PREPARATION_TIMEOUT = 5.0
+
+
+@contextlib.contextmanager
+def _open_preview(value):
+    """Decode only recorded screenshot formats, within explicit allocation limits."""
+    if isinstance(value, Path):
+        if value.is_symlink() or not value.is_file() or not 0 < value.stat().st_size <= 8 * 1024 * 1024:
+            raise ValueError("Preview is not a bounded regular file")
+    elif isinstance(value, io.BytesIO):
+        if not 0 < value.getbuffer().nbytes <= 8 * 1024 * 1024:
+            raise ValueError("Preview exceeds the encoded size limit")
+    with Image.open(value, formats=("JPEG", "PNG")) as source:
+        width, height = source.size
+        if (min(width, height) <= 0 or max(width, height) > MAX_PREVIEW_EDGE
+                or width * height > MAX_PREVIEW_PIXELS
+                or width * height * 4 > MAX_DECODED_PREVIEW_BYTES):
+            raise ValueError("Preview exceeds the decoded size limit")
+        yield source
+
+
+def _ocr_image_worker(source: str, destination: str) -> None:
+    """Only a disposable process decodes historical/imported previews."""
+    try:
+        if os.name == "posix":
+            import resource
+            # Leave room for the interpreter and bounded decoder working buffers.
+            if sys.platform.startswith("linux"):
+                resource.setrlimit(resource.RLIMIT_AS, (768 * 1024 * 1024,) * 2)
+            resource.setrlimit(resource.RLIMIT_CPU, (4, 4))
+        prepared = _prepare_ocr_image(Path(source), output_directory=Path(destination).parent)
+        if prepared != Path(source):
+            os.replace(prepared, destination)
+    except (OSError, ValueError, MemoryError):
+        return
+
+
+def _prepare_untrusted_ocr_image(image: Path) -> Path | None:
+    """Bound preparation before Tesseract; never fall back to unsafe input."""
+    with tempfile.TemporaryDirectory(prefix="sessionsifu-image-worker-") as directory:
+        destination = Path(directory) / "prepared.png"
+        process = multiprocessing.get_context("spawn").Process(
+            target=_ocr_image_worker, args=(str(image), str(destination)), daemon=True)
+        started = False
+        try:
+            process.start()
+            started = True
+            process.join(IMAGE_PREPARATION_TIMEOUT)
+            if process.is_alive() or process.exitcode != 0 or not destination.is_file():
+                return None
+            if not 0 < destination.stat().st_size <= 8 * 1024 * 1024:
+                return None
+            descriptor, name = tempfile.mkstemp(prefix="sessionsifu-ocr-", suffix=".png")
+            os.close(descriptor)
+            target = Path(name)
+            try:
+                os.replace(destination, target)
+            except OSError:
+                target.unlink(missing_ok=True)
+                raise
+            return target
+        except (OSError, RuntimeError, ValueError):
+            return None
+        finally:
+            if started and process.is_alive():
+                # This is our own spawned child, never a process group or a
+                # coerced/mock PID. No desktop processes are addressed.
+                if type(process.pid) is int and process.pid > 1:
+                    process.kill()
+                    process.join(1.0)
+            if not started or not process.is_alive():
+                process.close()
+
+
 
 from .model import SessionSnapshot, WindowSnapshot
 from .semantic import OfflineSemanticSearch
@@ -110,13 +191,13 @@ def _private_mode(path: Path, mode: int) -> None:
         path.chmod(mode)
 
 
-def _prepare_ocr_image(image: Path) -> Path:
+def _prepare_ocr_image(image: Path, *, output_directory: Path | None = None) -> Path:
     """Return a private, sharpened OCR copy without enlarging stored previews."""
     if Image is None or ImageFilter is None or ImageOps is None:
         return image
     temporary: Path | None = None
     try:
-        with Image.open(image) as source:
+        with _open_preview(image) as source:
             prepared = ImageOps.autocontrast(source.convert("L"), cutoff=1)
             longest = max(prepared.size)
             if longest <= 0:
@@ -131,13 +212,13 @@ def _prepare_ocr_image(image: Path) -> Path:
             prepared = prepared.filter(
                 ImageFilter.UnsharpMask(radius=1.2, percent=160, threshold=3)
             )
-            descriptor, name = tempfile.mkstemp(prefix="sessionsifu-ocr-", suffix=".png")
+            descriptor, name = tempfile.mkstemp(prefix="sessionsifu-ocr-", suffix=".png", dir=output_directory)
             os.close(descriptor)
             temporary = Path(name)
             prepared.save(temporary, "PNG", optimize=True)
             _private_mode(temporary, 0o600)
             return temporary
-    except (OSError, ValueError):
+    except (OSError, ValueError, Image.DecompressionBombError, MemoryError):
         if temporary is not None:
             temporary.unlink(missing_ok=True)
         return image
@@ -565,7 +646,7 @@ class RecallStore:
         return text, boxes
 
     @staticmethod
-    def _ocr_detailed(preview: bytes) -> tuple[str, list[dict], dict[str, object]]:
+    def _ocr_detailed(preview: bytes, *, untrusted: bool = False) -> tuple[str, list[dict], dict[str, object]]:
         started = time.monotonic()
         diagnostics: dict[str, object] = {
             "state": "failed", "engine": "tesseract", "word_count": 0,
@@ -576,7 +657,11 @@ class RecallStore:
         try:
             with os.fdopen(descriptor, "wb") as output:
                 output.write(preview)
-            working_path = _prepare_ocr_image(path)
+            working_path = (_prepare_untrusted_ocr_image(path) if untrusted
+                            else _prepare_ocr_image(path))
+            if working_path is None:
+                diagnostics["state"] = "preview-refused"
+                return "", [], diagnostics
             language_args = _tesseract_language_args()
             result = subprocess.run(
                 [
@@ -649,7 +734,7 @@ class RecallStore:
             return "", [], diagnostics
         finally:
             diagnostics["duration_ms"] = round((time.monotonic() - started) * 1000)
-            if "working_path" in locals() and working_path != path:
+            if "working_path" in locals() and working_path is not None and working_path != path:
                 working_path.unlink(missing_ok=True)
             path.unlink(missing_ok=True)
 
@@ -658,13 +743,13 @@ class RecallStore:
         if not preview or Image is None:
             return ""
         try:
-            with Image.open(io.BytesIO(preview)) as source:
+            with _open_preview(io.BytesIO(preview)) as source:
                 gray = source.convert("L").resize((8, 8), Image.Resampling.LANCZOS)
                 values = list(gray.getdata())
             mean = sum(values) / len(values)
             bits = "".join("1" if value >= mean else "0" for value in values)
             return f"{int(bits, 2):016x}"
-        except (OSError, ValueError):
+        except (OSError, ValueError, Image.DecompressionBombError, MemoryError):
             return ""
 
     def _paths(self) -> list[Path]:
@@ -1290,9 +1375,12 @@ class RecallStore:
         if display_name:
             preview = self.preview_bytes(record, image_name=display_name)
             if preview:
-                text, boxes, diagnostics = self._ocr_detailed(preview)
-                payload.update({"ocr_text": text, "ocr_boxes": boxes, "ocr_diagnostics": diagnostics})
-                indexed += 1
+                text, boxes, diagnostics = self._ocr_detailed(preview, untrusted=True)
+                if diagnostics.get("state") == "preview-refused":
+                    deferred += 1
+                else:
+                    payload.update({"ocr_text": text, "ocr_boxes": boxes, "ocr_diagnostics": diagnostics})
+                    indexed += 1
         elif dict(payload.get("ocr_diagnostics") or {}).get("state") == "deferred-power":
             payload["ocr_diagnostics"] = {
                 "state": "no-display-preview", "engine": "tesseract"
@@ -1308,7 +1396,10 @@ class RecallStore:
             if not preview:
                 window["ocr_diagnostics"] = {"state": "no-preview", "engine": "tesseract"}
                 continue
-            text, boxes, diagnostics = self._ocr_detailed(preview)
+            text, boxes, diagnostics = self._ocr_detailed(preview, untrusted=True)
+            if diagnostics.get("state") == "preview-refused":
+                deferred += 1
+                continue
             window.update({"ocr_text": text, "ocr_boxes": boxes, "ocr_diagnostics": diagnostics})
             indexed += 1
         payload["modified"] = time.time()

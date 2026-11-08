@@ -1,16 +1,16 @@
 [build-system]
-requires = ["setuptools==84.0.0", "wheel==0.48.0"]
+requires = ["setuptools==84.1.0", "wheel==0.48.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "sessionsifu-portable"
-version = "3.5.35"
+version = "3.5.36"
 description = "Cross-platform desktop session snapshots for Windows, macOS, KDE and GNOME"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "GPL-3.0-or-later"
 authors = [{name = "SessionSifu contributors"}]
-dependencies = ["psutil==7.2.2", "cryptography==46.0.5", "keyring==25.7.0", "Pillow==12.3.0"]
+dependencies = ["psutil==7.2.2", "cryptography==50.0.2", "keyring==25.7.0", "Pillow==13.0.0"]
 
 [project.optional-dependencies]
 gui = [

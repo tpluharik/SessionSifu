@@ -230,7 +230,7 @@ class RecallEngineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             vault = RecallVault(root, test_key=b"p" * 32)
-            vault._ocr = lambda _path: ("deferred text", [])
+            vault._ocr = lambda _path, **_options: ("deferred text", [])
             capture = self.capture(root)
             (root / f"{capture.stem}-window-0.jpg").write_bytes(b"deferred-window")
             result = vault.finalize(capture, RecallPolicy(ocr_deferred=True))

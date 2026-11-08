@@ -9,7 +9,7 @@ project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 extension_dir="$project_dir/extension/sessionsifu@local"
 dist_dir="$project_dir/dist"
 updates_dir="$project_dir/updates"
-version="3.5.35"
+version="3.5.36"
 package="$dist_dir/sessionsifu_${version}_all.deb"
 stage=$(mktemp -d /tmp/sessionsifu-package.XXXXXX)
 trap 'rm -rf -- "$stage"' EXIT HUP INT TERM
@@ -52,6 +52,9 @@ python3 "$project_dir/tests/test_portable.py"
 python3 "$project_dir/tests/test_update_trust.py"
 python3 "$project_dir/tests/test_recall_engine.py"
 python3 "$project_dir/tests/test_audit_regressions.py"
+python3 "$project_dir/tests/test_image_security.py"
+python3 "$project_dir/tests/test_dependency_inputs.py"
+python3 "$project_dir/tools/dependency-inputs.py" --check
 python3 "$project_dir/tests/test_marketplace.py"
 python3 "$project_dir/tests/test_docs.py" "$project_dir"
 
@@ -108,6 +111,7 @@ install -m 0644 "$project_dir/docs/RESTORE_GUIDE.md" "$stage/usr/share/doc/sessi
 install -m 0644 "$project_dir/docs/WINDOW_RULES.md" "$stage/usr/share/doc/sessionsifu/docs/WINDOW_RULES.md"
 install -m 0644 "$project_dir/docs/COMPETITIVE_ANALYSIS.md" "$stage/usr/share/doc/sessionsifu/docs/COMPETITIVE_ANALYSIS.md"
 install -m 0644 "$project_dir/docs/RELEASE_SECURITY.md" "$stage/usr/share/doc/sessionsifu/docs/RELEASE_SECURITY.md"
+install -m 0644 "$project_dir/docs/DISTRIBUTION_SECURITY.md" "$stage/usr/share/doc/sessionsifu/docs/DISTRIBUTION_SECURITY.md"
 install -m 0644 "$project_dir/docs/PUBLISHING.md" "$stage/usr/share/doc/sessionsifu/docs/PUBLISHING.md"
 install -m 0644 "$project_dir/docs/PERFORMANCE.md" "$stage/usr/share/doc/sessionsifu/docs/PERFORMANCE.md"
 install -m 0644 "$project_dir/docs/STABILITY_AUDIT.md" "$stage/usr/share/doc/sessionsifu/docs/STABILITY_AUDIT.md"

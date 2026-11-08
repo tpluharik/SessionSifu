@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import multiprocessing
 import csv
 import contextlib
 import hashlib
@@ -50,6 +51,86 @@ try:
     from PIL import Image, ImageFilter, ImageOps
 except ImportError:  # pragma: no cover - graceful fallback for source checkouts
     Image = ImageFilter = ImageOps = None
+
+# Keep this small boundary in both engines: legacy GNOME updaters copy only
+# recall_engine.py, so importing a new mandatory support module would break them.
+MAX_PREVIEW_PIXELS = 32 * 1024 * 1024
+MAX_PREVIEW_EDGE = 16384
+MAX_DECODED_PREVIEW_BYTES = 128 * 1024 * 1024
+IMAGE_PREPARATION_TIMEOUT = 5.0
+
+
+@contextlib.contextmanager
+def _open_preview(value):
+    """Decode only recorded screenshot formats, within explicit allocation limits."""
+    if isinstance(value, Path):
+        if value.is_symlink() or not value.is_file() or not 0 < value.stat().st_size <= 8 * 1024 * 1024:
+            raise ValueError("Preview is not a bounded regular file")
+    elif isinstance(value, io.BytesIO):
+        if not 0 < value.getbuffer().nbytes <= 8 * 1024 * 1024:
+            raise ValueError("Preview exceeds the encoded size limit")
+    with Image.open(value, formats=("JPEG", "PNG")) as source:
+        width, height = source.size
+        if (min(width, height) <= 0 or max(width, height) > MAX_PREVIEW_EDGE
+                or width * height > MAX_PREVIEW_PIXELS
+                or width * height * 4 > MAX_DECODED_PREVIEW_BYTES):
+            raise ValueError("Preview exceeds the decoded size limit")
+        yield source
+
+
+def _ocr_image_worker(source: str, destination: str) -> None:
+    """Only a disposable process decodes historical/imported previews."""
+    try:
+        if os.name == "posix":
+            import resource
+            # Leave room for the interpreter and bounded decoder working buffers.
+            if sys.platform.startswith("linux"):
+                resource.setrlimit(resource.RLIMIT_AS, (768 * 1024 * 1024,) * 2)
+            resource.setrlimit(resource.RLIMIT_CPU, (4, 4))
+        prepared = _prepare_ocr_image(Path(source), output_directory=Path(destination).parent)
+        if prepared != Path(source):
+            os.replace(prepared, destination)
+    except (OSError, ValueError, MemoryError):
+        return
+
+
+def _prepare_untrusted_ocr_image(image: Path) -> Path | None:
+    """Bound preparation before Tesseract; never fall back to unsafe input."""
+    with tempfile.TemporaryDirectory(prefix="sessionsifu-image-worker-") as directory:
+        destination = Path(directory) / "prepared.png"
+        process = multiprocessing.get_context("spawn").Process(
+            target=_ocr_image_worker, args=(str(image), str(destination)), daemon=True)
+        started = False
+        try:
+            process.start()
+            started = True
+            process.join(IMAGE_PREPARATION_TIMEOUT)
+            if process.is_alive() or process.exitcode != 0 or not destination.is_file():
+                return None
+            if not 0 < destination.stat().st_size <= 8 * 1024 * 1024:
+                return None
+            descriptor, name = tempfile.mkstemp(prefix="sessionsifu-ocr-", suffix=".png")
+            os.close(descriptor)
+            target = Path(name)
+            try:
+                os.replace(destination, target)
+            except OSError:
+                target.unlink(missing_ok=True)
+                raise
+            return target
+        except (OSError, RuntimeError, ValueError):
+            return None
+        finally:
+            if started and process.is_alive():
+                # This is our own spawned child, never a process group or a
+                # coerced/mock PID. No desktop processes are addressed.
+                if type(process.pid) is int and process.pid > 1:
+                    process.kill()
+                    process.join(1.0)
+            if not started or not process.is_alive():
+                process.close()
+
+
 
 try:
     from semantic import OfflineSemanticSearch
@@ -251,7 +332,7 @@ def _private(path: Path, mode: int) -> None:
         path.chmod(mode)
 
 
-def _prepare_ocr_image(image: Path) -> Path:
+def _prepare_ocr_image(image: Path, *, output_directory: Path | None = None) -> Path:
     """Create a private, temporary high-contrast OCR source when possible.
 
     Recall previews stay compact for storage and browsing. OCR instead works
@@ -262,7 +343,7 @@ def _prepare_ocr_image(image: Path) -> Path:
         return image
     temporary: Path | None = None
     try:
-        with Image.open(image) as source:
+        with _open_preview(image) as source:
             prepared = ImageOps.autocontrast(source.convert("L"), cutoff=1)
             longest = max(prepared.size)
             if longest <= 0:
@@ -277,13 +358,13 @@ def _prepare_ocr_image(image: Path) -> Path:
             prepared = prepared.filter(
                 ImageFilter.UnsharpMask(radius=1.2, percent=160, threshold=3)
             )
-            descriptor, name = tempfile.mkstemp(prefix="sessionsifu-ocr-", suffix=".png")
+            descriptor, name = tempfile.mkstemp(prefix="sessionsifu-ocr-", suffix=".png", dir=output_directory)
             os.close(descriptor)
             temporary = Path(name)
             prepared.save(temporary, "PNG", optimize=True)
             _private(temporary, 0o600)
             return temporary
-    except (OSError, ValueError):
+    except (OSError, ValueError, Image.DecompressionBombError, MemoryError):
         if temporary is not None:
             temporary.unlink(missing_ok=True)
         return image
@@ -582,11 +663,11 @@ def _visual_hash_bytes(value: bytes) -> str:
     if not value or Image is None:
         return ""
     try:
-        with Image.open(io.BytesIO(value)) as source:
+        with _open_preview(io.BytesIO(value)) as source:
             pixels = list(source.convert("L").resize((8, 8), Image.Resampling.LANCZOS).getdata())
         average = sum(pixels) / len(pixels)
         return f"{int(''.join('1' if pixel >= average else '0' for pixel in pixels), 2):016x}"
-    except (OSError, ValueError):
+    except (OSError, ValueError, Image.DecompressionBombError, MemoryError):
         return ""
 
 
@@ -737,9 +818,12 @@ class RecallVault:
             raise ValueError("Recall vault item is not a bounded regular file")
         return self._decrypt(path.read_bytes(), path.name.encode("utf-8"))
 
-    def _ocr(self, image: Path) -> tuple[str, list[dict[str, object]]]:
+    def _ocr(self, image: Path, *, untrusted: bool = False) -> tuple[str, list[dict[str, object]]]:
         """Return useful OCR words and normalized positions from Tesseract TSV."""
-        working_image = _prepare_ocr_image(image)
+        working_image = (_prepare_untrusted_ocr_image(image) if untrusted
+                         else _prepare_ocr_image(image))
+        if working_image is None:
+            raise ValueError("Preview preparation refused; original remains available")
         language_args = _tesseract_language_args()
         try:
             result = subprocess.run(
@@ -1913,7 +1997,11 @@ class RecallVault:
             try:
                 with os.fdopen(descriptor, "wb") as output:
                     output.write(raw)
-                text, boxes = self._ocr(temporary)
+                try:
+                    text, boxes = self._ocr(temporary, untrusted=True)
+                except ValueError:
+                    deferred += 1
+                    continue
             finally:
                 temporary.unlink(missing_ok=True)
             if index in windows_by_image:
@@ -1924,8 +2012,9 @@ class RecallVault:
                 display_boxes[display_index] = boxes[:MAX_DISPLAY_OCR_BOXES]
                 display_text.append(text)
             indexed += 1
-        value["ocr_text"] = "\n".join(display_text)[:MAX_OCR_BYTES]
-        value["display_ocr_boxes"] = display_boxes
+        if not deferred:
+            value["ocr_text"] = "\n".join(display_text)[:MAX_OCR_BYTES]
+            value["display_ocr_boxes"] = display_boxes
         value["ocr_diagnostics"] = {
             "state": "completed" if not deferred else "partial",
             "engine": "tesseract", "images_indexed": indexed,

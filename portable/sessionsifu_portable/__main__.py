@@ -6,6 +6,7 @@ import argparse
 import getpass
 import json
 import os
+import sys
 from pathlib import Path
 
 from . import VERSION
@@ -72,6 +73,25 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    # Packaging smoke test: temporary synthetic pixels, no controller/user state.
+    if sys.argv[1:] == ["--image-worker-smoke-test"]:
+        import tempfile
+        from PIL import Image
+        from .recall import _prepare_untrusted_ocr_image
+        with tempfile.TemporaryDirectory(prefix="sessionsifu-image-smoke-") as directory:
+            source = Path(directory) / "synthetic.jpg"
+            Image.new("RGB", (60, 40), "white").save(source)
+            prepared = _prepare_untrusted_ocr_image(source)
+            if prepared is None:
+                return 1
+            try:
+                with Image.open(prepared) as result:
+                    if result.size != (180, 120):
+                        return 1
+            finally:
+                prepared.unlink(missing_ok=True)
+        print("bounded image worker passed")
+        return 0
     args = parser().parse_args()
     if args.experimental_wayland_session_management:
         os.environ[FEATURE_ENV] = "1"
@@ -190,4 +210,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
     raise SystemExit(main())

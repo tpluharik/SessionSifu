@@ -1,9 +1,42 @@
-# Distribution security — 3.5.35
+# Distribution security — 3.5.36
+
+## Dependency and image boundary update (3.5.36)
+
+Portable builds/Snap use Pillow 13.0.0 and cryptography 50.0.2; the build
+backend uses setuptools 84.1.0. Both resolved locks retain unrelated versions.
+The GNOME Debian package continues to use distribution-managed libraries and
+their security backports; it does not install PyPI packages into system Python.
+
+The screenshot decoders accept JPEG/PNG only, at most 8 MiB encoded, 32 Mi
+pixels, 16,384 pixels per edge and 128 MiB for a four-byte pixel buffer.
+These are per-buffer limits, not a claim that the whole process uses 128 MiB.
+Fresh-capture OCR retains its existing in-process path and worker counts.
+Historical/imported reindex preparation uses a disposable spawn worker with a
+five-second deadline, plus CPU/address-space limits where supported. No fork
+of the multithreaded GUI, process-group signalling or capture polling is added.
+Failed preparation never passes the original bytes to Tesseract, and existing
+OCR text/images remain available for recovery/export. Original data is not
+rewritten or removed during an upgrade; no vault key or format changes occur.
+
+The audit-input list is generated from core/GUI/build metadata and checked for
+drift. Cross-platform CI audits every resolved dependency in the release lock,
+the Snap runtime lock on Linux, and the separately hash-locked auditor. Findings
+or collection failures block release publication; JSON reports are retained.
+Optional user-installed semantic-model dependencies are not bundled or covered
+by those release locks; print their additional inputs with
+`python tools/dependency-inputs.py --semantic` and audit the user's resolved
+environment separately. Advisory counts are not exploitability assessments:
+reachability and alias deduplication remain review tasks.
+
+Snap credential replacement, isolated key custody and signing-service
+provisioning remain external prerequisites; expiry automation is unchanged.
 
 ## Runtime invariants
 
-This release does not change capture/preview timers, image budgets, worker
-counts, restore pacing, native-operation serialization or monitor/layout guards.
+This release does not change capture/preview timers, GNOME capture budgets,
+capture-worker counts, restore pacing, native-operation serialization or
+monitor/layout guards. Manager-side decode limits and historical reindex
+preparation are described above; valid-image OCR sharpening/scaling is unchanged.
 Command filtering is a bounded in-memory pass over already-collected argv.
 Caller checks are asynchronous, capped at four concurrent requests per operation,
 and used only for external Recall control. No polling, subprocess or synchronous

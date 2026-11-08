@@ -16,8 +16,12 @@ SessionSifu preserves work continuity. **Save** named projects or automatic
 snapshots, **Resume** selected applications, documents and window layouts, and
 **Find** past context in an optional encrypted local visual timeline.
 
-Version 3.5.35 supports Ubuntu 26.04/GNOME Shell 50 and Ubuntu 26.10/GNOME
-Shell 51. Version 3.5.35 combines the GNOME integration with an
+Version 3.5.36 adds patched Python dependencies, bounded Recall image decoding
+and release-gating dependency audits while preserving recovery data and restore
+scheduling. See [distribution security](docs/DISTRIBUTION_SECURITY.md).
+
+Version 3.5.36 supports Ubuntu 26.04/GNOME Shell 50 and Ubuntu 26.10/GNOME
+Shell 51. Version 3.5.36 combines the GNOME integration with an
 encrypted, per-window OCR activity timeline across GNOME, Windows, macOS, KDE
 Plasma 6 and other Linux desktops. Czech and English OCR data ships with the
 installer and verified update. Recall previews support two-finger panning,
@@ -218,11 +222,11 @@ depend on the application's own crash-recovery behavior.
 
 ### GNOME 50/51 full integration
 
-Download `sessionsifu_3.5.35_all.deb` from the matching GitHub Release, or build it
+Download `sessionsifu_3.5.36_all.deb` from the matching GitHub Release, or build it
 locally, then install it with:
 
 ```sh
-sudo apt install ./sessionsifu_3.5.35_all.deb
+sudo apt install ./sessionsifu_3.5.36_all.deb
 ```
 
 The Ubuntu 26.04 PPA is active at `ppa:tpluharik77/sessionsifu` and its amd64
@@ -252,7 +256,7 @@ compatible GNOME release; SessionSifu never forces a desktop-shell upgrade.
 When installing from this checkout, use:
 
 ```sh
-sudo apt install ./dist/sessionsifu_3.5.35_all.deb
+sudo apt install ./dist/sessionsifu_3.5.36_all.deb
 ```
 
 After installation:
@@ -266,11 +270,11 @@ After installation:
 
 ### Windows, macOS, KDE and portable GNOME
 
-The 3.5.35 release workflow builds these self-contained portable artifacts:
+The 3.5.36 release workflow builds these self-contained portable artifacts:
 
-- `SessionSifu-3.5.35-macos-arm64.zip`;
-- `SessionSifu-3.5.35-macos-x64.zip`; and
-- `SessionSifu-3.5.35-linux-x64.tar.gz`.
+- `SessionSifu-3.5.36-macos-arm64.zip`;
+- `SessionSifu-3.5.36-macos-x64.zip`; and
+- `SessionSifu-3.5.36-linux-x64.tar.gz`.
 
 In 3.5.27, the Windows x64 build passed its tests, but its public archive was withheld
 because no production Authenticode certificate was available. SessionSifu does
@@ -454,7 +458,7 @@ required to load a replaced GNOME Shell extension on Wayland.
 The Debian package remains the supported initial installation method because it
 provides SessionSifu's runtime dependencies.
 
-The signed stable channel serves 3.5.35, including distribution security hardening and conservative restore scheduling,
+The signed stable channel serves 3.5.36, including distribution security hardening and conservative restore scheduling,
 paired tiling hardening,
 shutdown-record protection, LibreOffice window migration and the 3.5.28
 autostart duplicate-launch fix. Its
@@ -696,7 +700,7 @@ GSettings schema, D-Bus declarations, update parsing and static integration
 requirements. It produces:
 
 ```text
-dist/sessionsifu_3.5.35_all.deb
+dist/sessionsifu_3.5.36_all.deb
 updates/latest.json
 updates/latest.json.sig
 ```
@@ -754,7 +758,7 @@ Ubuntu/GNOME, KDE Plasma, Windows and macOS are especially welcome.
 - [Publishing and distribution](docs/PUBLISHING.md)
 - [Documentation index](docs/README.md)
 
-The current 3.5.35 release includes verified Czech and English fast Tesseract
+The current 3.5.36 release includes verified Czech and English fast Tesseract
 models in the Debian package, signed in-app update and portable artifacts. Mixed
 Czech/English desktop text therefore works without installing a separate
 language package, while recognition stays completely local. Recall search is

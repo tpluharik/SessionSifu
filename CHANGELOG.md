@@ -2,6 +2,19 @@
 
 All notable SessionSifu changes are documented here.
 
+## 3.5.36
+
+- Upgrade Pillow to 13.0.0, cryptography to 50.0.2 and setuptools to 84.1.0;
+  regenerate platform-aware runtime/build hash locks without changing vault keys,
+  archive formats, capture scheduling or restore behavior.
+- Restrict Recall decoding to screenshot formats and explicit pixel/memory bounds.
+  Run historical/imported OCR preparation in a disposable, time-limited process;
+  preserve original preview bytes and existing OCR when preparation is refused.
+- Generate complete dependency-audit inputs from package metadata, reject drift,
+  and gate releases on cross-platform vulnerability audits of resolved locks.
+- Add image-boundary, old-record recovery and dependency-coverage regressions.
+  Snap credential repair and feed-expiry automation are not part of this release.
+
 ## 3.5.35
 
 - Record installation ownership and reconcile APT-backed user copies once at

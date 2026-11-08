@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PORTABLE = ROOT / "portable"
-VERSION = "3.5.35"
+VERSION = "3.5.36"
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,6 +80,10 @@ def main() -> int:
     built = work / "dist" / ("SessionSifu.app" if target == "macos" else "SessionSifu")
     if not built.exists():
         raise SystemExit(f"PyInstaller did not create {built}")
+    executable = (built / "Contents/MacOS/SessionSifu" if target == "macos" else
+                  built / ("SessionSifu.exe" if target == "windows" else "SessionSifu"))
+    subprocess.run([str(executable), "--image-worker-smoke-test"],
+                   check=True, timeout=30)
     if target == "linux":
         shutil.copy2(
             ROOT / "branding" / "sessionsifu-app-icon.png",

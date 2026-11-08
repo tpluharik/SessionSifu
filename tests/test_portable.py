@@ -365,7 +365,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(restored.windows[0].geometry, [10, 20, 900, 700])
         self.assertEqual(restored.windows[0].open_files, ["/home/test/Notes.txt"])
         self.assertEqual(restored.session_protocol["managed_window_ids"], ["1"])
-        self.assertEqual(VERSION, "3.5.35")
+        self.assertEqual(VERSION, "3.5.36")
         self.assertEqual(restored.schema, SCHEMA_VERSION)
 
     def test_experimental_wayland_detection_is_opt_in_and_fail_closed(self) -> None:
@@ -679,7 +679,7 @@ class PortableTests(unittest.TestCase):
     def test_portable_power_deferred_ocr_can_resume(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = RecallStore(Path(directory))
-            store._ocr_detailed = lambda _preview: (
+            store._ocr_detailed = lambda _preview, **_options: (
                 "deferred falcon", [], {"state": "completed", "engine": "test"}
             )
             path = store.save(
@@ -909,7 +909,7 @@ class PortableTests(unittest.TestCase):
             controller.save_named("Work")
             api = LocalApi(controller)
             status = api.dispatch({"method": "status"})
-            self.assertEqual(status["version"], "3.5.35")
+            self.assertEqual(status["version"], "3.5.36")
             preview = api.dispatch({"method": "restore.preview", "params": {"name": "Work"}})
             self.assertEqual(preview["applications"][0]["application"], "Editor")
             with self.assertRaises(ValueError):
@@ -1100,7 +1100,7 @@ class PortableTests(unittest.TestCase):
             controller = SessionController(FakeAdapter(), SessionStore(Path(directory)))
             controller.save_named("Work")
             mcp = ReadOnlyMcp(controller)
-            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.35")
+            self.assertEqual(mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})["result"]["serverInfo"]["version"], "3.5.36")
             self.assertTrue(mcp.call("restore_preview", {"name": "Work"}))
             with self.assertRaises(ValueError):
                 mcp.call("restore_execute", {"name": "Work"})
