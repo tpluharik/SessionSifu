@@ -1,75 +1,75 @@
 {
   "schema": 1,
   "channel": "stable",
-  "version": "3.5.35",
-  "issued_at": "2026-10-20T15:37:21Z",
-  "expires_at": "2026-12-04T15:37:21Z",
-  "source_commit": "5000f85c6b06dbe9f43cda5dbbda9f58f1eb8e71",
+  "version": "3.5.36",
+  "issued_at": "2026-11-08T09:14:26Z",
+  "expires_at": "2026-12-23T09:14:26Z",
+  "source_commit": "9fe3746570147161fdbf7a38e5800c08183b1903",
   "artifacts": {
     "SHA256SUMS": {
       "size": 1241,
-      "sha256": "4073eb2cde58f9ee5e776d77513537ebc00f37d6af143c4cc4ddc88245db35e9",
-      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.35/SHA256SUMS"
+      "sha256": "67858009d36ea3531f0e5bd2115347064100b98da77815e1faf755d59caefdcf",
+      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.36/SHA256SUMS"
     },
-    "SessionSifu-3.5.35-GNOME-Debian.spdx.json": {
-      "size": 162132,
-      "sha256": "b1c335bd65180d531af9038fdaa370d4c41d09a315e119dac30a81da871b97aa",
-      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.35/SessionSifu-3.5.35-GNOME-Debian.spdx.json"
+    "SessionSifu-3.5.36-GNOME-Debian.spdx.json": {
+      "size": 162842,
+      "sha256": "c97db0c3d6fc5d2b5080265e068e3326951019eb994eb63878ed7339edb1f17d",
+      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.36/SessionSifu-3.5.36-GNOME-Debian.spdx.json"
     },
-    "SessionSifu-3.5.35-legacy-user-updates.tar.gz": {
+    "SessionSifu-3.5.36-legacy-user-updates.tar.gz": {
       "size": 56252985,
-      "sha256": "133d88531d8ce2159307dd427d5f05f51be352eac3eec3e515ac0113e1dcaee4",
-      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.35/SessionSifu-3.5.35-legacy-user-updates.tar.gz"
+      "sha256": "5c5caf340d70860f05f6601a2a34fae400470ae649d256b92394fdb9b689c68e",
+      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.36/SessionSifu-3.5.36-legacy-user-updates.tar.gz"
     },
-    "SessionSifu-3.5.35-linux-x64.spdx.json": {
-      "size": 277420,
-      "sha256": "10ea1e1fab4ed85af8419cf7dc37d387d5ed5e0239f866ff3dfbdd5e4292a819",
-      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.35/SessionSifu-3.5.35-linux-x64.spdx.json"
+    "SessionSifu-3.5.36-linux-x64.spdx.json": {
+      "size": 278148,
+      "sha256": "4ac7e5af8c3561ff88afd3c164bd6df153072a0bbc2095d6f17c1964047e9c24",
+      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.36/SessionSifu-3.5.36-linux-x64.spdx.json"
     },
-    "SessionSifu-3.5.35-linux-x64.tar.gz": {
-      "size": 105156916,
-      "sha256": "035751d6efb1f496563dce6af6a614e34a8546c4fd4183fcec0e02d8bd3535ba",
-      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.35/SessionSifu-3.5.35-linux-x64.tar.gz"
+    "SessionSifu-3.5.36-linux-x64.tar.gz": {
+      "size": 105343471,
+      "sha256": "a623a86e74b86046b0b064654d206de58a21404bdf7dd81b460ae47a1a4a6f12",
+      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.36/SessionSifu-3.5.36-linux-x64.tar.gz"
     },
-    "SessionSifu-3.5.35-macos-arm64.spdx.json": {
-      "size": 232103,
-      "sha256": "1ae89ba0bf88fb7851d46cefa10228bbc509d2247f06af2ba159a0c84ce07e51",
-      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.35/SessionSifu-3.5.35-macos-arm64.spdx.json"
+    "SessionSifu-3.5.36-macos-arm64.spdx.json": {
+      "size": 232847,
+      "sha256": "98e25237d8bc07bb75b5335fc6caf634ab6a8e86af71777f7d94052cda2c97dd",
+      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.36/SessionSifu-3.5.36-macos-arm64.spdx.json"
     },
-    "SessionSifu-3.5.35-macos-arm64.zip": {
-      "size": 128932275,
-      "sha256": "fb491d7474e20f1a0d5d0fc34f8ee516e48d2ae64ed5075e74bc814bc7db29aa",
-      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.35/SessionSifu-3.5.35-macos-arm64.zip"
+    "SessionSifu-3.5.36-macos-arm64.zip": {
+      "size": 131095399,
+      "sha256": "aa2cbfd297063abc655421dbe6601d376e61e629a4f3e30ad580d63266a4b4f6",
+      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.36/SessionSifu-3.5.36-macos-arm64.zip"
     },
-    "SessionSifu-3.5.35-macos-x64.spdx.json": {
-      "size": 232099,
-      "sha256": "63b8a0fa18cc85c9af509a98c474db987115372a416e7e4e4969eb28ad90055c",
-      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.35/SessionSifu-3.5.35-macos-x64.spdx.json"
+    "SessionSifu-3.5.36-macos-x64.spdx.json": {
+      "size": 232841,
+      "sha256": "0ae34170ff0625ec7f882218e33b1fefe01707a3d43aa8023238874ffde667d5",
+      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.36/SessionSifu-3.5.36-macos-x64.spdx.json"
     },
-    "SessionSifu-3.5.35-macos-x64.zip": {
-      "size": 142970708,
-      "sha256": "0068a4b465b05bada7078c84274a9948ac05a72ab3c33b9d9ba1f7c34aac1713",
-      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.35/SessionSifu-3.5.35-macos-x64.zip"
+    "SessionSifu-3.5.36-macos-x64.zip": {
+      "size": 143216995,
+      "sha256": "67b86fe23db89991be8187105bb76c8fe57a7f1e85242a566321cb0faacf13c4",
+      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.36/SessionSifu-3.5.36-macos-x64.zip"
     },
-    "SessionSifu-3.5.35-marketplace-metadata.tar.gz": {
-      "size": 1058,
-      "sha256": "728ef8eea6c65fd191a3b8a6f044ff79d7722fdc239e6495e2e9b822ad2985b7",
-      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.35/SessionSifu-3.5.35-marketplace-metadata.tar.gz"
+    "SessionSifu-3.5.36-marketplace-metadata.tar.gz": {
+      "size": 1065,
+      "sha256": "30e598b1048f7a38d0e4cea2b189f8c88ded22720f6de563860539dabd91ae2f",
+      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.36/SessionSifu-3.5.36-marketplace-metadata.tar.gz"
     },
-    "SessionSifu-3.5.35.provenance.json": {
+    "SessionSifu-3.5.36.provenance.json": {
       "size": 1998,
-      "sha256": "1faaf07035b7e9e903cb0557ceade3885808b822d77b3e91c95cde4ffb148c43",
-      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.35/SessionSifu-3.5.35.provenance.json"
+      "sha256": "3c8f56f2f20b140d22ab42334dda7da33294645903caa36d4186c5b167a8a1a3",
+      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.36/SessionSifu-3.5.36.provenance.json"
     },
-    "SessionSifu-3.5.35.spdx.json": {
+    "SessionSifu-3.5.36.spdx.json": {
       "size": 4799,
-      "sha256": "d096fbdbf18e5ba9604044382956457db1790e3e9d99b5d0ebb82d6490da6b8f",
-      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.35/SessionSifu-3.5.35.spdx.json"
+      "sha256": "006c5296ee52b3b47b8ca63ab58115ceee59336d321e3a9e8b3741000dc0c61b",
+      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.36/SessionSifu-3.5.36.spdx.json"
     },
-    "sessionsifu_3.5.35_all.deb": {
-      "size": 3838002,
-      "sha256": "e606c3b9a801a554c30e7399e51fde9298708e2801c04c5a43dc59a7f94223ca",
-      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.35/sessionsifu_3.5.35_all.deb"
+    "sessionsifu_3.5.36_all.deb": {
+      "size": 3841266,
+      "sha256": "c5b0814691f10529a9ffa74a82f18f4f24746fd144046f1a7d436e5870e4698a",
+      "url": "https://github.com/tpluharik/SessionSifu/releases/download/v3.5.36/sessionsifu_3.5.36_all.deb"
     }
   }
 }
